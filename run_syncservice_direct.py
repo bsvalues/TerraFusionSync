@@ -18,13 +18,9 @@ def main():
     
     print(f"Starting SyncService directly on port {PORT}...")
     
-    # Execute uvicorn with explicit port 8080
+    # Execute our port-forcing script instead of direct uvicorn command
     cmd = [
-        "python", "-m", "uvicorn",
-        "--host", "0.0.0.0",
-        "--port", str(PORT),
-        "--app-dir", "apps/backend/syncservice",
-        "syncservice.main:app"
+        "python", "apps/backend/syncservice/force_port_8080.py"
     ]
     
     print(f"Running command: {' '.join(cmd)}")

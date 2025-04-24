@@ -45,6 +45,7 @@ app = Flask(__name__)
 
 # URL of the SyncService API - using port 8080
 SYNCSERVICE_URL = "http://localhost:8080"
+print(f"SyncService URL: {SYNCSERVICE_URL}")
 
 # Flag to control automatic startup
 AUTO_START_SYNCSERVICE = True
