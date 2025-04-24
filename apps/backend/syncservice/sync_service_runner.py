@@ -25,17 +25,14 @@ def main():
     current_dir = os.path.dirname(os.path.abspath(__file__))
     
     print(f"Current directory: {current_dir}")
-    print("Starting SyncService on port 8000...")
+    print("Starting SyncService using workflow_starter.py...")
     
-    # IMPORTANT: Use port 8000 instead of 5000
-    command = [
-        "python", "-m", "uvicorn", "syncservice.main:app", 
-        "--host", "0.0.0.0", "--port", "8000", "--reload"
-    ]
+    # Use the workflow_starter.py script to run the service on port 8000
+    workflow_starter_path = os.path.join(current_dir, "workflow_starter.py")
     
     # Start the process
     process = subprocess.Popen(
-        command, 
+        ["python", workflow_starter_path], 
         cwd=current_dir,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -63,7 +60,7 @@ def main():
                 print("Attempting to restart SyncService...")
                 time.sleep(2)  # Wait before restarting
                 process = subprocess.Popen(
-                    command,
+                    ["python", workflow_starter_path],
                     cwd=current_dir,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,

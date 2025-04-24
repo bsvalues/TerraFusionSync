@@ -1,0 +1,115 @@
+# GIS to CAMA field mapping
+# This file defines the mapping between fields in the GIS source system and the CAMA target system
+
+entities:
+  # Parcel entity mapping to land entity
+  parcel:
+    # Source field name: Target field name
+    parcel_id: parcel_id
+    gis_pin: pin
+    shape_area: 
+      target_field: square_footage
+      type: decimal
+    shape_length:
+      target_field: perimeter
+      type: decimal
+    
+    # Area calculations
+    acres:
+      target_field: acreage
+      type: decimal
+    
+    # Coordinate and location information
+    centroid_x: longitude
+    centroid_y: latitude
+    utm_zone: utm_zone
+    srid: coordinate_system
+    
+    # Land characteristics derived from GIS data
+    elevation:
+      target_field: elevation
+      type: decimal
+    slope:
+      target_field: percent_slope
+      type: decimal
+    aspect: slope_direction
+    
+    # Flood and environmental attributes
+    flood_zone: flood_zone_code
+    wetland_percent:
+      target_field: wetland_percentage
+      type: decimal
+    watershed: watershed_code
+    soil_type: soil_type_code
+    
+    # Custom transformations
+    has_floodplain:
+      target_field: floodplain_indicator
+      transformation: "if(flood_zone IN ('A', 'AE', 'AH', 'AO'), 'Y', 'N')"
+    
+  # Structure entity mapping to improvement entity  
+  structure:
+    structure_id: improvement_id
+    parcel_id: parcel_id
+    building_type: structure_type
+    
+    # Area and size information
+    footprint_area:
+      target_field: first_floor_area
+      type: decimal
+    height:
+      target_field: height_ft
+      type: decimal
+    stories:
+      target_field: number_of_stories
+      type: decimal
+    
+    # Structure characteristics from GIS
+    roof_type: roof_type_code
+    exterior_wall: exterior_wall_code
+    year_built: year_built
+    
+    # Custom transformations
+    square_feet:
+      target_field: gross_area
+      transformation: "footprint_area * stories"
+      type: decimal
+    
+    # Building classification
+    building_class: quality_grade
+    condition: condition_code
+    
+    # Calculated fields
+    has_pool:
+      target_field: pool_indicator
+      transformation: "if(pool_area > 0, 'Y', 'N')"
+    
+  # Zone entity mapping to zoning in CAMA
+  zone:
+    zone_id: zoning_id
+    parcel_id: parcel_id
+    zone_code: zoning_code
+    zone_description: zoning_description
+    
+    # Overlay zones
+    overlay_codes: overlay_codes
+    historic_district: historic_district_code
+    
+    # Land use information
+    land_use: land_use_code
+    future_land_use: future_land_use_code
+    
+    # Restrictions and regulations
+    height_restriction:
+      target_field: max_height_ft
+      type: decimal
+    density:
+      target_field: density_units_per_acre
+      type: decimal
+    lot_coverage:
+      target_field: max_lot_coverage_pct
+      type: decimal
+    
+    # Allowed uses
+    permitted_uses: permitted_use_codes
+    conditional_uses: conditional_use_codes

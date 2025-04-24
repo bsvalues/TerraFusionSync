@@ -1,0 +1,145 @@
+# PACS to CAMA field mapping
+# This file defines the mapping between fields in the PACS source system and the CAMA target system
+
+entities:
+  # Property entity mapping
+  property:
+    # Source field name: Target field name
+    property_id: parcel_id
+    street_number: street_number
+    street_name: street_name
+    city: city
+    state: state
+    zip_code: postal_code
+    legal_description: legal_description
+    land_use_code: zoning_code
+    neighborhood_code: neighborhood_id
+    status: status_code
+    last_updated: last_modified_date
+    
+    # Custom transformations can be defined with transformation rules
+    combined_address:
+      target_field: full_address
+      transformation: "concat(street_number, ' ', street_name, ', ', city, ', ', state, ' ', zip_code)"
+    
+    # Field type conversions
+    market_value:
+      target_field: appraised_value
+      type: decimal
+    
+    # Composite fields that map from multiple source fields to one target field
+    parcel_dimensions:
+      target_field: lot_dimensions
+      source_fields: [width_ft, depth_ft]
+      transformation: "concat(width_ft, 'x', depth_ft)"
+  
+  # Owner entity mapping
+  owner:
+    owner_id: owner_id
+    first_name: first_name
+    last_name: last_name
+    middle_name: middle_initial
+    company_name: business_name
+    type: owner_type_code
+    primary_contact: is_primary
+    
+    # Custom transformation for full name
+    full_name:
+      target_field: owner_name
+      transformation: "if(company_name, company_name, concat(first_name, ' ', last_name))"
+    
+    # Address fields
+    mailing_address: address_line1
+    mailing_city: city
+    mailing_state: state
+    mailing_zip: postal_code
+    
+    # Contact fields with transformations
+    phone:
+      target_field: primary_phone
+      transformation: "format_phone(phone)"
+    email: email_address
+    
+  # Assessment entity mapping
+  assessment:
+    assessment_id: assessment_id
+    property_id: parcel_id
+    tax_year: tax_year
+    assessment_date: valuation_date
+    certified_date: certification_date
+    
+    # Value fields with type conversion
+    land_value:
+      target_field: land_value
+      type: decimal
+    improvement_value:
+      target_field: improvement_value
+      type: decimal
+    total_value:
+      target_field: assessed_value
+      type: decimal
+    
+    # Tax fields with type conversion
+    tax_rate:
+      target_field: millage_rate
+      type: decimal
+    tax_amount:
+      target_field: tax_amount
+      type: decimal
+    
+    # Status fields
+    status: assessment_status
+    appeal_status: appeal_status
+    
+  # Building/improvement entity mapping
+  building:
+    building_id: improvement_id
+    property_id: parcel_id
+    building_type: structure_type
+    year_built: year_built
+    
+    # Area fields with type conversion
+    square_feet:
+      target_field: gross_area
+      type: decimal
+    
+    # Building characteristics
+    stories: number_of_stories
+    bedrooms: number_of_bedrooms
+    bathrooms: number_of_bathrooms
+    construction_type: construction_code
+    condition: condition_code
+    grade: quality_grade
+    
+    # Custom transformations
+    has_basement:
+      target_field: basement_indicator
+      transformation: "if(basement_area > 0, 'Y', 'N')"
+    
+  # Land entity mapping
+  land:
+    land_id: land_id
+    property_id: parcel_id
+    land_type: land_use_code
+    
+    # Area fields with type conversion
+    acres:
+      target_field: acreage
+      type: decimal
+    square_feet:
+      target_field: square_footage
+      type: decimal
+    
+    # Land characteristics
+    topography: topography_code
+    utilities: utilities_code
+    road_access: road_access_code
+    
+    # Zoning information
+    zoning: zoning_code
+    current_use: current_use_code
+    
+    # Value related fields
+    price_per_acre:
+      target_field: unit_value
+      type: decimal

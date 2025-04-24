@@ -1,0 +1,122 @@
+# PACS to ERP field mapping
+# This file defines the mapping between fields in the PACS source system and the ERP target system
+
+entities:
+  # Financial transaction entity mapping
+  transaction:
+    # Source field name: Target field name
+    transaction_id: transaction_id
+    property_id: property_reference
+    transaction_date: transaction_date
+    transaction_type: transaction_type_code
+    
+    # Financial amounts with type conversion
+    amount:
+      target_field: amount
+      type: decimal
+    balance:
+      target_field: balance
+      type: decimal
+    
+    # Transaction details
+    description: description
+    reference_number: reference_number
+    batch_id: batch_id
+    cashier_id: user_id
+    
+    # Classification fields
+    fund: fund_code
+    department: department_code
+    revenue_code: revenue_account_code
+    
+    # Custom transformations
+    transaction_status:
+      target_field: status
+      transformation: "case when void_flag = 'Y' then 'VOID' when adjust_flag = 'Y' then 'ADJUSTED' else 'ACTIVE' end"
+    
+    # Timing fields
+    fiscal_year: fiscal_year
+    fiscal_period: accounting_period
+    
+    # Audit fields
+    created_by: created_by
+    created_date: created_date
+    last_updated_by: modified_by
+    last_updated_date: modified_date
+    
+  # Payment entity mapping  
+  payment:
+    payment_id: payment_id
+    transaction_id: transaction_id
+    property_id: property_reference
+    payment_date: payment_date
+    
+    # Payment details
+    payment_type: payment_method_code
+    check_number: check_number
+    card_type: credit_card_type
+    last_four: last_four_digits
+    
+    # Financial amounts with type conversion
+    amount:
+      target_field: payment_amount
+      type: decimal
+    
+    # Custom transformations
+    payment_status:
+      target_field: status
+      transformation: "case when void_flag = 'Y' then 'VOID' when nsf_flag = 'Y' then 'NSF' else 'PROCESSED' end"
+    
+    # Bank deposit information
+    deposit_id: deposit_id
+    deposit_date: deposit_date
+    bank_account: bank_account_code
+    
+    # Audit fields
+    receipt_number: receipt_number
+    cashier_id: received_by
+    location_code: payment_location_code
+    
+  # Account entity mapping
+  account:
+    # Source field name: Target field name
+    account_id: ledger_account_id
+    account_name: account_name
+    account_type: account_type
+    
+    # Classification fields
+    fund: fund_code
+    department: department_code
+    category: category_code
+    
+    # Account details
+    description: description
+    active_flag: is_active
+    
+    # Budget information
+    budget_amount:
+      target_field: current_budget
+      type: decimal
+    ytd_actual:
+      target_field: year_to_date_actual
+      type: decimal
+    
+    # Balance fields
+    current_balance:
+      target_field: current_balance
+      type: decimal
+    
+    # Fiscal period information
+    fiscal_year: fiscal_year
+    last_closed_period: last_closed_period
+    
+    # Custom transformations
+    account_status:
+      target_field: status
+      transformation: "if(active_flag = 'Y', 'ACTIVE', 'INACTIVE')"
+    
+    # Audit fields
+    created_by: created_by
+    created_date: created_date
+    modified_by: modified_by
+    modified_date: modified_date

@@ -1,5 +1,5 @@
 """
 Configuration package for SyncService.
 
-This package provides configuration utilities and settings for the SyncService.
+This package contains configuration utilities for the SyncService.
 """
