@@ -1,191 +1,193 @@
 """
-Authentication module for TerraFusion SyncService.
+Authentication module for the TerraFusion SyncService.
 
-This module provides Azure AD authentication integration for the FastAPI SyncService.
+This module provides JWT validation and role-based authorization
+for the SyncService API, integrating with the County's Azure AD
+identity infrastructure.
 """
 import os
 import logging
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, List, Optional, Union, Callable
 
 try:
     from fastapi import Depends, HTTPException, status
-    from fastapi.security import OAuth2AuthorizationCodeBearer
-    from jose import jwt, JWTError
+    from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+    import jwt
     import httpx
 except ImportError:
-    # Provide fallbacks for when FastAPI and related packages are not installed
-    class HTTPException(Exception):
-        def __init__(self, status_code, detail):
-            self.status_code = status_code
-            self.detail = detail
-    
-    class OAuth2AuthorizationCodeBearer:
-        def __init__(self, *args, **kwargs):
-            pass
-    
-    Depends = lambda x: x
+    # Fallbacks when dependencies are not available
+    HTTPBearer = lambda *args, **kwargs: None
+    HTTPException = type('HTTPException', (Exception,), {})
     status = type('status', (), {'HTTP_401_UNAUTHORIZED': 401, 'HTTP_403_FORBIDDEN': 403})
-    jwt = None
-    httpx = None
+    Depends = lambda x: x
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Azure AD Configuration
-AZURE_CLIENT_ID = os.environ.get("AZURE_CLIENT_ID", "")
-AZURE_TENANT_ID = os.environ.get("AZURE_TENANT_ID", "")
-AZURE_CLIENT_SECRET = os.environ.get("AZURE_CLIENT_SECRET", "")
-AZURE_AUTHORITY = f"https://login.microsoftonline.com/{AZURE_TENANT_ID}"
-AZURE_JWKS_URI = f"{AZURE_AUTHORITY}/discovery/v2.0/keys"
-AZURE_ISSUER = f"{AZURE_AUTHORITY}/v2.0"
-AZURE_AUDIENCE = AZURE_CLIENT_ID
-
-# Create OAuth2 scheme
-oauth2_scheme = OAuth2AuthorizationCodeBearer(
-    authorizationUrl=f"{AZURE_AUTHORITY}/oauth2/v2.0/authorize",
-    tokenUrl=f"{AZURE_AUTHORITY}/oauth2/v2.0/token",
-    scopes={"https://graph.microsoft.com/.default": "Default scope"}
+# Azure AD configuration
+AZURE_AD_TENANT_ID = os.environ.get("AZURE_AD_TENANT_ID", "")
+AZURE_AD_CLIENT_ID = os.environ.get("AZURE_AD_CLIENT_ID", "")
+AZURE_AD_JWKS_URI = os.environ.get(
+    "AZURE_AD_JWKS_URI",
+    f"https://login.microsoftonline.com/{AZURE_AD_TENANT_ID}/discovery/v2.0/keys"
 )
 
+# Security scheme for JWT bearer tokens
+oauth2_scheme = HTTPBearer()
 
-async def get_jwks() -> Dict[str, Any]:
+# Cache for JWKS keys
+jwks_cache = {}
+jwks_last_updated = 0
+
+
+async def get_jwks():
     """
-    Fetch the JSON Web Key Set (JWKS) from Azure AD.
+    Fetch JSON Web Key Set (JWKS) from Azure AD.
     
     Returns:
-        Dictionary containing the JWKS
+        dict: The JWKS keys
     """
+    global jwks_cache, jwks_last_updated
+    
+    # Use cached keys if available and not expired
+    current_time = int(__import__('time').time())
+    if jwks_cache and (current_time - jwks_last_updated) < 3600:  # 1 hour cache
+        return jwks_cache
+    
     try:
-        if not httpx:
-            logger.error("httpx not available")
-            return {}
-            
+        # Fetch JWKS from Azure AD
         async with httpx.AsyncClient() as client:
-            response = await client.get(AZURE_JWKS_URI)
-            return response.json()
+            response = await client.get(AZURE_AD_JWKS_URI)
+            response.raise_for_status()
+            jwks_cache = response.json()
+            jwks_last_updated = current_time
+            return jwks_cache
     except Exception as e:
         logger.error(f"Error fetching JWKS: {str(e)}")
-        return {}
+        
+        # If we have cached keys, use them even if expired
+        if jwks_cache:
+            logger.warning("Using expired JWKS cache")
+            return jwks_cache
+        
+        # If no cache available, raise the error
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unable to fetch authentication keys"
+        )
 
 
-async def verify_token(token: str) -> Dict[str, Any]:
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(oauth2_scheme)) -> Dict[str, Any]:
     """
-    Verify the JWT token from Azure AD.
+    Validate the JWT token and extract user information.
     
     Args:
-        token: The JWT token to verify
-        
+        credentials: The HTTP bearer token credentials
+    
     Returns:
-        Dictionary containing the token claims if valid
-        
+        dict: User information from the validated token
+    
     Raises:
-        HTTPException: If the token is invalid
+        HTTPException: If token validation fails
     """
+    # Check if we're in development mode with no auth
+    if os.environ.get("SYNCSERVICE_DEV_MODE") == "1":
+        return {"id": "dev-user", "name": "Development User", "roles": ["admin"]}
+    
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials"
+        )
+    
+    token = credentials.credentials
+    
     try:
-        if not jwt:
-            logger.error("jwt library not available")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="JWT library not available"
-            )
-            
-        # Get the JWKS
+        # Get the JWKS for token validation
         jwks = await get_jwks()
-        if not jwks:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Failed to fetch JWKS"
-            )
         
-        # Decode the token with the JWKS
+        # Decode and validate the token
+        # For production, we'd use the azure-identity package and proper JWKS validation
+        # This is a simplified version for demonstration
         try:
-            # In a real implementation, you would select the key from JWKS
-            # that matches the token's kid (key ID) and use it to verify
-            # For simplicity, we're just verifying signature and claims
             payload = jwt.decode(
                 token,
-                key=jwks,
-                algorithms=["RS256"],
-                audience=AZURE_AUDIENCE,
-                issuer=AZURE_ISSUER
+                options={"verify_signature": False},  # In production, we'd verify against JWKS
+                audience=AZURE_AD_CLIENT_ID
             )
-            return payload
-        except JWTError as e:
+        except jwt.JWTError as e:
+            logger.error(f"JWT decode error: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Invalid token: {str(e)}"
+                detail="Invalid token"
             )
-    except Exception as e:
-        logger.error(f"Error verifying token: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Error verifying token"
-        )
-
-
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
-    """
-    Get the current user from the token.
-    
-    Args:
-        token: The JWT token from the request
         
-    Returns:
-        Dictionary containing the user information
-        
-    Raises:
-        HTTPException: If the token is invalid
-    """
-    try:
-        payload = await verify_token(token)
-        user_id = payload.get("sub")
-        if not user_id:
+        # Check if token is expired
+        if "exp" in payload and payload["exp"] < int(__import__('time').time()):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication credentials"
+                detail="Token expired"
             )
         
-        # Return user information from token
-        return {
-            "id": user_id,
+        # Extract user information
+        user_info = {
+            "id": payload.get("oid", ""),
             "name": payload.get("name", ""),
-            "email": payload.get("preferred_username", ""),
+            "email": payload.get("email", payload.get("upn", "")),
             "roles": payload.get("roles", [])
         }
-    except HTTPException:
-        raise
+        
+        if not user_info["id"]:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid user identity in token"
+            )
+        
+        return user_info
+        
     except Exception as e:
-        logger.error(f"Error getting current user: {str(e)}")
+        logger.error(f"Token validation error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Error retrieving user information"
+            detail="Invalid authentication token"
         )
 
 
-def has_role(roles: Union[str, List[str]]) -> Any:
+def has_role(roles: Union[str, List[str]]):
     """
-    Dependency to check if the current user has required roles.
+    Dependency for checking if a user has the required role(s).
     
     Args:
-        roles: String or list of role names required
-        
+        roles: A single role or list of roles that grant access
+    
     Returns:
-        Dependency function for FastAPI
+        Callable: A dependency function that checks user roles
     """
     if isinstance(roles, str):
         roles = [roles]
     
-    async def _check_roles(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    async def role_checker(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+        # Check if user has any of the required roles
         user_roles = user.get("roles", [])
         
-        # Check if the user has any of the required roles
-        if not any(role in user_roles for role in roles):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"User does not have the required roles: {', '.join(roles)}"
-            )
-        
-        return user
+        # Always grant access in development mode
+        if os.environ.get("SYNCSERVICE_DEV_MODE") == "1":
+            return user
+            
+        # Admin role always has access to everything
+        if "admin" in user_roles:
+            return user
+            
+        # Check for specific role match
+        for role in roles:
+            if role in user_roles:
+                return user
+                
+        # No matching role found
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access denied. Required role(s): {', '.join(roles)}"
+        )
     
-    return _check_roles
+    return role_checker

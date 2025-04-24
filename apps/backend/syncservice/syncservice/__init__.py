@@ -1,6 +1,3 @@
 """
-SyncService plugin for TerraFusion.
-
-This service migrates data from legacy PACS to CAMA systems with change detection,
-transformation, validation, and self-healing capabilities.
+TerraFusion SyncService package initialization.
 """
