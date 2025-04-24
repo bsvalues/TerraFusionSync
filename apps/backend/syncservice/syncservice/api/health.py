@@ -4,15 +4,26 @@ Health check endpoints for the SyncService.
 This module implements liveness and readiness probe endpoints.
 """
 
+import logging
+from datetime import datetime, timedelta
 from typing import Dict
 
 from fastapi import APIRouter
 
-# Create a router
+from syncservice.utils.database import check_source_connection, check_target_connection
+from syncservice.utils.event_bus import check_event_bus
+
+logger = logging.getLogger(__name__)
+
+# Configure router
 router = APIRouter()
 
-# Flag to indicate if the service is shutting down
+# Global variable to track if the service is shutting down
 _shutting_down = False
+
+# Track service startup time
+_start_time = datetime.utcnow()
+
 
 @router.get("/live")
 async def liveness_check() -> Dict:
@@ -26,15 +37,12 @@ async def liveness_check() -> Dict:
     Returns:
         Service liveness status
     """
-    if _shutting_down:
-        # If we're shutting down, report the service as not alive
-        return {"status": "shutting_down"}
-    
     return {
-        "status": "up",
+        "status": "up" if not _shutting_down else "shutting_down",
         "service": "terrafusion-sync-service",
         "version": "0.1.0"
     }
+
 
 @router.get("/ready")
 async def readiness_check() -> Dict:
@@ -48,41 +56,24 @@ async def readiness_check() -> Dict:
     Returns:
         Service readiness status
     """
-    # For now, our readiness criteria are simple:
-    # 1. Service is not shutting down
-    # 2. All critical dependencies are available
+    # Check all dependencies
+    db_source_ok = await check_source_connection()
+    db_target_ok = await check_target_connection()
+    event_bus_ok = await check_event_bus()
     
-    if _shutting_down:
-        # If we're shutting down, report the service as not ready
-        return {"status": "shutting_down"}
+    # All dependencies must be OK for the service to be ready
+    all_dependencies_ok = db_source_ok and db_target_ok and event_bus_ok
     
-    # Check if all dependencies are available
-    dependencies_ok = True
-    
-    # In a real implementation, we would check connections to databases,
-    # message brokers, etc. For now, we'll assume everything is available.
-    
-    if dependencies_ok:
-        return {
-            "status": "ready",
-            "service": "terrafusion-sync-service",
-            "version": "0.1.0",
-            "dependencies": {
-                "database": "ok",
-                "event_bus": "ok"
-            }
+    return {
+        "status": "ready" if all_dependencies_ok and not _shutting_down else "not_ready",
+        "service": "terrafusion-sync-service",
+        "version": "0.1.0",
+        "dependencies": {
+            "database": "ok" if db_source_ok and db_target_ok else "error",
+            "event_bus": "ok" if event_bus_ok else "error"
         }
-    else:
-        # Return a failure status if any dependencies are unavailable
-        return {
-            "status": "not_ready",
-            "service": "terrafusion-sync-service",
-            "version": "0.1.0",
-            "dependencies": {
-                "database": "not_connected",
-                "event_bus": "ok"
-            }
-        }
+    }
+
 
 @router.get("/status")
 async def detailed_health_status() -> Dict:
@@ -95,32 +86,49 @@ async def detailed_health_status() -> Dict:
     Returns:
         Detailed service health status
     """
-    # In a real implementation, we would gather metrics from various
-    # components and provide a detailed health report.
+    # Check database connections
+    db_source_ok = await check_source_connection()
+    db_target_ok = await check_target_connection()
+    event_bus_ok = await check_event_bus()
+    
+    # Calculate uptime
+    uptime = datetime.utcnow() - _start_time
+    uptime_str = f"{uptime.days}d {uptime.seconds // 3600}h {(uptime.seconds // 60) % 60}m"
+    
+    # All dependencies must be OK for the service to be healthy
+    all_dependencies_ok = db_source_ok and db_target_ok and event_bus_ok
     
     return {
-        "status": "healthy",
+        "status": "healthy" if all_dependencies_ok and not _shutting_down else "unhealthy",
         "service": "terrafusion-sync-service",
         "version": "0.1.0",
-        "uptime": "1h 23m",
+        "uptime": uptime_str,
+        "started_at": _start_time.isoformat(),
         "dependencies": {
             "database": {
-                "status": "connected",
-                "latency": "10ms"
+                "source": {
+                    "status": "connected" if db_source_ok else "disconnected",
+                    "latency": "10ms"  # Placeholder
+                },
+                "target": {
+                    "status": "connected" if db_target_ok else "disconnected",
+                    "latency": "5ms"  # Placeholder
+                }
             },
             "event_bus": {
-                "status": "connected",
-                "latency": "5ms"
+                "status": "connected" if event_bus_ok else "disconnected",
+                "latency": "5ms"  # Placeholder
             }
         },
         "performance": {
-            "memory_usage": "120MB",
-            "cpu_usage": "2%",
-            "active_connections": 5,
-            "request_rate": "10 req/s",
-            "error_rate": "0 err/s"
+            "memory_usage": "120MB",  # Placeholder
+            "cpu_usage": "2%",  # Placeholder
+            "request_rate": "10 req/s",  # Placeholder
+            "error_rate": "0 err/s",  # Placeholder
+            "active_connections": 5  # Placeholder
         }
     }
+
 
 def set_shutting_down() -> None:
     """
@@ -131,3 +139,15 @@ def set_shutting_down() -> None:
     """
     global _shutting_down
     _shutting_down = True
+    logger.info("Service marked as shutting down")
+
+
+def reset_shutting_down() -> None:
+    """
+    Reset the shutting down flag.
+    
+    This function is primarily for testing purposes.
+    """
+    global _shutting_down
+    _shutting_down = False
+    logger.info("Service marked as not shutting down")
