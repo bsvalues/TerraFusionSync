@@ -1,0 +1,105 @@
+# Field mapping configuration for SyncService
+#
+# This file defines how fields are mapped from source system (PACS)
+# to target system (CAMA) during data synchronization.
+
+# Property fields mapping
+property:
+  PropertyID: source_id
+  ParcelNumber: parcel_number
+  Address: address
+  City: city
+  State: state
+  ZipCode: zip_code
+  LegalDescription: legal_description
+  Acreage: acreage
+  YearBuilt: year_built
+  LastModified: source_last_modified
+  IsActive: is_active
+
+# Owner fields mapping
+owner:
+  OwnerID: source_id
+  PropertyID: property_id
+  OwnerName: owner_name
+  OwnerType: owner_type
+  OwnershipPercentage: ownership_percentage
+  StartDate: start_date
+  EndDate: end_date
+  LastModified: source_last_modified
+
+# Value fields mapping
+value:
+  ValueID: source_id
+  PropertyID: property_id
+  TaxYear: tax_year
+  AssessedValue: assessed_value
+  MarketValue: market_value
+  LandValue: land_value
+  ImprovementValue: improvement_value
+  LastModified: source_last_modified
+
+# Structure fields mapping
+structure:
+  StructureID: source_id
+  PropertyID: property_id
+  StructureType: structure_type
+  SquareFootage: square_footage
+  Condition: condition
+  YearBuilt: year_built
+  Bedrooms: bedrooms
+  Bathrooms: bathrooms
+  LastModified: source_last_modified
+
+# AI enrichment configuration
+ai_enrichment:
+  enabled: true
+  
+  # Property enrichment config
+  property:
+    geo_coordinates:
+      enabled: true
+      confidence_threshold: 0.8
+    property_classification:
+      enabled: true
+      confidence_threshold: 0.7
+  
+  # Owner enrichment config
+  owner:
+    contact_information:
+      enabled: false
+  
+  # Value enrichment config
+  value:
+    valuation_method:
+      enabled: true
+  
+  # Structure enrichment config
+  structure:
+    construction_details:
+      enabled: true
+    amenities:
+      enabled: true
+
+# Conflict resolution strategies
+conflict_resolution:
+  default_strategy: source_wins
+  
+  # Field-specific resolution strategies
+  field_strategies:
+    address: source_wins
+    city: source_wins
+    state: source_wins
+    zip_code: source_wins
+    legal_description: source_wins
+    acreage: source_wins
+    year_built: source_wins
+    
+    market_value: target_wins
+    assessed_value: target_wins
+    land_value: target_wins
+    improvement_value: target_wins
+    
+    square_footage: merge
+    bedrooms: merge
+    bathrooms: merge

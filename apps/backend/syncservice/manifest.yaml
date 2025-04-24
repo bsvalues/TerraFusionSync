@@ -1,0 +1,39 @@
+apiVersion: terrafusion.io/v1
+kind: Plugin
+metadata:
+  name: sync-service
+  displayName: Data Sync Service
+  description: Syncs data between legacy PACS and CAMA systems
+spec:
+  type: service
+  version: 0.1.0
+  resources:
+    cpu:
+      request: "100m"
+      limit: "500m"
+    memory:
+      request: "256Mi"
+      limit: "1Gi"
+  endpoints:
+    - path: /sync/full
+      method: POST
+      description: Perform a full sync of all data
+    - path: /sync/incremental
+      method: POST
+      description: Perform an incremental sync based on recent changes
+    - path: /health/live
+      method: GET
+      description: Liveness probe endpoint
+    - path: /health/ready
+      method: GET
+      description: Readiness probe endpoint
+  dependencies:
+    - type: database
+      name: postgres
+      required: true
+    - type: database
+      name: sqlserver
+      required: true
+    - type: messaging
+      name: nats
+      required: true

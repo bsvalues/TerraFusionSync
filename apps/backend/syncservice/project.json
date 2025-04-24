@@ -1,0 +1,34 @@
+{
+  "name": "backend-sync",
+  "sourceRoot": "apps/backend/syncservice/src",
+  "projectType": "application",
+  "targets": {
+    "build": {
+      "executor": "@nrwl/python:build",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/apps/backend/syncservice",
+        "main": "apps/backend/syncservice/src/syncservice/main.py"
+      }
+    },
+    "serve": {
+      "executor": "@nrwl/workspace:run-commands",
+      "options": {
+        "command": "cd apps/backend/syncservice && poetry run uvicorn syncservice.main:app --host 0.0.0.0 --port 8000 --reload"
+      }
+    },
+    "test": {
+      "executor": "@nrwl/workspace:run-commands",
+      "options": {
+        "command": "cd apps/backend/syncservice && poetry run pytest"
+      }
+    },
+    "lint": {
+      "executor": "@nrwl/workspace:run-commands",
+      "options": {
+        "command": "cd apps/backend/syncservice && poetry run black . && poetry run isort . && poetry run flake8"
+      }
+    }
+  },
+  "tags": ["backend", "sync"]
+}
