@@ -7,10 +7,11 @@ This module provides system resource monitoring capabilities.
 import asyncio
 import logging
 import os
-import platform
-import psutil
+import time
 from datetime import datetime
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
+
+import psutil
 
 logger = logging.getLogger(__name__)
 
@@ -28,56 +29,72 @@ class SystemMonitor:
             interval: Monitoring interval in seconds
         """
         self.interval = interval
+        self.running = False
         self.monitoring_task = None
-        self.is_running = False
-        self._last_health_check = None
+        self.last_metrics = {}
         
     async def start(self):
         """
         Start the system monitoring loop.
         """
-        if self.is_running:
+        if self.running:
             logger.warning("System monitor is already running")
             return
             
-        self.is_running = True
-        logger.info(f"Starting system monitor with {self.interval}s interval")
+        self.running = True
         self.monitoring_task = asyncio.create_task(self._monitoring_loop())
+        logger.info(f"System monitor started with interval {self.interval}s")
         
     async def stop(self):
         """
         Stop the system monitoring loop.
         """
-        if not self.is_running:
+        if not self.running:
             logger.warning("System monitor is not running")
             return
             
-        self.is_running = False
-        logger.info("Stopping system monitor")
-        
+        self.running = False
         if self.monitoring_task:
-            self.monitoring_task.cancel()
             try:
-                await self.monitoring_task
+                self.monitoring_task.cancel()
+                await asyncio.wait_for(self.monitoring_task, timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.warning("Timeout waiting for monitoring task to cancel")
             except asyncio.CancelledError:
-                logger.info("System monitoring loop cancelled")
-            
+                pass
+                
+        logger.info("System monitor stopped")
+        
     async def _monitoring_loop(self):
         """
         Background task to periodically collect system metrics.
         """
-        while self.is_running:
-            try:
-                health_data = self.get_system_health_sync()
-                # In a real implementation, this would save metrics to a metrics store
-                self._last_health_check = health_data
+        try:
+            while self.running:
+                try:
+                    # Get the current health metrics
+                    metrics = self.get_system_health_sync()
+                    
+                    # Store the latest metrics
+                    self.last_metrics = metrics
+                    
+                    # Log some metrics at INFO level
+                    logger.info(
+                        f"System health: CPU {metrics['cpu_percent']}%, "
+                        f"Memory {metrics['memory_percent']}%, "
+                        f"Disk {metrics['disk_percent']}%"
+                    )
+                    
+                except Exception as e:
+                    logger.error(f"Error collecting system metrics: {str(e)}", exc_info=True)
+                    
+                # Wait for the next collection interval
+                await asyncio.sleep(self.interval)
                 
-            except Exception as e:
-                logger.error(f"Error collecting system metrics: {str(e)}", exc_info=True)
-                
-            # Wait for next interval
-            await asyncio.sleep(self.interval)
-    
+        except asyncio.CancelledError:
+            logger.info("Monitoring task cancelled")
+            raise
+            
     def get_system_health_sync(self) -> Dict[str, Any]:
         """
         Get current system health information.
@@ -85,63 +102,37 @@ class SystemMonitor:
         Returns:
             Dictionary with system health metrics
         """
-        # Get CPU metrics
-        cpu_percent = psutil.cpu_percent(interval=0.5)
-        cpu_per_core = psutil.cpu_percent(interval=0.5, percpu=True)
+        cpu_percent = psutil.cpu_percent(interval=1)
+        mem = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
         
-        # Get memory metrics
-        virtual_memory = psutil.virtual_memory()
-        memory_total = virtual_memory.total
-        memory_available = virtual_memory.available
-        memory_used = virtual_memory.used
-        memory_percent = virtual_memory.percent
+        # Get process information
+        process = psutil.Process(os.getpid())
+        process_mem = process.memory_info()
         
-        # Get disk metrics
-        disk_info = {}
-        for part in psutil.disk_partitions(all=False):
-            if os.name == 'nt':
-                if 'cdrom' in part.opts or part.fstype == '':
-                    continue
-            
-            try:
-                usage = psutil.disk_usage(part.mountpoint)
-                disk_info[part.mountpoint] = {
-                    "total": usage.total,
-                    "used": usage.used,
-                    "free": usage.free,
-                    "percent": usage.percent
-                }
-            except PermissionError:
-                continue
-        
-        # Get process metrics
-        current_process = psutil.Process()
-        process_info = {
-            "cpu_percent": current_process.cpu_percent(),
-            "memory_rss": current_process.memory_info().rss,
-            "memory_vms": current_process.memory_info().vms,
-            "num_threads": current_process.num_threads()
-        }
-        
-        # Compile system health data
-        health_data = {
+        # Build metrics dictionary
+        metrics = {
             "timestamp": datetime.utcnow().isoformat(),
-            "cpu": {
-                "percent": cpu_percent,
-                "per_cpu": cpu_per_core
-            },
-            "memory": {
-                "total": memory_total,
-                "available": memory_available,
-                "used": memory_used,
-                "percent": memory_percent
-            },
-            "disk": disk_info,
-            "process": process_info
+            "cpu_count": psutil.cpu_count(),
+            "cpu_percent": cpu_percent,
+            "memory_total": mem.total,
+            "memory_available": mem.available,
+            "memory_used": mem.used,
+            "memory_percent": mem.percent,
+            "disk_total": disk.total,
+            "disk_used": disk.used,
+            "disk_free": disk.free,
+            "disk_percent": disk.percent,
+            "process_memory_rss": process_mem.rss,
+            "process_memory_vms": process_mem.vms,
+            "process_cpu_percent": process.cpu_percent(interval=None),
+            "process_threads": len(process.threads()),
+            "process_connections": len(process.connections(kind='all')),
+            "boot_time": datetime.fromtimestamp(psutil.boot_time()).isoformat()
         }
         
-        return health_data
-    
+        return metrics
+        
     async def get_system_health(self) -> Dict[str, Any]:
         """
         Async wrapper for get_system_health_sync.
@@ -149,10 +140,28 @@ class SystemMonitor:
         Returns:
             Dictionary with system health metrics
         """
-        # If we have recent data, return it
-        if self._last_health_check:
-            return self._last_health_check
+        if self.last_metrics and time.time() - self._get_timestamp_seconds(self.last_metrics.get("timestamp")) < 10:
+            # Return cached metrics if they're recent (within 10 seconds)
+            return self.last_metrics
             
-        # Otherwise, get fresh data
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self.get_system_health_sync)
+        # Get fresh metrics
+        return self.get_system_health_sync()
+        
+    def _get_timestamp_seconds(self, timestamp: Optional[str]) -> float:
+        """
+        Parse ISO timestamp into seconds since epoch.
+        
+        Args:
+            timestamp: ISO format timestamp string
+            
+        Returns:
+            Seconds since epoch or 0 if parsing fails
+        """
+        if not timestamp:
+            return 0
+            
+        try:
+            dt = datetime.fromisoformat(timestamp)
+            return dt.timestamp()
+        except (ValueError, TypeError):
+            return 0

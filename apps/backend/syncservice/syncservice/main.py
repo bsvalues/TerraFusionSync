@@ -10,7 +10,7 @@ import os
 import signal
 import sys
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Callable
 
 from fastapi import FastAPI, Depends, HTTPException, Request, Query
@@ -62,11 +62,10 @@ system_monitor = None
 sync_tracker = None
 
 
-async def lifespan(app: FastAPI):
+@app.on_event("startup")
+async def startup_event():
     """
-    Context manager for FastAPI application lifecycle events.
-    
-    This function is called when the application starts up and shuts down.
+    Event handler called when the application starts up.
     """
     global metrics_collector, system_monitor, sync_tracker
     
@@ -90,19 +89,19 @@ async def lifespan(app: FastAPI):
     await sync_tracker.setup()
     
     logger.info("SyncService started successfully")
-    
-    yield
-    
-    # Shutdown
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """
+    Event handler called when the application shuts down.
+    """
     logger.info("Shutting down SyncService...")
     
     if system_monitor:
         await system_monitor.stop()
     
     logger.info("SyncService shut down successfully")
-
-
-app.router.lifespan_context = lifespan
 
 
 # Try to mount static files for dashboard UI

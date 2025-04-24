@@ -1,251 +1,204 @@
 """
 Dashboard API for the SyncService.
 
-This module defines the API endpoints for the monitoring dashboard.
+This module defines the API endpoints for the dashboard.
 """
 
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
 
-from ..monitoring.metrics import MetricsCollector
-from ..monitoring.system_monitoring import SystemMonitor
-from ..monitoring.sync_tracker import SyncTracker
+from fastapi import APIRouter, Depends, Query
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
 
-# Function to get metrics as dictionary for API response
-def get_metrics_as_dict(metrics: List[Dict[str, Any]]) -> Dict[str, Any]:
+@router.get("/summary")
+async def get_dashboard_summary():
     """
-    Convert metrics to a dictionary format for API response.
+    Get summary data for dashboard.
     
-    Args:
-        metrics: List of metric objects
-        
     Returns:
-        Dictionary mapping metric names to values
+        Dictionary with summary data
     """
-    result = {}
-    for metric in metrics:
-        name = metric.get('name', '')
-        value = metric.get('value', 0)
-        result[name] = value
-    return result
-
-
-# Dependency to get the metrics collector
-async def get_metrics_collector():
-    """Dependency to get the metrics collector instance."""
-    # This would normally retrieve the collector from a dependency container
-    # For now, returning None as a placeholder
-    return None
-
-
-# Dependency to get the system monitor
-async def get_system_monitor():
-    """Dependency to get the system monitor instance."""
-    # This would normally retrieve the monitor from a dependency container
-    # For now, returning None as a placeholder
-    return None
-
-
-# Dependency to get the sync tracker
-async def get_sync_tracker():
-    """Dependency to get the sync tracker instance."""
-    # This would normally retrieve the tracker from a dependency container
-    # For now, returning None as a placeholder
-    return None
-
-
-@router.get("/metrics")
-async def get_dashboard_metrics(
-    metric_type: Optional[str] = Query(None),
-    hours: int = Query(1, gt=0, le=72),
-    metrics_collector: Optional[MetricsCollector] = Depends(get_metrics_collector)
-):
-    """
-    Get metrics for the dashboard.
-    
-    Args:
-        metric_type: Type of metrics to retrieve (system, api, sync)
-        hours: Number of hours of data to retrieve
-        metrics_collector: Metrics collector instance from dependency
-        
-    Returns:
-        Dictionary of metrics
-    """
-    if metrics_collector is None:
-        # Return placeholder data for development
-        return {
-            "system": {
-                "cpu_percent": 25.4,
-                "memory_percent": 42.7,
-                "disk_percent": 12.3
+    # In a real implementation, this would pull data from the sync tracker
+    # For now, returning mock data for development
+    return {
+        "total_sync_pairs": 12,
+        "active_sync_pairs": 8,
+        "operations_today": 15,
+        "operations_total": 1243,
+        "success_rate": 97.5,
+        "recent_operations": [
+            {
+                "id": "full-a1b2c3d4",
+                "sync_pair_id": "pacs-cama-001",
+                "sync_type": "FULL",
+                "status": "COMPLETED",
+                "start_time": (datetime.utcnow() - timedelta(hours=2)).isoformat(),
+                "end_time": (datetime.utcnow() - timedelta(hours=1, minutes=30)).isoformat(),
+                "records_processed": 1250,
+                "records_succeeded": 1220,
+                "records_failed": 30
             },
-            "api": {
-                "request_count": 1245,
-                "avg_response_time_ms": 32.5,
-                "error_rate": 0.8
+            {
+                "id": "incremental-e5f6g7h8",
+                "sync_pair_id": "pacs-cama-002",
+                "sync_type": "INCREMENTAL",
+                "status": "RUNNING",
+                "start_time": (datetime.utcnow() - timedelta(minutes=15)).isoformat(),
+                "records_processed": 250,
+                "records_succeeded": 240,
+                "records_failed": 10
             },
-            "sync": {
-                "operations_count": 24,
-                "records_processed": 256789,
-                "success_rate": 98.5
+            {
+                "id": "full-i9j0k1l2",
+                "sync_pair_id": "gis-cama-001",
+                "sync_type": "FULL",
+                "status": "FAILED",
+                "start_time": (datetime.utcnow() - timedelta(hours=3)).isoformat(),
+                "end_time": (datetime.utcnow() - timedelta(hours=2, minutes=45)).isoformat(),
+                "records_processed": 500,
+                "records_succeeded": 480,
+                "records_failed": 20,
+                "error_message": "Connection to source system failed"
             }
-        }
-    
-    # Real implementation would use the metrics collector
-    end_time = datetime.utcnow()
-    start_time = end_time - timedelta(hours=hours)
-    
-    if metric_type == "system":
-        metrics = await metrics_collector.get_metrics(
-            metric_name_prefix="system.",
-            start_time=start_time,
-            end_time=end_time,
-            limit=1000
-        )
-        return get_metrics_as_dict(metrics)
-    
-    elif metric_type == "api":
-        metrics = await metrics_collector.get_metrics(
-            metric_name_prefix="api_request.",
-            start_time=start_time,
-            end_time=end_time,
-            limit=1000
-        )
-        return get_metrics_as_dict(metrics)
-    
-    elif metric_type == "sync":
-        metrics = await metrics_collector.get_metrics(
-            metric_name_prefix="sync_duration.",
-            start_time=start_time,
-            end_time=end_time,
-            limit=1000
-        )
-        return get_metrics_as_dict(metrics)
-    
-    else:
-        # Return all metrics types
-        return {
-            "system": get_metrics_as_dict(await metrics_collector.get_metrics(
-                metric_name_prefix="system.",
-                start_time=start_time,
-                end_time=end_time,
-                limit=500
-            )),
-            "api": get_metrics_as_dict(await metrics_collector.get_metrics(
-                metric_name_prefix="api_request.",
-                start_time=start_time,
-                end_time=end_time,
-                limit=500
-            )),
-            "sync": get_metrics_as_dict(await metrics_collector.get_metrics(
-                metric_name_prefix="sync_duration.",
-                start_time=start_time,
-                end_time=end_time,
-                limit=500
-            ))
-        }
+        ]
+    }
 
 
-@router.get("/system-health")
-async def get_dashboard_system_health(
-    system_monitor: Optional[SystemMonitor] = Depends(get_system_monitor)
-):
+@router.get("/sync-pairs")
+async def get_sync_pairs():
     """
-    Get system health information for the dashboard.
+    Get all sync pairs.
+    
+    Returns:
+        List of sync pairs
+    """
+    # In a real implementation, this would pull data from a database
+    # For now, returning mock data for development
+    return [
+        {
+            "id": "pacs-cama-001",
+            "name": "PACS to CAMA Sync - County A",
+            "source_system": "PACS",
+            "target_system": "CAMA",
+            "source_connection": "pacs-county-a",
+            "target_connection": "cama-county-a",
+            "status": "ACTIVE",
+            "last_sync": (datetime.utcnow() - timedelta(hours=1, minutes=30)).isoformat(),
+            "next_sync": (datetime.utcnow() + timedelta(hours=22, minutes=30)).isoformat()
+        },
+        {
+            "id": "pacs-cama-002",
+            "name": "PACS to CAMA Sync - County B",
+            "source_system": "PACS",
+            "target_system": "CAMA",
+            "source_connection": "pacs-county-b",
+            "target_connection": "cama-county-b",
+            "status": "ACTIVE",
+            "last_sync": (datetime.utcnow() - timedelta(minutes=15)).isoformat(),
+            "next_sync": (datetime.utcnow() + timedelta(hours=23, minutes=45)).isoformat()
+        },
+        {
+            "id": "gis-cama-001",
+            "name": "GIS to CAMA Sync - County A",
+            "source_system": "GIS",
+            "target_system": "CAMA",
+            "source_connection": "gis-county-a",
+            "target_connection": "cama-county-a",
+            "status": "INACTIVE",
+            "last_sync": (datetime.utcnow() - timedelta(hours=2, minutes=45)).isoformat(),
+            "next_sync": None
+        },
+        {
+            "id": "pacs-erp-001",
+            "name": "PACS to ERP Sync - County A",
+            "source_system": "PACS",
+            "target_system": "ERP",
+            "source_connection": "pacs-county-a",
+            "target_connection": "erp-county-a",
+            "status": "ACTIVE",
+            "last_sync": (datetime.utcnow() - timedelta(hours=5)).isoformat(),
+            "next_sync": (datetime.utcnow() + timedelta(hours=19)).isoformat()
+        }
+    ]
+
+
+@router.get("/system-trends")
+async def get_system_trends(days: int = Query(7, ge=1, le=30)):
+    """
+    Get system metrics trends.
     
     Args:
-        system_monitor: System monitor instance from dependency
+        days: Number of days to include in trends
         
     Returns:
-        Dictionary of system health metrics
+        Dictionary with trend data
     """
-    if system_monitor is None:
-        # Return placeholder data for development
-        return {
-            "timestamp": datetime.utcnow().isoformat(),
-            "cpu": {
-                "percent": 25.4,
-                "per_cpu": [22.1, 27.8, 24.5, 27.2]
-            },
-            "memory": {
-                "total": 16_000_000_000,
-                "available": 9_200_000_000,
-                "used": 6_800_000_000,
-                "percent": 42.5
-            },
-            "disk": {
-                "/": {
-                    "total": 100_000_000_000,
-                    "used": 12_300_000_000,
-                    "free": 87_700_000_000,
-                    "percent": 12.3
-                }
-            },
-            "process": {
-                "cpu_percent": 3.2,
-                "memory_rss": 512_000_000,
-                "memory_vms": 1_024_000_000,
-                "num_threads": 8
-            }
-        }
+    # In a real implementation, this would pull data from the metrics collector
+    # For now, returning mock data for development
     
-    # Real implementation would use the system monitor
-    return await system_monitor.get_system_health()
+    # Generate data points for the last 'days' days
+    timestamps = []
+    cpu_values = []
+    memory_values = []
+    sync_count_values = []
+    
+    for i in range(days):
+        day = datetime.utcnow() - timedelta(days=days-i-1)
+        timestamps.append(day.isoformat().split('T')[0])  # Just date part
+        
+        # Generate somewhat realistic values
+        cpu_values.append(20 + (i % 5) * 10)
+        memory_values.append(40 + (i % 3) * 15)
+        sync_count_values.append(5 + i % 10)
+    
+    return {
+        "timestamps": timestamps,
+        "metrics": {
+            "cpu_percent": cpu_values,
+            "memory_percent": memory_values,
+            "sync_count": sync_count_values
+        }
+    }
 
 
-@router.get("/sync-performance")
-async def get_dashboard_sync_performance(
-    sync_tracker: Optional[SyncTracker] = Depends(get_sync_tracker),
-    days: int = Query(7, gt=0, le=30)
-):
+@router.get("/recent-errors")
+async def get_recent_errors(limit: int = Query(10, ge=1, le=100)):
     """
-    Get sync performance metrics for the dashboard.
+    Get recent errors.
     
     Args:
-        sync_tracker: Sync tracker instance from dependency
-        days: Number of days of data to include
+        limit: Maximum number of errors to return
         
     Returns:
-        Dictionary of sync performance metrics
+        List of recent errors
     """
-    if sync_tracker is None:
-        # Return placeholder data for development
-        return {
-            "start_time": (datetime.utcnow() - timedelta(days=days)).isoformat(),
-            "end_time": datetime.utcnow().isoformat(),
-            "total_operations": 24,
-            "full_syncs": 8,
-            "incremental_syncs": 16,
-            "total_records_processed": 256_789,
-            "total_records_succeeded": 252_938,
-            "total_records_failed": 3_851,
-            "success_rate": 98.5,
-            "avg_duration_seconds": 502,
-            "entity_stats": {
-                "property": {
-                    "processed": 98_456,
-                    "succeeded": 97_123,
-                    "failed": 1_333
-                },
-                "owner": {
-                    "processed": 45_678,
-                    "succeeded": 44_982,
-                    "failed": 696
-                },
-                "assessment": {
-                    "processed": 112_655,
-                    "succeeded": 110_833,
-                    "failed": 1_822
-                }
-            }
+    # In a real implementation, this would pull data from logs or database
+    # For now, returning mock data for development
+    return [
+        {
+            "timestamp": (datetime.utcnow() - timedelta(hours=2, minutes=45)).isoformat(),
+            "operation_id": "full-i9j0k1l2",
+            "sync_pair_id": "gis-cama-001",
+            "error_message": "Connection to source system failed",
+            "details": "Error connecting to GIS server: Connection refused"
+        },
+        {
+            "timestamp": (datetime.utcnow() - timedelta(hours=6)).isoformat(),
+            "operation_id": "incremental-m3n4o5p6",
+            "sync_pair_id": "pacs-cama-001",
+            "error_message": "Failed to transform record",
+            "details": "Invalid format for property ID: PAC-12345-XX"
+        },
+        {
+            "timestamp": (datetime.utcnow() - timedelta(days=1, hours=8)).isoformat(),
+            "operation_id": "full-q7r8s9t0",
+            "sync_pair_id": "pacs-erp-001",
+            "error_message": "Validation failed for transformed record",
+            "details": "Missing required field: assessment_date"
         }
-    
-    # Real implementation would use the sync tracker
-    return await sync_tracker.calculate_sync_metrics(days=days)
+    ]
