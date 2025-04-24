@@ -51,7 +51,7 @@ task = "packager.installForAll"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python run_syncservice_workflow.py"
+args = "python apps/backend/syncservice/workflow_starter.py"
 waitForPort = 8000
 
 [[ports]]

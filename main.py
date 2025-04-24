@@ -33,8 +33,8 @@ def ensure_syncservice_running():
             # Get the directory containing this file
             current_dir = os.path.dirname(os.path.abspath(__file__))
             
-            # Path to the run_syncservice script
-            runner_script = os.path.join(current_dir, "run_syncservice.py")
+            # Path to the run_syncservice_direct script that explicitly uses port 8000
+            runner_script = os.path.join(current_dir, "run_syncservice_direct.py")
             
             if os.path.exists(runner_script):
                 # Start the SyncService in a separate process
