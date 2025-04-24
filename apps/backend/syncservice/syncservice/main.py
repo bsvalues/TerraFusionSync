@@ -35,7 +35,10 @@ logger = logging.getLogger("syncservice")
 
 # Get API key and port from environment
 API_KEY = os.environ.get("SYNC_SERVICE_API_KEY", "dev-api-key")
-PORT = int(os.environ.get("SYNC_SERVICE_PORT", "8000"))  # Default to port 8000
+# Always use port 8000 for SyncService to avoid conflicts with main app
+PORT = 8000
+# Override the environment variable to ensure consistency
+os.environ["SYNC_SERVICE_PORT"] = str(PORT)
 
 # Create API key header
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -395,5 +398,23 @@ app.include_router(sync.router)
 
 
 if __name__ == "__main__":
-    # Only use this for development; in production use uvicorn or gunicorn
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    # Force port 8000 for SyncService to avoid conflicts with main Flask app on port 5000
+    if 'SYNC_SERVICE_PORT' in os.environ:
+        try:
+            # Try to use the environment variable, but if it's 5000, override to 8000
+            port = int(os.environ['SYNC_SERVICE_PORT'])
+            if port == 5000:
+                logger.warning("Detected port 5000 which conflicts with main app. Forcing port 8000 instead.")
+                port = 8000
+        except (ValueError, TypeError):
+            logger.warning("Invalid port in environment variable. Using default port 8000.")
+            port = 8000
+    else:
+        # No environment variable, use the default
+        port = 8000
+    
+    # Log the port we're using
+    logger.info(f"Starting SyncService on port {port}")
+    
+    # Run uvicorn with the corrected port
+    uvicorn.run(app, host="0.0.0.0", port=port)

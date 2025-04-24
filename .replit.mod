@@ -51,7 +51,7 @@ task = "packager.installForAll"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python apps/backend/syncservice/workflow_starter.py"
+args = "cd apps/backend/syncservice && python -c \"import os; os.environ['SYNC_SERVICE_PORT'] = '8000'; from syncservice.main import app; import uvicorn; uvicorn.run(app, host='0.0.0.0', port=8000)\""
 waitForPort = 8000
 
 [[ports]]
