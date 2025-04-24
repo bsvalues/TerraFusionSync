@@ -2,6 +2,7 @@
 Main entry point for the SyncService API.
 
 This module creates a Flask application that serves as a wrapper for the SyncService FastAPI application.
+The main Flask app runs on port 5000, while the SyncService FastAPI app runs on port 8000.
 """
 
 import os
