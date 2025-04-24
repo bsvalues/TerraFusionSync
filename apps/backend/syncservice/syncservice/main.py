@@ -7,6 +7,8 @@ This is a minimal version to get the workflow running.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from syncservice.api import health, sync
+
 app = FastAPI(
     title="TerraFusion SyncService",
     description="Service for syncing data between legacy PACS and CAMA systems",
@@ -21,6 +23,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include API routers
+app.include_router(sync.router, prefix="/sync", tags=["sync"])
+app.include_router(health.router, prefix="/health", tags=["health"])
 
 @app.get("/", tags=["root"])
 async def root():
