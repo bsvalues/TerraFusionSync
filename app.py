@@ -55,7 +55,7 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # SyncService connection settings
-SYNCSERVICE_BASE_URL = "http://localhost:8080"
+SYNCSERVICE_BASE_URL = "http://0.0.0.0:8080"
 
 
 def ensure_syncservice_running() -> bool:

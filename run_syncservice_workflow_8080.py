@@ -4,6 +4,14 @@ Workflow runner for SyncService on port 8080.
 This script is used by the Replit workflow to start the SyncService on port 8080
 to avoid conflicts with the main application on port 5000.
 """
+import sys
+import json
+import logging
+import subprocess
+import socket
+import time
+import signal
+import os
 import os
 import sys
 import logging
