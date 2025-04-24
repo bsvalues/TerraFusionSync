@@ -51,8 +51,8 @@ task = "packager.installForAll"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd apps/backend/syncservice && python -c \"import os; os.environ['SYNC_SERVICE_PORT'] = '8000'; from syncservice.main import app; import uvicorn; uvicorn.run(app, host='0.0.0.0', port=8000)\""
-waitForPort = 8000
+args = "cd apps/backend/syncservice && python -m uvicorn syncservice.main:app --host 0.0.0.0 --port 8080"
+waitForPort = 8080
 
 [[ports]]
 localPort = 5000
@@ -61,3 +61,7 @@ externalPort = 80
 [[ports]]
 localPort = 8000
 externalPort = 8000
+
+[[ports]]
+localPort = 8080
+externalPort = 8080

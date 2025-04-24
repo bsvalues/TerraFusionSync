@@ -102,36 +102,80 @@ class SystemMonitor:
         Returns:
             Dictionary with system health metrics
         """
-        cpu_percent = psutil.cpu_percent(interval=1)
-        mem = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
-        
-        # Get process information
-        process = psutil.Process(os.getpid())
-        process_mem = process.memory_info()
-        
-        # Build metrics dictionary
-        metrics = {
-            "timestamp": datetime.utcnow().isoformat(),
-            "cpu_count": psutil.cpu_count(),
-            "cpu_percent": cpu_percent,
-            "memory_total": mem.total,
-            "memory_available": mem.available,
-            "memory_used": mem.used,
-            "memory_percent": mem.percent,
-            "disk_total": disk.total,
-            "disk_used": disk.used,
-            "disk_free": disk.free,
-            "disk_percent": disk.percent,
-            "process_memory_rss": process_mem.rss,
-            "process_memory_vms": process_mem.vms,
-            "process_cpu_percent": process.cpu_percent(interval=None),
-            "process_threads": len(process.threads()),
-            "process_connections": len(process.connections(kind='all')),
-            "boot_time": datetime.fromtimestamp(psutil.boot_time()).isoformat()
-        }
-        
-        return metrics
+        try:
+            # Initialize with basic timestamp
+            metrics = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "status": "OK"
+            }
+            
+            # CPU info
+            try:
+                cpu_percent = psutil.cpu_percent(interval=1)
+                metrics["cpu_count"] = psutil.cpu_count()
+                metrics["cpu_percent"] = cpu_percent
+            except Exception as e:
+                logger.warning(f"Error getting CPU metrics: {str(e)}")
+                metrics["cpu_percent"] = 0
+                metrics["cpu_error"] = str(e)
+            
+            # Memory info
+            try:
+                mem = psutil.virtual_memory()
+                metrics["memory_total"] = mem.total
+                metrics["memory_available"] = mem.available
+                metrics["memory_used"] = mem.used
+                metrics["memory_percent"] = mem.percent
+            except Exception as e:
+                logger.warning(f"Error getting memory metrics: {str(e)}")
+                metrics["memory_percent"] = 0
+                metrics["memory_error"] = str(e)
+            
+            # Disk info
+            try:
+                disk = psutil.disk_usage('/')
+                metrics["disk_total"] = disk.total
+                metrics["disk_used"] = disk.used
+                metrics["disk_free"] = disk.free
+                metrics["disk_percent"] = disk.percent
+            except Exception as e:
+                logger.warning(f"Error getting disk metrics: {str(e)}")
+                metrics["disk_percent"] = 0
+                metrics["disk_error"] = str(e)
+            
+            # Process info
+            try:
+                process = psutil.Process(os.getpid())
+                process_mem = process.memory_info()
+                metrics["process_memory_rss"] = process_mem.rss
+                metrics["process_memory_vms"] = process_mem.vms
+                metrics["process_cpu_percent"] = process.cpu_percent(interval=None)
+                metrics["process_threads"] = len(process.threads())
+                metrics["process_connections"] = len(process.connections(kind='all'))
+            except Exception as e:
+                logger.warning(f"Error getting process metrics: {str(e)}")
+                metrics["process_error"] = str(e)
+            
+            # System boot time
+            try:
+                metrics["boot_time"] = datetime.fromtimestamp(psutil.boot_time()).isoformat()
+            except Exception as e:
+                logger.warning(f"Error getting boot time: {str(e)}")
+                metrics["boot_time_error"] = str(e)
+            
+            return metrics
+            
+        except Exception as e:
+            logger.error(f"Unexpected error in get_system_health_sync: {str(e)}", exc_info=True)
+            # Return minimal system health info on error
+            return {
+                "timestamp": datetime.utcnow().isoformat(),
+                "error": str(e),
+                "status": "ERROR",
+                "cpu_percent": 0,
+                "memory_percent": 0,
+                "disk_percent": 0
+            }
         
     async def get_system_health(self) -> Dict[str, Any]:
         """
@@ -140,12 +184,24 @@ class SystemMonitor:
         Returns:
             Dictionary with system health metrics
         """
-        if self.last_metrics and time.time() - self._get_timestamp_seconds(self.last_metrics.get("timestamp")) < 10:
-            # Return cached metrics if they're recent (within 10 seconds)
-            return self.last_metrics
-            
-        # Get fresh metrics
-        return self.get_system_health_sync()
+        try:
+            if self.last_metrics and time.time() - self._get_timestamp_seconds(self.last_metrics.get("timestamp")) < 10:
+                # Return cached metrics if they're recent (within 10 seconds)
+                return self.last_metrics
+                
+            # Get fresh metrics
+            return self.get_system_health_sync()
+        except Exception as e:
+            logger.error(f"Error getting system health: {str(e)}", exc_info=True)
+            # Return minimal system health info on error
+            return {
+                "timestamp": datetime.utcnow().isoformat(),
+                "error": str(e),
+                "status": "ERROR",
+                "cpu_percent": 0,
+                "memory_percent": 0,
+                "disk_percent": 0
+            }
         
     def _get_timestamp_seconds(self, timestamp: Optional[str]) -> float:
         """
