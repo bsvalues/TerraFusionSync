@@ -1,0 +1,29 @@
+# Field mapping configuration for PACS to ERP sync
+#
+# This file defines how fields are mapped from source system (PACS)
+# to target system (ERP) during data synchronization.
+
+# Property fields mapping to ERP property
+property:
+  PropertyID: source_id
+  ParcelNumber: asset_id
+  Address: location.address
+  City: location.city
+  State: location.state
+  ZipCode: location.postal_code
+  LegalDescription: description
+  Acreage: size.acres
+  YearBuilt: attributes.year_built
+  LastModified: metadata.last_modified
+  IsActive: status.active
+
+# Value fields mapping to ERP financial
+value:
+  ValueID: source_id
+  PropertyID: property_id
+  TaxYear: fiscal_year
+  AssessedValue: valuation.assessed
+  MarketValue: valuation.market
+  LandValue: valuation.land
+  ImprovementValue: valuation.improvements
+  LastModified: metadata.last_modified

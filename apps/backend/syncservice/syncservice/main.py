@@ -6,8 +6,9 @@ This is a minimal version to get the workflow running.
 
 import os
 import sys
-from fastapi import FastAPI
+from fastapi import FastAPI, Query, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from typing import Dict, List, Optional
 
 from syncservice.api import health, sync
 
@@ -15,28 +16,14 @@ from syncservice.api import health, sync
 def get_available_port():
     import socket
     
-    # First try port 8000 (preferred)
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.bind(('0.0.0.0', 8000))
-        s.close()
-        return 8000
-    except socket.error:
-        # If port 8000 is not available
-        try:
-            # Check if port 5000 is available
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.bind(('0.0.0.0', 5000))
-            s.close()
-            return 5000
-        except socket.error:
-            # If neither port is available, use 8000 anyway
-            return 8000
+    # Always use port 8000 for syncservice
+    # This avoids conflict with the main application on port 5000
+    return 8000
 
 # Create FastAPI application
 app = FastAPI(
     title="TerraFusion SyncService",
-    description="Service for syncing data between legacy PACS and CAMA systems",
+    description="Service for syncing data between various source and target systems",
     version="0.1.0",
 )
 
@@ -106,3 +93,76 @@ async def detailed_health_status():
             "cpu_usage": "2%"
         }
     }
+
+@app.get("/systems/source", tags=["systems"])
+async def list_source_systems():
+    """List all available source systems."""
+    try:
+        # Import here to avoid circular imports
+        from syncservice.adapters import get_available_source_systems
+        from syncservice.config.system_config import get_sync_config
+        
+        config = get_sync_config()
+        return {
+            "systems": get_available_source_systems(),
+            "enabled_systems": [
+                system.system_name for system in config.source_systems.values() 
+                if system.is_enabled
+            ]
+        }
+    except Exception as e:
+        return {
+            "error": f"Failed to list source systems: {str(e)}",
+            "systems": [],
+            "enabled_systems": []
+        }
+
+@app.get("/systems/target", tags=["systems"])
+async def list_target_systems():
+    """List all available target systems."""
+    try:
+        # Import here to avoid circular imports
+        from syncservice.adapters import get_available_target_systems
+        from syncservice.config.system_config import get_sync_config
+        
+        config = get_sync_config()
+        return {
+            "systems": get_available_target_systems(),
+            "enabled_systems": [
+                system.system_name for system in config.target_systems.values() 
+                if system.is_enabled
+            ]
+        }
+    except Exception as e:
+        return {
+            "error": f"Failed to list target systems: {str(e)}",
+            "systems": [],
+            "enabled_systems": []
+        }
+
+@app.get("/systems/pairs", tags=["systems"])
+async def list_sync_pairs():
+    """List all configured sync pairs."""
+    try:
+        # Import here to avoid circular imports
+        from syncservice.config.system_config import get_sync_config
+        
+        config = get_sync_config()
+        return {
+            "pairs": [
+                {
+                    "id": pair_id,
+                    "source": pair.source_system,
+                    "target": pair.target_system,
+                    "description": pair.description,
+                    "enabled": pair.is_enabled,
+                    "entity_mappings": pair.entity_mappings
+                }
+                for pair_id, pair in config.sync_pairs.items()
+            ]
+        }
+    except Exception as e:
+        return {
+            "error": f"Failed to list sync pairs: {str(e)}",
+            "pairs": []
+        }

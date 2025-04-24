@@ -1,0 +1,38 @@
+# Field mapping configuration for GIS to CAMA sync
+#
+# This file defines how fields are mapped from source system (GIS)
+# to target system (CAMA) during data synchronization.
+
+# Parcel fields mapping to CAMA property
+parcel:
+  parcel_id: source_id
+  apn: parcel_number
+  address: address
+  city: city
+  state: state
+  zip: zip_code
+  legal_desc: legal_description
+  acres: acreage
+  year_built: year_built
+  modified_date: source_last_modified
+  active_flag: is_active
+  latitude: geo_coordinates.latitude
+  longitude: geo_coordinates.longitude
+
+# Zoning fields mapping to CAMA property additional data
+zoning:
+  zone_id: source_id
+  zone_code: additional_data.zone_code
+  zone_name: additional_data.zone_name
+  zone_type: additional_data.zone_type
+  overlay_code: additional_data.overlay_code
+  modified_date: source_last_modified
+  
+# District fields mapping to CAMA property additional data
+district:
+  district_id: source_id
+  district_code: additional_data.district_code
+  district_name: additional_data.district_name
+  district_type: additional_data.district_type
+  tax_authority: additional_data.tax_authority
+  modified_date: source_last_modified

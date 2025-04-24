@@ -16,32 +16,11 @@ app_directory = os.path.dirname(os.path.abspath(__file__))
 if app_directory not in sys.path:
     sys.path.insert(0, app_directory)
 
-# Function to check if port 5000 is in use and select 8000 as an alternative
+# Function to get the port for SyncService
 def get_available_port():
-    # First try port 8000 (preferred)
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.bind(('0.0.0.0', 8000))
-        s.close()
-        return 8000
-    except socket.error:
-        # If port 8000 is not available
-        try:
-            # Check if port 5000 is available
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.bind(('0.0.0.0', 5000))
-            s.close()
-            return 5000
-        except socket.error:
-            # If neither port is available, try port 8080
-            try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.bind(('0.0.0.0', 8080))
-                s.close()
-                return 8080
-            except socket.error:
-                # If all ports are taken, default to 8000 and let uvicorn handle the error
-                return 8000
+    # Always use port 8000 for SyncService
+    # This avoids conflict with the main application on port 5000
+    return 8000
 
 if __name__ == "__main__":
     port = get_available_port()
