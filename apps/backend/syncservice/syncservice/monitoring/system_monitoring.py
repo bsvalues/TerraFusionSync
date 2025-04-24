@@ -78,11 +78,11 @@ class SystemMonitor:
                     # Store the latest metrics
                     self.last_metrics = metrics
                     
-                    # Log some metrics at INFO level
+                    # Log some metrics at INFO level (safely accessing the dictionary)
                     logger.info(
-                        f"System health: CPU {metrics['cpu_percent']}%, "
-                        f"Memory {metrics['memory_percent']}%, "
-                        f"Disk {metrics['disk_percent']}%"
+                        f"System health: CPU {metrics.get('cpu_percent', 0)}%, "
+                        f"Memory {metrics.get('memory_percent', 0)}%, "
+                        f"Disk {metrics.get('disk_percent', 0)}%"
                     )
                     
                 except Exception as e:
