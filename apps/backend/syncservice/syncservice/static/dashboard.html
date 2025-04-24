@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SyncService Dashboard - TerraFusion</title>
+    <link rel="stylesheet" href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .nav-link.active {
+            font-weight: bold;
+            background-color: rgba(255,255,255,0.1);
+        }
+        
+        .status-badge {
+            font-size: 0.85rem;
+            padding: 0.25rem 0.5rem;
+        }
+        
+        .card-dashboard {
+            transition: all 0.2s ease;
+        }
+        
+        .card-dashboard:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        }
+        
+        .stat-card {
+            border-left: 4px solid var(--bs-primary);
+        }
+        
+        .stat-card.success {
+            border-left-color: var(--bs-success);
+        }
+        
+        .stat-card.warning {
+            border-left-color: var(--bs-warning);
+        }
+        
+        .stat-card.danger {
+            border-left-color: var(--bs-danger);
+        }
+        
+        .stat-card.info {
+            border-left-color: var(--bs-info);
+        }
+        
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 9999;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .loading-overlay .spinner-border {
+            width: 3rem;
+            height: 3rem;
+        }
+        
+        body.loading .loading-overlay {
+            display: flex;
+        }
+        
+        .loading-overlay {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div class="loading-overlay">
+        <div class="spinner-border text-light" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-arrow-repeat"></i> TerraFusion SyncService
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/dashboard.html">
+                            <i class="bi bi-speedometer2"></i> Dashboard
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/compatibility.html">
+                            <i class="bi bi-diagram-3"></i> Compatibility Matrix
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/api.html">
+                            <i class="bi bi-code-slash"></i> API Documentation
+                        </a>
+                    </li>
+                </ul>
+                <div class="ms-auto d-flex align-items-center">
+                    <span class="badge bg-success me-2" id="service-status">
+                        <i class="bi bi-check-circle-fill"></i> Service Active
+                    </span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container-fluid py-4">
+        <div class="row mb-4">
+            <div class="col-12">
+                <h1 class="mb-4">Synchronization Dashboard</h1>
+                
+                <div class="alert alert-info alert-dismissible fade show d-flex align-items-center" role="alert" id="info-alert">
+                    <i class="bi bi-info-circle-fill me-2 fs-5"></i>
+                    <div>
+                        Dashboard data refreshes automatically every 30 seconds. Last updated: <span id="last-updated">Never</span>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                
+                <div class="alert alert-danger d-none" id="errorAlert" role="alert">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    <span id="errorMessage"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="row mb-4">
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="card stat-card success h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="text-muted mb-1">Successful Syncs</h6>
+                                <h2 id="successful-syncs">0</h2>
+                            </div>
+                            <div class="bg-success bg-opacity-10 p-3 rounded">
+                                <i class="bi bi-check-circle text-success fs-1"></i>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <span class="text-success">
+                                <i class="bi bi-arrow-up"></i> <span id="success-rate">0%</span>
+                            </span>
+                            <span class="text-muted ms-2">Success Rate</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="card stat-card warning h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="text-muted mb-1">Active Operations</h6>
+                                <h2 id="active-operations">0</h2>
+                            </div>
+                            <div class="bg-warning bg-opacity-10 p-3 rounded">
+                                <i class="bi bi-activity text-warning fs-1"></i>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <span class="text-warning">
+                                <i class="bi bi-clock"></i> <span id="avg-duration">0</span>
+                            </span>
+                            <span class="text-muted ms-2">Avg Duration</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="card stat-card danger h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="text-muted mb-1">Failed Operations</h6>
+                                <h2 id="failed-operations">0</h2>
+                            </div>
+                            <div class="bg-danger bg-opacity-10 p-3 rounded">
+                                <i class="bi bi-exclamation-triangle text-danger fs-1"></i>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <span class="text-danger">
+                                <i class="bi bi-arrow-down"></i> <span id="failure-rate">0%</span>
+                            </span>
+                            <span class="text-muted ms-2">Failure Rate</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="card stat-card info h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="text-muted mb-1">Total Records</h6>
+                                <h2 id="total-records">0</h2>
+                            </div>
+                            <div class="bg-info bg-opacity-10 p-3 rounded">
+                                <i class="bi bi-database text-info fs-1"></i>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <span class="text-info">
+                                <i class="bi bi-lightning"></i> <span id="records-per-minute">0</span>
+                            </span>
+                            <span class="text-muted ms-2">Records/min</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mb-4">
+            <!-- System Health -->
+            <div class="col-lg-4 mb-4">
+                <div class="card h-100">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">System Health</h5>
+                        <button class="btn btn-sm btn-outline-secondary" id="refresh-health">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label d-flex justify-content-between">
+                                <span>CPU Usage</span>
+                                <span id="cpu-percent">0%</span>
+                            </label>
+                            <div class="progress">
+                                <div class="progress-bar bg-primary" id="cpu-progress" role="progressbar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label d-flex justify-content-between">
+                                <span>Memory Usage</span>
+                                <span id="memory-percent">0%</span>
+                            </label>
+                            <div class="progress">
+                                <div class="progress-bar bg-success" id="memory-progress" role="progressbar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label d-flex justify-content-between">
+                                <span>Disk Usage</span>
+                                <span id="disk-percent">0%</span>
+                            </label>
+                            <div class="progress">
+                                <div class="progress-bar bg-warning" id="disk-progress" role="progressbar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="d-flex justify-content-between align-items-center mt-4">
+                            <div>
+                                <p class="mb-0"><strong>Uptime:</strong> <span id="service-uptime">Unknown</span></p>
+                                <p class="mb-0"><small class="text-muted" id="system-last-updated"></small></p>
+                            </div>
+                            <span class="badge bg-success" id="system-status">Healthy</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Recent Syncs -->
+            <div class="col-lg-8 mb-4">
+                <div class="card h-100">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Recent Sync Operations</h5>
+                        <div>
+                            <select class="form-select form-select-sm" id="sync-filter">
+                                <option value="all">All Operations</option>
+                                <option value="completed">Completed</option>
+                                <option value="running">Running</option>
+                                <option value="failed">Failed</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Type</th>
+                                        <th>Sync Pair</th>
+                                        <th>Status</th>
+                                        <th>Duration</th>
+                                        <th>Records</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="recent-syncs">
+                                    <tr>
+                                        <td colspan="6" class="text-center">No sync operations found</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="card-footer text-center">
+                        <a href="#" class="btn btn-sm btn-outline-primary" id="view-all-syncs">
+                            View All Operations
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row mb-4">
+            <!-- Sync Performance Chart -->
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0">Sync Performance</h5>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="performance-chart" height="250"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Entity Distribution Chart -->
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0">Entity Distribution</h5>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="entity-chart" height="250"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row">
+            <!-- Recent Errors -->
+            <div class="col-12 mb-4">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Recent Errors</h5>
+                        <span class="badge bg-danger" id="error-count">0</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="list-group list-group-flush" id="error-list">
+                            <div class="list-group-item text-center text-muted py-4">
+                                No errors found.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-dark text-light mt-4 py-3">
+        <div class="container-fluid">
+            <div class="row">
+                <div class="col-md-6">
+                    <p class="mb-0">&copy; 2025 TerraFusion SyncService</p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <p class="mb-0">Version 1.0.0</p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="js/dashboard.js"></script>
+</body>
+</html>

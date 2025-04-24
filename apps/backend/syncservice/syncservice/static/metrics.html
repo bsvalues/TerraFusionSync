@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Metrics & Analytics - TerraFusion SyncService</title>
+    <link rel="stylesheet" href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .nav-link.active {
+            font-weight: bold;
+            background-color: rgba(255,255,255,0.1);
+        }
+        
+        .metric-card {
+            transition: all 0.2s ease;
+        }
+        
+        .metric-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        }
+        
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 9999;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .loading-overlay .spinner-border {
+            width: 3rem;
+            height: 3rem;
+        }
+        
+        body.loading .loading-overlay {
+            display: flex;
+        }
+        
+        .loading-overlay {
+            display: none;
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+        
+        .time-range-btn.active {
+            background-color: var(--bs-primary);
+            border-color: var(--bs-primary);
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div class="loading-overlay">
+        <div class="spinner-border text-light" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-arrow-repeat"></i> TerraFusion SyncService
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/dashboard.html">
+                            <i class="bi bi-speedometer2"></i> Dashboard
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/sync.html">
+                            <i class="bi bi-arrow-repeat"></i> Sync Operations
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/compatibility.html">
+                            <i class="bi bi-diagram-3"></i> Compatibility Matrix
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/metrics.html">
+                            <i class="bi bi-graph-up"></i> Metrics & Analytics
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/api.html">
+                            <i class="bi bi-code-slash"></i> API Documentation
+                        </a>
+                    </li>
+                </ul>
+                <div class="ms-auto d-flex align-items-center">
+                    <span class="badge bg-success me-2" id="service-status">
+                        <i class="bi bi-check-circle-fill"></i> Service Active
+                    </span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container-fluid py-4">
+        <div class="row mb-4">
+            <div class="col-12">
+                <h1 class="mb-4">Metrics & Analytics</h1>
+                
+                <div class="alert alert-info alert-dismissible fade show d-flex align-items-center" role="alert" id="info-alert">
+                    <i class="bi bi-info-circle-fill me-2 fs-5"></i>
+                    <div>
+                        Metrics are collected automatically. Last updated: <span id="last-updated">Never</span>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                
+                <div class="alert alert-danger d-none" id="errorAlert" role="alert">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    <span id="errorMessage"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Time Range Controls -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6 mb-3 mb-md-0">
+                                <div class="btn-group" role="group" aria-label="Time range">
+                                    <button type="button" class="btn btn-outline-secondary time-range-btn active" data-hours="1">Last Hour</button>
+                                    <button type="button" class="btn btn-outline-secondary time-range-btn" data-hours="6">6 Hours</button>
+                                    <button type="button" class="btn btn-outline-secondary time-range-btn" data-hours="24">24 Hours</button>
+                                    <button type="button" class="btn btn-outline-secondary time-range-btn" data-hours="168">7 Days</button>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="d-flex justify-content-md-end">
+                                    <select class="form-select w-auto me-2" id="sync-pair-filter">
+                                        <option value="all">All Sync Pairs</option>
+                                    </select>
+                                    <button class="btn btn-outline-secondary" id="refresh-metrics">
+                                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Performance Metrics -->
+        <div class="row mb-4">
+            <div class="col-lg-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0">Sync Operations Over Time</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="operations-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0">Records Processed</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="records-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mb-4">
+            <div class="col-lg-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0">Success/Failure Distribution</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="success-failure-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0">Average Sync Duration</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="duration-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Performance -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h2 class="mb-3">System Performance</h2>
+            </div>
+            <div class="col-lg-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0">Resource Utilization</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="resource-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0">Operation Throughput</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="throughput-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Raw Metrics Data -->
+        <div class="row">
+            <div class="col-12 mb-4">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Raw Metrics</h5>
+                        <div>
+                            <button class="btn btn-sm btn-outline-secondary" id="export-metrics">
+                                <i class="bi bi-download"></i> Export
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Timestamp</th>
+                                        <th>Metric Name</th>
+                                        <th>Value</th>
+                                        <th>Tags</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="metrics-table">
+                                    <tr>
+                                        <td colspan="4" class="text-center py-4">
+                                            <div class="spinner-border spinner-border-sm text-secondary" role="status">
+                                                <span class="visually-hidden">Loading...</span>
+                                            </div>
+                                            <span class="ms-2">Loading metrics...</span>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <span id="metric-count">0</span> metrics
+                            </div>
+                            <nav>
+                                <ul class="pagination pagination-sm mb-0">
+                                    <li class="page-item disabled">
+                                        <a class="page-link" href="#">Previous</a>
+                                    </li>
+                                    <li class="page-item active">
+                                        <a class="page-link" href="#">1</a>
+                                    </li>
+                                    <li class="page-item disabled">
+                                        <a class="page-link" href="#">Next</a>
+                                    </li>
+                                </ul>
+                            </nav>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-dark text-light mt-4 py-3">
+        <div class="container-fluid">
+            <div class="row">
+                <div class="col-md-6">
+                    <p class="mb-0">&copy; 2025 TerraFusion SyncService</p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <p class="mb-0">Version 1.0.0</p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="js/metrics.js"></script>
+</body>
+</html>
