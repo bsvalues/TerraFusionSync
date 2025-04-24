@@ -547,14 +547,35 @@ class SyncTracker:
         start_time = end_time - timedelta(days=days)
         
         # Get completed operations in the time range
-        operations = await self.get_operations(
-            sync_pair_id=sync_pair_id,
-            status=[SyncStatus.COMPLETED, SyncStatus.FAILED],
-            start_time_from=start_time,
-            start_time_to=end_time,
-            limit=1000,  # Large limit to include all operations
-            offset=0
-        )
+        try:
+            operations = await self.get_operations(
+                sync_pair_id=sync_pair_id,
+                status=[SyncStatus.COMPLETED, SyncStatus.FAILED],
+                start_time_from=start_time,
+                start_time_to=end_time,
+                limit=1000,  # Large limit to include all operations
+                offset=0
+            )
+        except Exception as e:
+            logger.error(f"Error getting operations for metrics calculation: {str(e)}", exc_info=True)
+            # Return empty metrics on error
+            return {
+                "total_operations": 0,
+                "successful_operations": 0,
+                "success_rate": 0,
+                "full_syncs": 0,
+                "incremental_syncs": 0,
+                "avg_duration_seconds": 0,
+                "total_records_processed": 0,
+                "total_records_succeeded": 0, 
+                "total_records_failed": 0,
+                "entity_stats": {},
+                "time_range": {
+                    "start": start_time.isoformat(),
+                    "end": end_time.isoformat(),
+                    "days": days
+                }
+            }
         
         # Calculate metrics
         total_operations = len(operations)

@@ -1,0 +1,77 @@
+## Summary  
+This bootstrap template provides a reusable, two-phase prompt and workflow for initializing a Replit AI Agent to scaffold and configure a new project in minutes, covering directory structure, dependencies, environment variables, testing, and deployment citeturn0search0. By leveraging Replit Agent’s natural-language interface, you can spin up full-stack apps, integrate complex APIs, and establish CI/CD pipelines with minimal manual setup citeturn1search7. Drawing on real-world examples—from mobile AI-agent prototyping to CRM MVPs—this kit ensures consistency, modularity, and rapid iteration across all your Replit projects citeturn0search4.
+
+---
+
+## 1. Goals of the Bootstrap  
+- **Accelerate Project Onboarding:** Automate the creation of folders (e.g., `apps/`, `libs/`, `docs/`), basic files (`README.md`, `.env.template`), and dependency manifests (`requirements.txt` or `pyproject.toml`) citeturn0search0.  
+- **Establish Best Practices:** Embed test scaffolding (e.g., `pytest` setup), linting configs, and CI templates (GitHub Actions or Replit Workflows) from day one citeturn1search5.  
+- **Standardize Environments:** Generate a Pydantic or dotenv loader for environment variables (`DATABASE_URL`, `API_KEYS`, etc.) and sample `.env.template` citeturn0search9.  
+- **Scaffold Core Services:** Include stubbed API routers/services (e.g., “health check,” “sync,” “auth”) to jump-start development citeturn1search2.  
+- **Enable Iterative Refinement:** Structure prompts so you can review, refine, and iterate in discrete steps, minimizing disruption to existing code citeturn0search6.
+
+---
+
+## 2. Prompt Structure  
+1. **Phase 1 – Planning Prompt:** Ask Replit Agent to outline a detailed migration or bootstrap plan, including directory layout, file names, and config changes citeturn1search8.  
+2. **Review & Adjust:** Examine the proposed plan in the Replit diff view, request clarifications (e.g., “ensure no circular imports”), and lock it in citeturn0search6.  
+3. **Phase 2 – Execution Prompt:** Instruct the Agent to apply the plan: move or create files, update import paths, merge env-vars, install dependencies, and run tests citeturn1search4.  
+4. **Validation & Iteration:** If any tests fail or issues arise, prompt the Agent to fix only the failures, then confirm green builds before proceeding citeturn1search2.
+
+---
+
+## 3. Bootstrap Prompt Template  
+
+```text
+Replit AI Agent, please perform the following tasks in this Repl workspace:
+
+1. **Initialize Project Structure**  
+   - Create directories: `apps/backend`, `apps/frontend`, `libs/shared`, `tests`, `docs`.
+   - Add stub files: `apps/backend/main.py`, `apps/frontend/index.js`, `README.md`, `.env.template`.
+
+2. **Configure Dependencies**  
+   - Generate `requirements.txt` (or `pyproject.toml`) including Flask, FastAPI, SQLAlchemy, Pydantic, pytest.
+   - Install packages and verify no version conflicts.
+
+3. **Scaffold Config & Env**  
+   - Create `config.py` using Pydantic `BaseSettings` to load `DATABASE_URL`, `API_KEY`.
+   - Populate `.env.template` with placeholders for each required variable.
+
+4. **Stub Core Services**  
+   - In `apps/backend/main.py`, add a health-check endpoint.
+   - In `libs/shared/utils.py`, add a logging setup function.
+
+5. **Setup Testing**  
+   - Create `tests/test_health.py` using `pytest` to verify the health-check endpoint.
+   - Add `pytest.ini` with test discovery settings.
+
+6. **Configure CI/CD**  
+   - Add `.github/workflows/ci.yml` that installs dependencies and runs `pytest`.
+   - Update `.replit` to include “Start” and “Test” commands.
+
+7. **Run & Validate**  
+   - Install dependencies.
+   - Run the test suite.
+   - Report back with any failures or confirmations of success.
+```
+
+*This template is inspired by best practices from Replit’s official Agent docs citeturn0search0, analytics insights on no-code AI agents citeturn1search5, and real-world prompt patterns for CRM MVPs citeturn0search9.*
+
+---
+
+## 4. Best Practices  
+- **Keep Prompts Focused:** One clear objective per prompt to avoid “prompt drift” and unintended changes citeturn0search6.  
+- **Use Diff Reviews:** Always inspect the Replit diff UI after execution to confirm only intended changes were made citeturn1search3.  
+- **Pin Dependency Versions:** Prevent breaking changes by specifying exact versions in your manifest citeturn1search7.  
+- **Iterate Incrementally:** Break large migrations into smaller tasks—ask the Agent to move one module at a time citeturn1search2.  
+- **Leverage Documentation Blocks:** Have the Agent update `docs/architecture.md` as it makes scaffold changes citeturn1search8.
+
+---
+
+## 5. Next Steps  
+1. **Automate via CI:** Script the two-phase prompt in a GitHub Actions job that uses Replit’s API to drive the Agent for future scaffolds citeturn1search1.  
+2. **Expand Language Support:** Adapt the bootstrap template for TypeScript, Node.js, or other stacks by swapping dependency manifests and starter files citeturn1search6.  
+3. **Share & Iterate:** Publish this bootstrap kit as a community Repl so colleagues can clone and apply it to their projects citeturn1search1.  
+4. **Collect Feedback:** After initial use, refine the prompts based on what worked and what needed manual tweaks citeturn1search5.  
+
+With this bootstrap in hand, you’ll empower your team to spin up robust, well-structured Replit apps with AI assistance—transforming ideas into deployable software in record time.

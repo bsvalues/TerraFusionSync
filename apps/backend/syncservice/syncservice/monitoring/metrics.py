@@ -148,61 +148,71 @@ class MetricsCollector:
         Returns:
             List of metrics
         """
-        # Default end time to now if not specified
-        if end_time is None:
-            end_time = datetime.utcnow()
+        try:
+            # Default end time to now if not specified
+            if end_time is None:
+                end_time = datetime.utcnow()
+                
+            # Default start time to 1 hour ago if not specified
+            if start_time is None:
+                start_time = end_time - timedelta(hours=1)
             
-        # Default start time to 1 hour ago if not specified
-        if start_time is None:
-            start_time = end_time - timedelta(hours=1)
-        
-        # If database is available, query from there
-        if self.async_session and DB_AVAILABLE:
-            try:
-                async with self.async_session() as session:
-                    query = "SELECT name, value, tags, timestamp FROM metrics WHERE timestamp BETWEEN :start_time AND :end_time"
-                    params = {"start_time": start_time, "end_time": end_time}
-                    
-                    if metric_name_prefix:
-                        query += " AND name LIKE :name_prefix"
-                        params["name_prefix"] = f"{metric_name_prefix}%"
+            # If database is available, query from there
+            if self.async_session and DB_AVAILABLE:
+                try:
+                    async with self.async_session() as session:
+                        query = "SELECT name, value, tags, timestamp FROM metrics WHERE timestamp BETWEEN :start_time AND :end_time"
+                        params = {"start_time": start_time, "end_time": end_time}
                         
-                    query += " ORDER BY timestamp DESC LIMIT :limit"
-                    params["limit"] = limit
-                    
-                    result = await session.execute(sa.text(query), params)
-                    
-                    metrics = []
-                    for row in result:
-                        metrics.append({
-                            "name": row.name,
-                            "value": row.value,
-                            "tags": json.loads(row.tags) if isinstance(row.tags, str) else (row.tags or {}),
-                            "timestamp": row.timestamp.isoformat() if hasattr(row.timestamp, 'isoformat') else row.timestamp
-                        })
-                    
-                    return metrics
-            except Exception as e:
-                logger.error(f"Failed to query metrics from database: {str(e)}", exc_info=True)
-        
-        # Fall back to in-memory metrics
-        filtered_metrics = []
-        for metric in self.in_memory_metrics:
-            # Parse timestamp for comparison
-            metric_time = datetime.fromisoformat(metric["timestamp"]) if isinstance(metric["timestamp"], str) else metric["timestamp"]
+                        if metric_name_prefix:
+                            query += " AND name LIKE :name_prefix"
+                            params["name_prefix"] = f"{metric_name_prefix}%"
+                            
+                        query += " ORDER BY timestamp DESC LIMIT :limit"
+                        params["limit"] = limit
+                        
+                        result = await session.execute(sa.text(query), params)
+                        
+                        metrics = []
+                        for row in result:
+                            metrics.append({
+                                "name": row.name,
+                                "value": row.value,
+                                "tags": json.loads(row.tags) if isinstance(row.tags, str) else (row.tags or {}),
+                                "timestamp": row.timestamp.isoformat() if hasattr(row.timestamp, 'isoformat') else row.timestamp
+                            })
+                        
+                        return metrics
+                except Exception as e:
+                    logger.error(f"Failed to query metrics from database: {str(e)}", exc_info=True)
             
-            # Apply time range filter
-            if metric_time < start_time or metric_time > end_time:
-                continue
-                
-            # Apply name prefix filter
-            if metric_name_prefix and not metric["name"].startswith(metric_name_prefix):
-                continue
-                
-            filtered_metrics.append(metric)
+            # Fall back to in-memory metrics
+            filtered_metrics = []
+            for metric in self.in_memory_metrics:
+                # Parse timestamp for comparison
+                try:
+                    metric_time = datetime.fromisoformat(metric["timestamp"]) if isinstance(metric["timestamp"], str) else metric["timestamp"]
+                    
+                    # Apply time range filter
+                    if metric_time < start_time or metric_time > end_time:
+                        continue
+                        
+                    # Apply name prefix filter
+                    if metric_name_prefix and not metric["name"].startswith(metric_name_prefix):
+                        continue
+                        
+                    filtered_metrics.append(metric)
+                    
+                    # Respect limit
+                    if len(filtered_metrics) >= limit:
+                        break
+                except Exception as e:
+                    logger.warning(f"Error processing metric: {str(e)}")
+                    continue
+                    
+            return filtered_metrics
             
-            # Respect limit
-            if len(filtered_metrics) >= limit:
-                break
-                
-        return filtered_metrics
+        except Exception as e:
+            logger.error(f"Unexpected error in get_metrics: {str(e)}", exc_info=True)
+            # Return empty list on error
+            return []
