@@ -1,440 +1,495 @@
 """
-Metrics collection and management for SyncService.
+Metrics collector for the SyncService.
 
-This module provides utilities for collecting, storing, and retrieving metrics data
-about the SyncService operations and performance.
+This module is responsible for collecting, storing, and retrieving metrics related to
+the SyncService operations and performance.
 """
 
-import os
-import json
 import logging
-import threading
-from typing import Dict, List, Any, Optional, Union, Callable
+import time
+from datetime import datetime, timedelta
+from typing import Dict, List, Any, Optional, Union, Tuple
 
 logger = logging.getLogger(__name__)
 
-# Thread lock for metrics operations
-_metrics_lock = threading.RLock()
 
-# Metrics storage
-_counters = {}  # name -> {description, value, labels}
-_gauges = {}    # name -> {description, value, labels}
-_histograms = {}  # name -> {description, buckets, values, counts, sums, labels}
-
-# Directory for metrics persistence
-METRICS_DIR = os.environ.get('METRICS_DIR', os.path.join('data', 'metrics'))
-
-# Ensure metrics directory exists
-os.makedirs(METRICS_DIR, exist_ok=True)
-
-
-# Counter operations
-def create_counter(name: str, description: str, initial_value: int = 0,
-                  labels: Optional[Dict[str, str]] = None) -> None:
+class MetricsCollector:
     """
-    Create a new counter with the given name and description.
+    Component responsible for collecting, storing, and retrieving metrics.
     
-    Args:
-        name: Counter name
-        description: Counter description
-        initial_value: Initial counter value
-        labels: Optional labels for the counter
+    This component collects various metrics related to system performance and
+    synchronization operations.
     """
-    with _metrics_lock:
-        if name in _counters:
-            logger.warning(f"Counter {name} already exists, not creating again")
-            return
-        
-        label_str = "default"
-        if labels:
-            label_str = ",".join([f"{k}={v}" for k, v in labels.items()])
-        
-        if name not in _counters:
-            _counters[name] = {
-                "description": description,
-                "values": {},
-                "labels": {}
-            }
-        
-        _counters[name]["values"][label_str] = initial_value
-        if labels:
-            _counters[name]["labels"][label_str] = labels
-
-
-def increment_counter(name: str, value: int = 1, labels: Optional[Dict[str, str]] = None) -> None:
-    """
-    Increment a counter by the given value.
     
-    Args:
-        name: Counter name
-        value: Value to increment by
-        labels: Optional labels for the counter
-    """
-    with _metrics_lock:
-        if name not in _counters:
-            logger.warning(f"Counter {name} does not exist, creating with default description")
-            create_counter(name, f"Counter for {name}", 0, labels)
+    def __init__(self, db_session=None):
+        """
+        Initialize the Metrics Collector.
         
-        label_str = "default"
-        if labels:
-            label_str = ",".join([f"{k}={v}" for k, v in labels.items()])
-        
-        if label_str not in _counters[name]["values"]:
-            _counters[name]["values"][label_str] = 0
-            if labels:
-                _counters[name]["labels"][label_str] = labels
-        
-        _counters[name]["values"][label_str] += value
-
-
-def get_counter_value(name: str, labels: Optional[Dict[str, str]] = None) -> Optional[int]:
-    """
-    Get the current value of a counter.
+        Args:
+            db_session: Database session for storing metrics
+        """
+        self.db_session = db_session
+        self.memory_metrics = {}  # For in-memory storage when db is not available
     
-    Args:
-        name: Counter name
-        labels: Optional labels to identify the counter
+    async def record_sync_duration(
+        self,
+        sync_type: str,
+        entity_type: str,
+        duration_ms: float,
+        record_count: int,
+        operation_id: str
+    ):
+        """
+        Record the duration of a synchronization operation.
         
-    Returns:
-        Current counter value or None if counter doesn't exist
-    """
-    with _metrics_lock:
-        if name not in _counters:
-            return None
+        Args:
+            sync_type: Type of sync operation (full, incremental)
+            entity_type: Type of entity being synchronized
+            duration_ms: Duration in milliseconds
+            record_count: Number of records processed
+            operation_id: ID of the sync operation
+        """
+        metric_name = f"sync_duration.{sync_type}.{entity_type}"
+        timestamp = datetime.utcnow()
         
-        label_str = "default"
-        if labels:
-            label_str = ",".join([f"{k}={v}" for k, v in labels.items()])
-        
-        if label_str not in _counters[name]["values"]:
-            return None
-        
-        return _counters[name]["values"][label_str]
-
-
-# Gauge operations
-def create_gauge(name: str, description: str, initial_value: float = 0.0,
-                labels: Optional[Dict[str, str]] = None) -> None:
-    """
-    Create a new gauge with the given name and description.
-    
-    Args:
-        name: Gauge name
-        description: Gauge description
-        initial_value: Initial gauge value
-        labels: Optional labels for the gauge
-    """
-    with _metrics_lock:
-        if name in _gauges:
-            logger.warning(f"Gauge {name} already exists, not creating again")
-            return
-        
-        label_str = "default"
-        if labels:
-            label_str = ",".join([f"{k}={v}" for k, v in labels.items()])
-        
-        if name not in _gauges:
-            _gauges[name] = {
-                "description": description,
-                "values": {},
-                "labels": {}
-            }
-        
-        _gauges[name]["values"][label_str] = initial_value
-        if labels:
-            _gauges[name]["labels"][label_str] = labels
-
-
-def update_gauge(name: str, value: float, labels: Optional[Dict[str, str]] = None) -> None:
-    """
-    Update a gauge to the given value.
-    
-    Args:
-        name: Gauge name
-        value: New gauge value
-        labels: Optional labels for the gauge
-    """
-    with _metrics_lock:
-        if name not in _gauges:
-            logger.warning(f"Gauge {name} does not exist, creating with default description")
-            create_gauge(name, f"Gauge for {name}", value, labels)
-            return
-        
-        label_str = "default"
-        if labels:
-            label_str = ",".join([f"{k}={v}" for k, v in labels.items()])
-        
-        if label_str not in _gauges[name]["values"]:
-            _gauges[name]["values"][label_str] = 0.0
-            if labels:
-                _gauges[name]["labels"][label_str] = labels
-        
-        _gauges[name]["values"][label_str] = value
-
-
-def get_gauge_value(name: str, labels: Optional[Dict[str, str]] = None) -> Optional[float]:
-    """
-    Get the current value of a gauge.
-    
-    Args:
-        name: Gauge name
-        labels: Optional labels to identify the gauge
-        
-    Returns:
-        Current gauge value or None if gauge doesn't exist
-    """
-    with _metrics_lock:
-        if name not in _gauges:
-            return None
-        
-        label_str = "default"
-        if labels:
-            label_str = ",".join([f"{k}={v}" for k, v in labels.items()])
-        
-        if label_str not in _gauges[name]["values"]:
-            return None
-        
-        return _gauges[name]["values"][label_str]
-
-
-# Histogram operations
-def create_histogram(name: str, description: str, buckets: List[float],
-                    labels: Optional[Dict[str, str]] = None) -> None:
-    """
-    Create a new histogram with the given name, description, and buckets.
-    
-    Args:
-        name: Histogram name
-        description: Histogram description
-        buckets: List of bucket boundaries
-        labels: Optional labels for the histogram
-    """
-    with _metrics_lock:
-        if name in _histograms:
-            logger.warning(f"Histogram {name} already exists, not creating again")
-            return
-        
-        label_str = "default"
-        if labels:
-            label_str = ",".join([f"{k}={v}" for k, v in labels.items()])
-        
-        if name not in _histograms:
-            _histograms[name] = {
-                "description": description,
-                "buckets": buckets,
-                "values": {},  # label_str -> values array
-                "counts": {},  # label_str -> count
-                "sums": {},    # label_str -> sum
-                "labels": {}   # label_str -> labels dict
-            }
-        
-        _histograms[name]["values"][label_str] = [0] * (len(buckets) + 1)  # +1 for +Inf bucket
-        _histograms[name]["counts"][label_str] = 0
-        _histograms[name]["sums"][label_str] = 0.0
-        if labels:
-            _histograms[name]["labels"][label_str] = labels
-
-
-def observe_histogram(name: str, value: float, labels: Optional[Dict[str, str]] = None) -> None:
-    """
-    Record an observation in a histogram.
-    
-    Args:
-        name: Histogram name
-        value: Observed value
-        labels: Optional labels for the histogram
-    """
-    with _metrics_lock:
-        if name not in _histograms:
-            logger.warning(f"Histogram {name} does not exist")
-            return
-        
-        label_str = "default"
-        if labels:
-            label_str = ",".join([f"{k}={v}" for k, v in labels.items()])
-        
-        if label_str not in _histograms[name]["values"]:
-            # Create new label dimension if this label hasn't been seen before
-            _histograms[name]["values"][label_str] = [0] * (len(_histograms[name]["buckets"]) + 1)
-            _histograms[name]["counts"][label_str] = 0
-            _histograms[name]["sums"][label_str] = 0.0
-            if labels:
-                _histograms[name]["labels"][label_str] = labels
-        
-        # Increment bucket counts
-        bucket_idx = len(_histograms[name]["buckets"])  # Default to +Inf bucket
-        for i, boundary in enumerate(_histograms[name]["buckets"]):
-            if value <= boundary:
-                bucket_idx = i
-                break
-        
-        _histograms[name]["values"][label_str][bucket_idx] += 1
-        _histograms[name]["counts"][label_str] += 1
-        _histograms[name]["sums"][label_str] += value
-
-
-def get_histogram_buckets(name: str) -> Optional[List[float]]:
-    """
-    Get the bucket boundaries for a histogram.
-    
-    Args:
-        name: Histogram name
-        
-    Returns:
-        List of bucket boundaries or None if histogram doesn't exist
-    """
-    with _metrics_lock:
-        if name not in _histograms:
-            return None
-        
-        return _histograms[name]["buckets"]
-
-
-def get_histogram_values(name: str, labels: Optional[Dict[str, str]] = None) -> Optional[List[int]]:
-    """
-    Get the current bucket values for a histogram.
-    
-    Args:
-        name: Histogram name
-        labels: Optional labels to identify the histogram
-        
-    Returns:
-        List of bucket values or None if histogram doesn't exist
-    """
-    with _metrics_lock:
-        if name not in _histograms:
-            return None
-        
-        label_str = "default"
-        if labels:
-            label_str = ",".join([f"{k}={v}" for k, v in labels.items()])
-        
-        if label_str not in _histograms[name]["values"]:
-            return None
-        
-        return _histograms[name]["values"][label_str]
-
-
-def get_histogram_sum(name: str, labels: Optional[Dict[str, str]] = None) -> Optional[float]:
-    """
-    Get the current sum for a histogram.
-    
-    Args:
-        name: Histogram name
-        labels: Optional labels to identify the histogram
-        
-    Returns:
-        Current sum or None if histogram doesn't exist
-    """
-    with _metrics_lock:
-        if name not in _histograms:
-            return None
-        
-        label_str = "default"
-        if labels:
-            label_str = ",".join([f"{k}={v}" for k, v in labels.items()])
-        
-        if label_str not in _histograms[name]["sums"]:
-            return None
-        
-        return _histograms[name]["sums"][label_str]
-
-
-def get_histogram_count(name: str, labels: Optional[Dict[str, str]] = None) -> Optional[int]:
-    """
-    Get the current count for a histogram.
-    
-    Args:
-        name: Histogram name
-        labels: Optional labels to identify the histogram
-        
-    Returns:
-        Current count or None if histogram doesn't exist
-    """
-    with _metrics_lock:
-        if name not in _histograms:
-            return None
-        
-        label_str = "default"
-        if labels:
-            label_str = ",".join([f"{k}={v}" for k, v in labels.items()])
-        
-        if label_str not in _histograms[name]["counts"]:
-            return None
-        
-        return _histograms[name]["counts"][label_str]
-
-
-# Get all metrics as dictionary
-def get_metrics_as_dict() -> Dict[str, Any]:
-    """
-    Get all metrics as a dictionary.
-    
-    Returns:
-        Dictionary of all metrics
-    """
-    with _metrics_lock:
-        return {
-            **{name: {"type": "counter", "description": info["description"], "values": info["values"]}
-               for name, info in _counters.items()},
-            **{name: {"type": "gauge", "description": info["description"], "values": info["values"]}
-               for name, info in _gauges.items()},
-            **{name: {"type": "histogram", "description": info["description"],
-                    "buckets": info["buckets"], "values": info["values"],
-                    "counts": info["counts"], "sums": info["sums"]}
-               for name, info in _histograms.items()}
+        metric_data = {
+            "value": duration_ms,
+            "unit": "ms",
+            "count": record_count,
+            "operation_id": operation_id,
+            "timestamp": timestamp
         }
-
-
-# Save metrics to disk (persistence)
-def save_metrics_to_disk() -> None:
-    """
-    Save all metrics to disk for persistence.
-    """
-    try:
-        with _metrics_lock:
-            metrics_data = {
-                "counters": _counters,
-                "gauges": _gauges,
-                "histograms": _histograms
+        
+        logger.debug(f"Recording sync duration: {metric_name} = {duration_ms}ms "
+                     f"for {record_count} records")
+        
+        try:
+            if self.db_session:
+                # Store in database
+                from ..models.database import SystemMetric
+                
+                metric = SystemMetric(
+                    metric_name=metric_name,
+                    metric_value=duration_ms,
+                    metric_unit="ms",
+                    collection_time=timestamp
+                )
+                
+                self.db_session.add(metric)
+                await self.db_session.commit()
+            else:
+                # Store in memory
+                if metric_name not in self.memory_metrics:
+                    self.memory_metrics[metric_name] = []
+                
+                self.memory_metrics[metric_name].append(metric_data)
+                
+                # Limit the size of in-memory storage
+                if len(self.memory_metrics[metric_name]) > 1000:
+                    self.memory_metrics[metric_name] = self.memory_metrics[metric_name][-1000:]
+        
+        except Exception as e:
+            logger.error(f"Error recording sync duration metric: {str(e)}")
+    
+    async def record_api_request(
+        self,
+        endpoint: str,
+        method: str,
+        status_code: int,
+        duration_ms: float
+    ):
+        """
+        Record metrics for an API request.
+        
+        Args:
+            endpoint: API endpoint path
+            method: HTTP method
+            status_code: HTTP status code
+            duration_ms: Request duration in milliseconds
+        """
+        metric_name = f"api_request.{method}.{endpoint}.{status_code}"
+        timestamp = datetime.utcnow()
+        
+        metric_data = {
+            "value": duration_ms,
+            "unit": "ms",
+            "endpoint": endpoint,
+            "method": method,
+            "status_code": status_code,
+            "timestamp": timestamp
+        }
+        
+        logger.debug(f"Recording API request: {metric_name} = {duration_ms}ms")
+        
+        try:
+            if self.db_session:
+                # Store in database
+                from ..models.database import SystemMetric
+                
+                metric = SystemMetric(
+                    metric_name=metric_name,
+                    metric_value=duration_ms,
+                    metric_unit="ms",
+                    collection_time=timestamp
+                )
+                
+                self.db_session.add(metric)
+                await self.db_session.commit()
+            else:
+                # Store in memory
+                if metric_name not in self.memory_metrics:
+                    self.memory_metrics[metric_name] = []
+                
+                self.memory_metrics[metric_name].append(metric_data)
+                
+                # Limit the size of in-memory storage
+                if len(self.memory_metrics[metric_name]) > 1000:
+                    self.memory_metrics[metric_name] = self.memory_metrics[metric_name][-1000:]
+        
+        except Exception as e:
+            logger.error(f"Error recording API request metric: {str(e)}")
+    
+    async def record_system_metric(
+        self,
+        name: str,
+        value: float,
+        unit: str = ""
+    ):
+        """
+        Record a system metric.
+        
+        Args:
+            name: Name of the metric
+            value: Metric value
+            unit: Unit of measurement
+        """
+        metric_name = f"system.{name}"
+        timestamp = datetime.utcnow()
+        
+        metric_data = {
+            "value": value,
+            "unit": unit,
+            "timestamp": timestamp
+        }
+        
+        logger.debug(f"Recording system metric: {metric_name} = {value}{unit}")
+        
+        try:
+            if self.db_session:
+                # Store in database
+                from ..models.database import SystemMetric
+                
+                metric = SystemMetric(
+                    metric_name=metric_name,
+                    metric_value=value,
+                    metric_unit=unit,
+                    collection_time=timestamp
+                )
+                
+                self.db_session.add(metric)
+                await self.db_session.commit()
+            else:
+                # Store in memory
+                if metric_name not in self.memory_metrics:
+                    self.memory_metrics[metric_name] = []
+                
+                self.memory_metrics[metric_name].append(metric_data)
+                
+                # Limit the size of in-memory storage
+                if len(self.memory_metrics[metric_name]) > 1000:
+                    self.memory_metrics[metric_name] = self.memory_metrics[metric_name][-1000:]
+        
+        except Exception as e:
+            logger.error(f"Error recording system metric: {str(e)}")
+    
+    async def get_metrics(
+        self,
+        metric_name_prefix: str,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """
+        Get metrics matching a prefix within a time range.
+        
+        Args:
+            metric_name_prefix: Prefix to match metric names
+            start_time: Start of time range
+            end_time: End of time range
+            limit: Maximum number of metrics to return
+            
+        Returns:
+            List of metrics
+        """
+        if end_time is None:
+            end_time = datetime.utcnow()
+        
+        if start_time is None:
+            start_time = end_time - timedelta(hours=1)
+        
+        logger.debug(f"Getting metrics with prefix {metric_name_prefix} from {start_time} to {end_time}")
+        
+        try:
+            if self.db_session:
+                # Query from database
+                from ..models.database import SystemMetric
+                from sqlalchemy import select
+                
+                query = (
+                    select(SystemMetric)
+                    .where(SystemMetric.metric_name.startswith(metric_name_prefix))
+                    .where(SystemMetric.collection_time >= start_time)
+                    .where(SystemMetric.collection_time <= end_time)
+                    .order_by(SystemMetric.collection_time.desc())
+                    .limit(limit)
+                )
+                
+                result = await self.db_session.execute(query)
+                metrics = result.scalars().all()
+                
+                return [
+                    {
+                        "name": metric.metric_name,
+                        "value": metric.metric_value,
+                        "unit": metric.metric_unit,
+                        "timestamp": metric.collection_time.isoformat()
+                    }
+                    for metric in metrics
+                ]
+            else:
+                # Get from memory
+                result = []
+                
+                for name, metrics in self.memory_metrics.items():
+                    if name.startswith(metric_name_prefix):
+                        for metric in metrics:
+                            timestamp = metric["timestamp"]
+                            if start_time <= timestamp <= end_time:
+                                result.append({
+                                    "name": name,
+                                    "value": metric["value"],
+                                    "unit": metric.get("unit", ""),
+                                    "timestamp": timestamp.isoformat()
+                                })
+                
+                # Sort by timestamp, newest first
+                result.sort(key=lambda x: x["timestamp"], reverse=True)
+                
+                # Limit the results
+                return result[:limit]
+        
+        except Exception as e:
+            logger.error(f"Error getting metrics: {str(e)}")
+            return []
+    
+    async def get_sync_performance_metrics(
+        self,
+        sync_type: Optional[str] = None,
+        entity_type: Optional[str] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """
+        Get performance metrics for synchronization operations.
+        
+        Args:
+            sync_type: Optional filter by sync type
+            entity_type: Optional filter by entity type
+            start_time: Start of time range
+            end_time: End of time range
+            
+        Returns:
+            Dictionary of performance metrics
+        """
+        # Determine the metric name prefix
+        prefix = "sync_duration"
+        if sync_type:
+            prefix = f"{prefix}.{sync_type}"
+            if entity_type:
+                prefix = f"{prefix}.{entity_type}"
+        
+        # Get raw metrics
+        raw_metrics = await self.get_metrics(
+            metric_name_prefix=prefix,
+            start_time=start_time,
+            end_time=end_time,
+            limit=1000
+        )
+        
+        # Process metrics into summary statistics
+        if not raw_metrics:
+            return {
+                "count": 0,
+                "total_duration_ms": 0,
+                "avg_duration_ms": 0,
+                "min_duration_ms": 0,
+                "max_duration_ms": 0,
+                "total_records": 0,
+                "avg_records_per_second": 0
             }
+        
+        count = len(raw_metrics)
+        total_duration_ms = sum(m["value"] for m in raw_metrics)
+        avg_duration_ms = total_duration_ms / count
+        min_duration_ms = min(m["value"] for m in raw_metrics)
+        max_duration_ms = max(m["value"] for m in raw_metrics)
+        
+        # Calculate records processed if available
+        total_records = 0
+        for m in raw_metrics:
+            if "count" in m:
+                total_records += m["count"]
+        
+        # Calculate average records per second
+        avg_records_per_second = 0
+        if total_duration_ms > 0:
+            avg_records_per_second = (total_records * 1000) / total_duration_ms
+        
+        return {
+            "count": count,
+            "total_duration_ms": total_duration_ms,
+            "avg_duration_ms": avg_duration_ms,
+            "min_duration_ms": min_duration_ms,
+            "max_duration_ms": max_duration_ms,
+            "total_records": total_records,
+            "avg_records_per_second": avg_records_per_second
+        }
+    
+    async def calculate_api_response_times(
+        self,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Calculate API response time statistics.
+        
+        Args:
+            start_time: Start of time range
+            end_time: End of time range
             
-            metrics_file = os.path.join(METRICS_DIR, "metrics.json")
-            with open(metrics_file, 'w') as f:
-                json.dump(metrics_data, f, indent=2)
+        Returns:
+            Dictionary mapping endpoints to response time statistics
+        """
+        # Get raw metrics
+        raw_metrics = await self.get_metrics(
+            metric_name_prefix="api_request",
+            start_time=start_time,
+            end_time=end_time,
+            limit=10000
+        )
+        
+        # Group by endpoint
+        endpoint_metrics = {}
+        for metric in raw_metrics:
+            parts = metric["name"].split('.')
+            if len(parts) >= 4:
+                method = parts[1]
+                endpoint = parts[2]
+                status = parts[3]
+                
+                key = f"{method} {endpoint}"
+                
+                if key not in endpoint_metrics:
+                    endpoint_metrics[key] = {
+                        "count": 0,
+                        "total_ms": 0,
+                        "success_count": 0,
+                        "error_count": 0,
+                        "values": []
+                    }
+                
+                endpoint_metrics[key]["count"] += 1
+                endpoint_metrics[key]["total_ms"] += metric["value"]
+                endpoint_metrics[key]["values"].append(metric["value"])
+                
+                if status.startswith('2'):
+                    endpoint_metrics[key]["success_count"] += 1
+                else:
+                    endpoint_metrics[key]["error_count"] += 1
+        
+        # Calculate statistics for each endpoint
+        result = {}
+        for endpoint, data in endpoint_metrics.items():
+            values = data["values"]
+            count = data["count"]
             
-            logger.debug(f"Metrics saved to {metrics_file}")
-    except Exception as e:
-        logger.error(f"Error saving metrics to disk: {str(e)}")
+            if count == 0:
+                continue
+            
+            avg_ms = data["total_ms"] / count
+            min_ms = min(values) if values else 0
+            max_ms = max(values) if values else 0
+            
+            # Calculate 95th percentile
+            if values:
+                values.sort()
+                idx = int(count * 0.95)
+                p95_ms = values[idx] if idx < count else values[-1]
+            else:
+                p95_ms = 0
+            
+            error_rate = (data["error_count"] / count) * 100 if count > 0 else 0
+            
+            result[endpoint] = {
+                "count": count,
+                "avg_ms": avg_ms,
+                "min_ms": min_ms,
+                "max_ms": max_ms,
+                "p95_ms": p95_ms,
+                "error_rate": error_rate
+            }
+        
+        return result
 
 
-# Load metrics from disk (persistence)
-def load_metrics_from_disk() -> bool:
-    """
-    Load metrics from disk.
+# Create a performance timing context manager
+class TimingContext:
+    """Context manager for measuring execution time of a block of code."""
     
-    Returns:
-        True if metrics were loaded successfully, False otherwise
-    """
-    global _counters, _gauges, _histograms
+    def __init__(self, metrics_collector, metric_type, **kwargs):
+        """
+        Initialize the timing context.
+        
+        Args:
+            metrics_collector: Metrics collector to record timing
+            metric_type: Type of metric to record
+            **kwargs: Additional parameters for the metric
+        """
+        self.metrics_collector = metrics_collector
+        self.metric_type = metric_type
+        self.kwargs = kwargs
+        self.start_time = None
     
-    try:
-        metrics_file = os.path.join(METRICS_DIR, "metrics.json")
+    async def __aenter__(self):
+        """Start timing when entering the context."""
+        self.start_time = time.time()
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Record timing when exiting the context."""
+        if self.start_time is None:
+            return
         
-        if not os.path.exists(metrics_file):
-            logger.info(f"Metrics file {metrics_file} does not exist, starting with empty metrics")
-            return False
+        duration_ms = (time.time() - self.start_time) * 1000
         
-        with open(metrics_file, 'r') as f:
-            metrics_data = json.load(f)
-        
-        with _metrics_lock:
-            _counters = metrics_data.get("counters", {})
-            _gauges = metrics_data.get("gauges", {})
-            _histograms = metrics_data.get("histograms", {})
-        
-        logger.info(f"Metrics loaded from {metrics_file}")
-        return True
-    except Exception as e:
-        logger.error(f"Error loading metrics from disk: {str(e)}")
-        return False
+        if self.metric_type == "sync":
+            await self.metrics_collector.record_sync_duration(
+                sync_type=self.kwargs.get("sync_type", "unknown"),
+                entity_type=self.kwargs.get("entity_type", "unknown"),
+                duration_ms=duration_ms,
+                record_count=self.kwargs.get("record_count", 0),
+                operation_id=self.kwargs.get("operation_id", "unknown")
+            )
+        elif self.metric_type == "api":
+            await self.metrics_collector.record_api_request(
+                endpoint=self.kwargs.get("endpoint", "unknown"),
+                method=self.kwargs.get("method", "unknown"),
+                status_code=self.kwargs.get("status_code", 0),
+                duration_ms=duration_ms
+            )
+        elif self.metric_type == "system":
+            await self.metrics_collector.record_system_metric(
+                name=self.kwargs.get("name", "unknown"),
+                value=duration_ms,
+                unit="ms"
+            )

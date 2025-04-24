@@ -1,205 +1,355 @@
 """
-System resource monitoring for SyncService.
+System monitoring module for the SyncService.
 
-This module provides utilities for monitoring system resources like CPU, memory,
-and disk usage, as well as collecting and reporting application metrics.
+This module is responsible for monitoring system resources and performance,
+including CPU, memory, and disk usage.
 """
 
-import os
-import time
-import threading
 import logging
-from typing import Dict, Any, Optional
-
+import time
+import asyncio
+import os
 import psutil
+from datetime import datetime
+from typing import Dict, List, Any, Optional, Union, Callable
 
-from syncservice.monitoring.metrics import (
-    update_gauge,
-    create_gauge,
-    get_gauge_value,
-)
+from .metrics import MetricsCollector
 
 logger = logging.getLogger(__name__)
 
-# Monitoring thread and control
-_monitoring_thread = None
-_monitoring_active = False
-_monitoring_interval = 60  # in seconds
 
-# Default monitoring interval in seconds
-DEFAULT_MONITORING_INTERVAL = 60
-
-
-def get_system_metrics() -> Dict[str, Any]:
+class SystemMonitor:
     """
-    Get current system resource metrics.
+    Component responsible for monitoring system resources and performance.
     
-    Returns:
-        Dictionary of system metrics
+    This component collects metrics related to system resources such as CPU usage,
+    memory usage, and disk I/O.
     """
-    metrics = {}
     
-    try:
-        # CPU metrics
-        cpu_percent = psutil.cpu_percent(interval=None)
-        cpu_times_percent = psutil.cpu_times_percent(interval=None)
+    def __init__(self, metrics_collector: MetricsCollector, interval_seconds: int = 60):
+        """
+        Initialize the System Monitor.
         
-        metrics.update({
-            'cpu_percent': cpu_percent,
-            'cpu_user_percent': cpu_times_percent.user,
-            'cpu_system_percent': cpu_times_percent.system,
-            'cpu_idle_percent': cpu_times_percent.idle
-        })
-        
-        # Memory metrics
-        memory = psutil.virtual_memory()
-        
-        metrics.update({
-            'memory_total_bytes': memory.total,
-            'memory_available_bytes': memory.available,
-            'memory_used_bytes': memory.used,
-            'memory_percent': memory.percent
-        })
-        
-        # Disk metrics
-        disk = psutil.disk_usage('/')
-        
-        metrics.update({
-            'disk_total_bytes': disk.total,
-            'disk_used_bytes': disk.used,
-            'disk_free_bytes': disk.free,
-            'disk_percent': disk.percent
-        })
-        
-        # Process metrics
-        process = psutil.Process(os.getpid())
-        process_memory = process.memory_info()
-        
-        metrics.update({
-            'process_cpu_percent': process.cpu_percent(interval=None),
-            'process_memory_rss_bytes': process_memory.rss,  # Resident Set Size
-            'process_memory_vms_bytes': process_memory.vms,  # Virtual Memory Size
-            'process_threads': len(process.threads()),
-            'process_open_files': len(process.open_files()),
-            'process_connections': len(process.connections())
-        })
-        
-        # Network metrics
-        net_io = psutil.net_io_counters()
-        
-        metrics.update({
-            'network_bytes_sent': net_io.bytes_sent,
-            'network_bytes_recv': net_io.bytes_recv,
-            'network_packets_sent': net_io.packets_sent,
-            'network_packets_recv': net_io.packets_recv
-        })
-        
-    except Exception as e:
-        logger.error(f"Error collecting system metrics: {str(e)}")
+        Args:
+            metrics_collector: Metrics collector for storing system metrics
+            interval_seconds: Interval in seconds between monitoring checks
+        """
+        self.metrics_collector = metrics_collector
+        self.interval_seconds = interval_seconds
+        self.is_running = False
+        self.monitor_task = None
     
-    return metrics
-
-
-def update_system_metrics() -> None:
-    """
-    Update system metrics in the metrics registry.
-    """
-    try:
-        metrics = get_system_metrics()
+    async def start(self):
+        """Start the system monitoring process."""
+        if self.is_running:
+            logger.warning("System monitor is already running")
+            return
         
-        for metric_name, value in metrics.items():
-            metric_exists = get_gauge_value(metric_name) is not None
+        logger.info(f"Starting system monitor with {self.interval_seconds}s interval")
+        self.is_running = True
+        self.monitor_task = asyncio.create_task(self._monitoring_loop())
+    
+    async def stop(self):
+        """Stop the system monitoring process."""
+        if not self.is_running:
+            logger.warning("System monitor is not running")
+            return
+        
+        logger.info("Stopping system monitor")
+        self.is_running = False
+        
+        if self.monitor_task:
+            try:
+                self.monitor_task.cancel()
+                await self.monitor_task
+            except asyncio.CancelledError:
+                pass
             
-            if not metric_exists:
-                create_gauge(
-                    name=metric_name,
-                    description=f"System metric: {metric_name}",
-                    initial_value=value
-                )
-            else:
-                update_gauge(
-                    name=metric_name,
-                    value=value
-                )
-    except Exception as e:
-        logger.error(f"Error updating system metrics: {str(e)}")
-
-
-def monitoring_thread_func(interval: int) -> None:
-    """
-    Thread function for system monitoring.
+            self.monitor_task = None
     
-    Args:
-        interval: Monitoring interval in seconds
-    """
-    global _monitoring_active
-    
-    logger.info(f"Starting system monitoring with interval {interval} seconds")
-    
-    while _monitoring_active:
+    async def _monitoring_loop(self):
+        """Main monitoring loop that collects metrics at regular intervals."""
         try:
-            # Update system metrics
-            update_system_metrics()
-            
-            # Sleep for the specified interval
-            time.sleep(interval)
+            while self.is_running:
+                await self._collect_system_metrics()
+                await asyncio.sleep(self.interval_seconds)
+        except asyncio.CancelledError:
+            logger.info("System monitoring loop cancelled")
+            raise
         except Exception as e:
-            logger.error(f"Error in monitoring thread: {str(e)}")
-            # Sleep for a shorter interval if an error occurs
-            time.sleep(5)
+            logger.error(f"Error in system monitoring loop: {str(e)}")
+            self.is_running = False
     
-    logger.info("System monitoring stopped")
-
-
-def start_monitoring(interval: int = DEFAULT_MONITORING_INTERVAL) -> None:
-    """
-    Start system monitoring.
+    async def _collect_system_metrics(self):
+        """Collect and record system metrics."""
+        try:
+            # CPU usage metrics
+            cpu_percent = psutil.cpu_percent(interval=1)
+            await self.metrics_collector.record_system_metric(
+                name="cpu.percent", value=cpu_percent, unit="%")
+            
+            per_cpu = psutil.cpu_percent(interval=1, percpu=True)
+            for i, percent in enumerate(per_cpu):
+                await self.metrics_collector.record_system_metric(
+                    name=f"cpu.{i}.percent", value=percent, unit="%")
+            
+            # Memory usage metrics
+            memory = psutil.virtual_memory()
+            await self.metrics_collector.record_system_metric(
+                name="memory.total", value=memory.total, unit="bytes")
+            await self.metrics_collector.record_system_metric(
+                name="memory.available", value=memory.available, unit="bytes")
+            await self.metrics_collector.record_system_metric(
+                name="memory.used", value=memory.used, unit="bytes")
+            await self.metrics_collector.record_system_metric(
+                name="memory.percent", value=memory.percent, unit="%")
+            
+            # Swap memory metrics
+            swap = psutil.swap_memory()
+            await self.metrics_collector.record_system_metric(
+                name="swap.total", value=swap.total, unit="bytes")
+            await self.metrics_collector.record_system_metric(
+                name="swap.used", value=swap.used, unit="bytes")
+            await self.metrics_collector.record_system_metric(
+                name="swap.percent", value=swap.percent, unit="%")
+            
+            # Disk usage metrics
+            for disk in psutil.disk_partitions():
+                if not disk.mountpoint or not os.access(disk.mountpoint, os.R_OK):
+                    continue
+                
+                usage = psutil.disk_usage(disk.mountpoint)
+                name_prefix = f"disk.{disk.device.replace('/', '_')}"
+                
+                await self.metrics_collector.record_system_metric(
+                    name=f"{name_prefix}.total", value=usage.total, unit="bytes")
+                await self.metrics_collector.record_system_metric(
+                    name=f"{name_prefix}.used", value=usage.used, unit="bytes")
+                await self.metrics_collector.record_system_metric(
+                    name=f"{name_prefix}.percent", value=usage.percent, unit="%")
+            
+            # Disk I/O metrics
+            disk_io = psutil.disk_io_counters()
+            if disk_io:
+                await self.metrics_collector.record_system_metric(
+                    name="disk.read_bytes", value=disk_io.read_bytes, unit="bytes")
+                await self.metrics_collector.record_system_metric(
+                    name="disk.write_bytes", value=disk_io.write_bytes, unit="bytes")
+                await self.metrics_collector.record_system_metric(
+                    name="disk.read_count", value=disk_io.read_count, unit="operations")
+                await self.metrics_collector.record_system_metric(
+                    name="disk.write_count", value=disk_io.write_count, unit="operations")
+            
+            # Network I/O metrics
+            net_io = psutil.net_io_counters()
+            await self.metrics_collector.record_system_metric(
+                name="network.bytes_sent", value=net_io.bytes_sent, unit="bytes")
+            await self.metrics_collector.record_system_metric(
+                name="network.bytes_recv", value=net_io.bytes_recv, unit="bytes")
+            await self.metrics_collector.record_system_metric(
+                name="network.packets_sent", value=net_io.packets_sent, unit="packets")
+            await self.metrics_collector.record_system_metric(
+                name="network.packets_recv", value=net_io.packets_recv, unit="packets")
+            
+            # Process metrics for the current process
+            process = psutil.Process()
+            
+            # CPU usage for this process
+            process_cpu = process.cpu_percent(interval=1)
+            await self.metrics_collector.record_system_metric(
+                name="process.cpu.percent", value=process_cpu, unit="%")
+            
+            # Memory usage for this process
+            process_memory = process.memory_info()
+            await self.metrics_collector.record_system_metric(
+                name="process.memory.rss", value=process_memory.rss, unit="bytes")
+            await self.metrics_collector.record_system_metric(
+                name="process.memory.vms", value=process_memory.vms, unit="bytes")
+            
+            # Open files count
+            try:
+                open_files = len(process.open_files())
+                await self.metrics_collector.record_system_metric(
+                    name="process.open_files", value=open_files, unit="files")
+            except Exception:
+                pass
+            
+            # Thread count
+            num_threads = process.num_threads()
+            await self.metrics_collector.record_system_metric(
+                name="process.num_threads", value=num_threads, unit="threads")
+            
+            logger.debug("Collected system metrics successfully")
+            
+        except Exception as e:
+            logger.error(f"Error collecting system metrics: {str(e)}")
     
-    Args:
-        interval: Monitoring interval in seconds
-    """
-    global _monitoring_thread, _monitoring_active, _monitoring_interval
+    async def get_system_health(self) -> Dict[str, Any]:
+        """
+        Get the current system health status.
+        
+        Returns:
+            Dictionary containing system health metrics
+        """
+        try:
+            # CPU usage
+            cpu_percent = psutil.cpu_percent(interval=0.5)
+            
+            # Memory usage
+            memory = psutil.virtual_memory()
+            
+            # Disk usage
+            disk_usage = {}
+            for disk in psutil.disk_partitions():
+                if not disk.mountpoint or not os.access(disk.mountpoint, os.R_OK):
+                    continue
+                
+                usage = psutil.disk_usage(disk.mountpoint)
+                disk_usage[disk.mountpoint] = {
+                    "total": usage.total,
+                    "used": usage.used,
+                    "free": usage.free,
+                    "percent": usage.percent
+                }
+            
+            # Process info
+            process = psutil.Process()
+            process_cpu = process.cpu_percent(interval=0.1)
+            process_memory = process.memory_info()
+            
+            return {
+                "timestamp": datetime.utcnow().isoformat(),
+                "cpu": {
+                    "percent": cpu_percent,
+                    "per_cpu": psutil.cpu_percent(interval=0.1, percpu=True)
+                },
+                "memory": {
+                    "total": memory.total,
+                    "available": memory.available,
+                    "used": memory.used,
+                    "percent": memory.percent
+                },
+                "disk": disk_usage,
+                "process": {
+                    "cpu_percent": process_cpu,
+                    "memory_rss": process_memory.rss,
+                    "memory_vms": process_memory.vms,
+                    "num_threads": process.num_threads()
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting system health: {str(e)}")
+            return {
+                "timestamp": datetime.utcnow().isoformat(),
+                "error": str(e)
+            }
     
-    if _monitoring_active:
-        logger.info("System monitoring is already active")
-        return
-    
-    _monitoring_interval = interval
-    _monitoring_active = True
-    
-    # Create and start the monitoring thread
-    _monitoring_thread = threading.Thread(
-        target=monitoring_thread_func,
-        args=(interval,),
-        daemon=True
-    )
-    _monitoring_thread.start()
-
-
-def stop_monitoring() -> None:
-    """Stop system monitoring."""
-    global _monitoring_active, _monitoring_thread
-    
-    if not _monitoring_active:
-        logger.info("System monitoring is not active")
-        return
-    
-    logger.info("Stopping system monitoring")
-    _monitoring_active = False
-    
-    # Wait for the thread to terminate
-    if _monitoring_thread and _monitoring_thread.is_alive():
-        _monitoring_thread.join(timeout=5)
-    
-    _monitoring_thread = None
-
-
-def is_monitoring_active() -> bool:
-    """
-    Check if system monitoring is active.
-    
-    Returns:
-        True if monitoring is active, False otherwise
-    """
-    global _monitoring_active
-    return _monitoring_active
+    async def generate_resource_report(
+        self,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """
+        Generate a resource usage report for a specific time period.
+        
+        Args:
+            start_time: Start of the reporting period
+            end_time: End of the reporting period
+            
+        Returns:
+            Dictionary containing resource usage statistics
+        """
+        # Get CPU metrics
+        cpu_metrics = await self.metrics_collector.get_metrics(
+            metric_name_prefix="system.cpu.percent",
+            start_time=start_time,
+            end_time=end_time,
+            limit=1000
+        )
+        
+        # Get memory metrics
+        memory_metrics = await self.metrics_collector.get_metrics(
+            metric_name_prefix="system.memory.percent",
+            start_time=start_time,
+            end_time=end_time,
+            limit=1000
+        )
+        
+        # Get disk metrics
+        disk_metrics = await self.metrics_collector.get_metrics(
+            metric_name_prefix="system.disk",
+            start_time=start_time,
+            end_time=end_time,
+            limit=1000
+        )
+        
+        # Process CPU metrics
+        avg_cpu = 0
+        max_cpu = 0
+        min_cpu = 100
+        
+        if cpu_metrics:
+            cpu_values = [m["value"] for m in cpu_metrics]
+            avg_cpu = sum(cpu_values) / len(cpu_values)
+            max_cpu = max(cpu_values)
+            min_cpu = min(cpu_values)
+        
+        # Process memory metrics
+        avg_memory = 0
+        max_memory = 0
+        min_memory = 100
+        
+        if memory_metrics:
+            memory_values = [m["value"] for m in memory_metrics]
+            avg_memory = sum(memory_values) / len(memory_values)
+            max_memory = max(memory_values)
+            min_memory = min(memory_values)
+        
+        # Process disk metrics
+        disk_stats = {}
+        
+        for metric in disk_metrics:
+            # Extract disk name from metric name
+            parts = metric["name"].split('.')
+            if len(parts) >= 4 and parts[-1] == "percent":
+                disk_name = parts[2]
+                
+                if disk_name not in disk_stats:
+                    disk_stats[disk_name] = {
+                        "values": [],
+                        "avg": 0,
+                        "max": 0,
+                        "min": 100
+                    }
+                
+                disk_stats[disk_name]["values"].append(metric["value"])
+        
+        # Calculate disk statistics
+        for disk_name, stats in disk_stats.items():
+            values = stats["values"]
+            if values:
+                stats["avg"] = sum(values) / len(values)
+                stats["max"] = max(values)
+                stats["min"] = min(values)
+            
+            # Remove the raw values from the result
+            del stats["values"]
+        
+        return {
+            "start_time": start_time.isoformat() if start_time else None,
+            "end_time": end_time.isoformat() if end_time else None,
+            "cpu": {
+                "average_percent": avg_cpu,
+                "max_percent": max_cpu,
+                "min_percent": min_cpu,
+                "sample_count": len(cpu_metrics)
+            },
+            "memory": {
+                "average_percent": avg_memory,
+                "max_percent": max_memory,
+                "min_percent": min_memory,
+                "sample_count": len(memory_metrics)
+            },
+            "disk": disk_stats
+        }

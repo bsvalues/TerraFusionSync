@@ -1,666 +1,552 @@
 """
-Sync operation tracking for SyncService.
+Sync tracker module for the SyncService.
 
-This module provides utilities for tracking sync operations, their status,
-and providing insights about sync performance and results.
+This module is responsible for tracking and monitoring synchronization operations,
+providing insights into their progress, performance, and status.
 """
 
-import os
-import json
-import uuid
 import logging
-import threading
-import datetime
-from enum import Enum, auto
-from typing import Dict, List, Optional, Any
+from datetime import datetime, timedelta
+from typing import Dict, List, Any, Optional, Union, Set
+
+from ..models.base import SyncStatus, SyncOperation, SyncOperationDetails, EntityStats
 
 logger = logging.getLogger(__name__)
 
-# Thread lock for sync tracker operations
-_sync_tracker_lock = threading.RLock()
 
-# Directory for sync status persistence
-SYNC_STATUS_DIR = os.environ.get('SYNC_STATUS_DIR', os.path.join('data', 'sync_status'))
-
-# Ensure sync status directory exists
-os.makedirs(SYNC_STATUS_DIR, exist_ok=True)
-
-
-class SyncStatus(str, Enum):
-    """Enumeration of sync operation statuses."""
-    
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELED = "canceled"
-
-
-class SyncType(str, Enum):
-    """Enumeration of sync operation types."""
-    
-    FULL = "full"
-    INCREMENTAL = "incremental"
-
-
-class SyncOperation:
+class SyncTracker:
     """
-    Class representing a sync operation.
+    Component responsible for tracking synchronization operations.
     
-    Attributes:
-        sync_id: Unique identifier for the sync operation
-        sync_type: Type of sync operation (full or incremental)
-        source_system: Source system name
-        target_system: Target system name
-        entity_types: List of entity types to sync
-        filter_criteria: Optional filter criteria
-        status: Current status of the sync operation
-        started_at: Timestamp when the sync operation started
-        completed_at: Timestamp when the sync operation completed (if applicable)
-        duration_seconds: Duration of the sync operation in seconds (if applicable)
-        total_records: Total number of records to sync
-        processed_records: Number of records processed so far
-        succeeded_records: Number of records successfully synced
-        failed_records: Number of records that failed to sync
-        error_message: Error message if the sync operation failed
-        progress_percent: Current progress percentage
+    This component monitors sync operations, their progress, and performance,
+    providing insights and alerting on issues.
     """
     
-    def __init__(
-        self,
-        sync_id: Optional[str] = None,
-        sync_type: SyncType = SyncType.FULL,
-        source_system: str = '',
-        target_system: str = '',
-        entity_types: Optional[List[str]] = None,
-        filter_criteria: Optional[Dict[str, Any]] = None,
-        status: SyncStatus = SyncStatus.PENDING,
-        started_at: Optional[datetime.datetime] = None,
-        completed_at: Optional[datetime.datetime] = None,
-        duration_seconds: Optional[float] = None,
-        total_records: int = 0,
-        processed_records: int = 0,
-        succeeded_records: int = 0,
-        failed_records: int = 0,
-        error_message: Optional[str] = None,
-        progress_percent: float = 0.0
-    ):
-        """Initialize a sync operation."""
-        self.sync_id = sync_id or str(uuid.uuid4())
-        self.sync_type = sync_type
-        self.source_system = source_system
-        self.target_system = target_system
-        self.entity_types = entity_types or []
-        self.filter_criteria = filter_criteria or {}
-        self.status = status
-        self.started_at = started_at or datetime.datetime.now()
-        self.completed_at = completed_at
-        self.duration_seconds = duration_seconds
-        self.total_records = total_records
-        self.processed_records = processed_records
-        self.succeeded_records = succeeded_records
-        self.failed_records = failed_records
-        self.error_message = error_message
-        self.progress_percent = progress_percent
-    
-    def start(self) -> None:
-        """Mark the sync operation as started."""
-        self.status = SyncStatus.RUNNING
-        self.started_at = datetime.datetime.now()
-        self.completed_at = None
-        self.duration_seconds = None
-        self.progress_percent = 0.0
-    
-    def complete(self) -> None:
-        """Mark the sync operation as completed."""
-        self.status = SyncStatus.COMPLETED
-        self.completed_at = datetime.datetime.now()
-        self.duration_seconds = (self.completed_at - self.started_at).total_seconds()
-        self.progress_percent = 100.0
-    
-    def fail(self, error_message: str) -> None:
+    def __init__(self, db_session=None):
         """
-        Mark the sync operation as failed.
+        Initialize the Sync Tracker.
         
         Args:
-            error_message: Error message describing the failure
+            db_session: Database session for storing and retrieving sync operations
         """
-        self.status = SyncStatus.FAILED
-        self.error_message = error_message
-        self.completed_at = datetime.datetime.now()
-        self.duration_seconds = (self.completed_at - self.started_at).total_seconds()
+        self.db_session = db_session
+        self.active_operations = {}  # In-memory tracking of active operations
     
-    def cancel(self) -> None:
-        """Mark the sync operation as canceled."""
-        self.status = SyncStatus.CANCELED
-        self.completed_at = datetime.datetime.now()
-        self.duration_seconds = (self.completed_at - self.started_at).total_seconds()
-    
-    def update_progress(self, processed_records: int, succeeded_records: int,
-                       failed_records: int, total_records: Optional[int] = None) -> None:
+    async def register_operation(self, operation: SyncOperation) -> str:
         """
-        Update the progress of the sync operation.
+        Register a new sync operation for tracking.
         
         Args:
-            processed_records: Number of records processed so far
-            succeeded_records: Number of records successfully synced
-            failed_records: Number of records that failed to sync
-            total_records: Optional update to the total number of records
-        """
-        self.processed_records = processed_records
-        self.succeeded_records = succeeded_records
-        self.failed_records = failed_records
-        
-        if total_records is not None:
-            self.total_records = total_records
-        
-        if self.total_records > 0:
-            self.progress_percent = (self.processed_records / self.total_records) * 100
-        else:
-            self.progress_percent = 0.0
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Convert the sync operation to a dictionary.
-        
-        Returns:
-            Dictionary representation of the sync operation
-        """
-        return {
-            'sync_id': self.sync_id,
-            'sync_type': self.sync_type,
-            'source_system': self.source_system,
-            'target_system': self.target_system,
-            'entity_types': self.entity_types,
-            'filter_criteria': self.filter_criteria,
-            'status': self.status,
-            'started_at': self.started_at.isoformat() if self.started_at else None,
-            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
-            'duration_seconds': self.duration_seconds,
-            'total_records': self.total_records,
-            'processed_records': self.processed_records,
-            'succeeded_records': self.succeeded_records,
-            'failed_records': self.failed_records,
-            'error_message': self.error_message,
-            'progress_percent': self.progress_percent
-        }
-    
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'SyncOperation':
-        """
-        Create a sync operation from a dictionary.
-        
-        Args:
-            data: Dictionary representation of the sync operation
+            operation: Sync operation to register
             
         Returns:
-            SyncOperation instance
+            ID of the registered operation
         """
-        # Convert string timestamps to datetime objects
-        started_at = None
-        if data.get('started_at'):
-            started_at = datetime.datetime.fromisoformat(data['started_at'])
+        operation_id = operation.id
         
-        completed_at = None
-        if data.get('completed_at'):
-            completed_at = datetime.datetime.fromisoformat(data['completed_at'])
+        logger.info(f"Registering sync operation {operation_id} "
+                  f"({operation.sync_type.value}) for pair {operation.sync_pair_id}")
         
-        # Convert string enum values to enum objects
-        sync_type = data.get('sync_type')
-        if isinstance(sync_type, str):
-            sync_type = SyncType(sync_type)
-        
-        status = data.get('status')
-        if isinstance(status, str):
-            status = SyncStatus(status)
-        
-        return cls(
-            sync_id=data.get('sync_id'),
-            sync_type=sync_type,
-            source_system=data.get('source_system', ''),
-            target_system=data.get('target_system', ''),
-            entity_types=data.get('entity_types', []),
-            filter_criteria=data.get('filter_criteria', {}),
-            status=status,
-            started_at=started_at,
-            completed_at=completed_at,
-            duration_seconds=data.get('duration_seconds'),
-            total_records=data.get('total_records', 0),
-            processed_records=data.get('processed_records', 0),
-            succeeded_records=data.get('succeeded_records', 0),
-            failed_records=data.get('failed_records', 0),
-            error_message=data.get('error_message'),
-            progress_percent=data.get('progress_percent', 0.0)
-        )
-
-
-# Sync operations storage
-_sync_operations: Dict[str, SyncOperation] = {}
-
-
-def create_sync_operation(
-    sync_type: SyncType,
-    source_system: str,
-    target_system: str,
-    entity_types: List[str],
-    filter_criteria: Optional[Dict[str, Any]] = None,
-    total_records: int = 0
-) -> SyncOperation:
-    """
-    Create a new sync operation.
+        try:
+            if self.db_session:
+                # Store in database
+                from ..models.database import SyncOperationRecord
+                
+                record = SyncOperationRecord(
+                    id=operation.id,
+                    sync_pair_id=operation.sync_pair_id,
+                    sync_type=operation.sync_type,
+                    entity_types=operation.entity_types,
+                    status=operation.status,
+                    start_time=operation.start_time,
+                    end_time=operation.end_time,
+                    details=operation.details.dict() if operation.details else None,
+                    error=operation.error
+                )
+                
+                self.db_session.add(record)
+                await self.db_session.commit()
+            
+            # Store in memory
+            self.active_operations[operation_id] = operation
+            
+            return operation_id
+            
+        except Exception as e:
+            logger.error(f"Error registering sync operation: {str(e)}")
+            # Store only in memory if database fails
+            self.active_operations[operation_id] = operation
+            return operation_id
     
-    Args:
-        sync_type: Type of sync operation
-        source_system: Source system name
-        target_system: Target system name
-        entity_types: List of entity types to sync
-        filter_criteria: Optional filter criteria
-        total_records: Initial estimate of total records to sync
+    async def update_operation(
+        self,
+        operation_id: str,
+        status: Optional[SyncStatus] = None,
+        end_time: Optional[datetime] = None,
+        details: Optional[SyncOperationDetails] = None,
+        error: Optional[str] = None
+    ) -> bool:
+        """
+        Update the status and details of a sync operation.
         
-    Returns:
-        Newly created SyncOperation
-    """
-    with _sync_tracker_lock:
-        sync_op = SyncOperation(
-            sync_type=sync_type,
-            source_system=source_system,
-            target_system=target_system,
-            entity_types=entity_types,
-            filter_criteria=filter_criteria,
-            total_records=total_records,
-            status=SyncStatus.PENDING
-        )
+        Args:
+            operation_id: ID of the operation to update
+            status: New status of the operation
+            end_time: End time of the operation
+            details: Updated operation details
+            error: Error message if the operation failed
+            
+        Returns:
+            True if update was successful, False otherwise
+        """
+        logger.info(f"Updating sync operation {operation_id}")
         
-        _sync_operations[sync_op.sync_id] = sync_op
+        # Check if operation exists in memory
+        if operation_id not in self.active_operations:
+            logger.warning(f"Operation {operation_id} not found in active operations")
+            return False
         
-        # Save to disk
-        save_sync_operation(sync_op)
+        operation = self.active_operations[operation_id]
         
-        return sync_op
-
-
-def start_sync_operation(sync_id: str) -> Optional[SyncOperation]:
-    """
-    Start a sync operation.
+        # Update fields
+        if status is not None:
+            operation.status = status
+        
+        if end_time is not None:
+            operation.end_time = end_time
+        
+        if details is not None:
+            operation.details = details
+        
+        if error is not None:
+            operation.error = error
+        
+        # If operation is complete, remove from active operations
+        if status in [SyncStatus.COMPLETED, SyncStatus.FAILED, SyncStatus.CANCELED]:
+            # Ensure end_time is set
+            if operation.end_time is None:
+                operation.end_time = datetime.utcnow()
+        
+        try:
+            if self.db_session:
+                # Update in database
+                from ..models.database import SyncOperationRecord
+                from sqlalchemy import select
+                
+                query = select(SyncOperationRecord).where(
+                    SyncOperationRecord.id == operation_id
+                )
+                
+                result = await self.db_session.execute(query)
+                record = result.scalar_one_or_none()
+                
+                if record:
+                    # Update fields
+                    if status is not None:
+                        record.status = status
+                    
+                    if end_time is not None:
+                        record.end_time = end_time
+                    
+                    if details is not None:
+                        record.details = details.dict()
+                    
+                    if error is not None:
+                        record.error = error
+                    
+                    await self.db_session.commit()
+                else:
+                    logger.warning(f"Operation {operation_id} not found in database")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error updating sync operation: {str(e)}")
+            return False
     
-    Args:
-        sync_id: ID of the sync operation to start
+    async def get_operation(self, operation_id: str) -> Optional[SyncOperation]:
+        """
+        Get details of a specific sync operation.
         
-    Returns:
-        Updated SyncOperation or None if not found
-    """
-    with _sync_tracker_lock:
-        if sync_id not in _sync_operations:
-            return None
+        Args:
+            operation_id: ID of the operation
+            
+        Returns:
+            Sync operation details if found, None otherwise
+        """
+        # Check memory first
+        if operation_id in self.active_operations:
+            return self.active_operations[operation_id]
         
-        sync_op = _sync_operations[sync_id]
-        sync_op.start()
+        # Check database if available
+        if self.db_session:
+            try:
+                from ..models.database import SyncOperationRecord
+                from sqlalchemy import select
+                
+                query = select(SyncOperationRecord).where(
+                    SyncOperationRecord.id == operation_id
+                )
+                
+                result = await self.db_session.execute(query)
+                record = result.scalar_one_or_none()
+                
+                if record:
+                    # Convert database record to SyncOperation
+                    details = None
+                    if record.details:
+                        details = SyncOperationDetails(**record.details)
+                    
+                    return SyncOperation(
+                        id=record.id,
+                        sync_pair_id=record.sync_pair_id,
+                        sync_type=record.sync_type,
+                        entity_types=record.entity_types,
+                        status=record.status,
+                        start_time=record.start_time,
+                        end_time=record.end_time,
+                        details=details,
+                        error=record.error
+                    )
+            
+            except Exception as e:
+                logger.error(f"Error retrieving sync operation: {str(e)}")
         
-        # Save to disk
-        save_sync_operation(sync_op)
-        
-        return sync_op
-
-
-def complete_sync_operation(sync_id: str) -> Optional[SyncOperation]:
-    """
-    Mark a sync operation as completed.
+        return None
     
-    Args:
-        sync_id: ID of the sync operation to complete
+    async def get_operations(
+        self,
+        sync_pair_id: Optional[str] = None,
+        status: Optional[SyncStatus] = None,
+        limit: int = 10,
+        offset: int = 0
+    ) -> List[SyncOperation]:
+        """
+        Get a list of sync operations with optional filtering.
         
-    Returns:
-        Updated SyncOperation or None if not found
-    """
-    with _sync_tracker_lock:
-        if sync_id not in _sync_operations:
-            return None
+        Args:
+            sync_pair_id: Filter by sync pair ID
+            status: Filter by operation status
+            limit: Maximum number of operations to return
+            offset: Offset for pagination
+            
+        Returns:
+            List of sync operations
+        """
+        # Start with active operations
+        operations = list(self.active_operations.values())
         
-        sync_op = _sync_operations[sync_id]
-        sync_op.complete()
-        
-        # Save to disk
-        save_sync_operation(sync_op)
-        
-        return sync_op
-
-
-def fail_sync_operation(sync_id: str, error_message: str) -> Optional[SyncOperation]:
-    """
-    Mark a sync operation as failed.
-    
-    Args:
-        sync_id: ID of the sync operation to fail
-        error_message: Error message describing the failure
-        
-    Returns:
-        Updated SyncOperation or None if not found
-    """
-    with _sync_tracker_lock:
-        if sync_id not in _sync_operations:
-            return None
-        
-        sync_op = _sync_operations[sync_id]
-        sync_op.fail(error_message)
-        
-        # Save to disk
-        save_sync_operation(sync_op)
-        
-        return sync_op
-
-
-def cancel_sync_operation(sync_id: str) -> Optional[SyncOperation]:
-    """
-    Mark a sync operation as canceled.
-    
-    Args:
-        sync_id: ID of the sync operation to cancel
-        
-    Returns:
-        Updated SyncOperation or None if not found
-    """
-    with _sync_tracker_lock:
-        if sync_id not in _sync_operations:
-            return None
-        
-        sync_op = _sync_operations[sync_id]
-        sync_op.cancel()
-        
-        # Save to disk
-        save_sync_operation(sync_op)
-        
-        return sync_op
-
-
-def update_sync_progress(
-    sync_id: str,
-    processed_records: int,
-    succeeded_records: int,
-    failed_records: int,
-    total_records: Optional[int] = None
-) -> Optional[SyncOperation]:
-    """
-    Update the progress of a sync operation.
-    
-    Args:
-        sync_id: ID of the sync operation to update
-        processed_records: Number of records processed so far
-        succeeded_records: Number of records successfully synced
-        failed_records: Number of records that failed to sync
-        total_records: Optional update to the total number of records
-        
-    Returns:
-        Updated SyncOperation or None if not found
-    """
-    with _sync_tracker_lock:
-        if sync_id not in _sync_operations:
-            return None
-        
-        sync_op = _sync_operations[sync_id]
-        sync_op.update_progress(
-            processed_records=processed_records,
-            succeeded_records=succeeded_records,
-            failed_records=failed_records,
-            total_records=total_records
-        )
-        
-        # Save to disk
-        save_sync_operation(sync_op)
-        
-        return sync_op
-
-
-def get_sync_operation(sync_id: str) -> Optional[SyncOperation]:
-    """
-    Get a sync operation by ID.
-    
-    Args:
-        sync_id: ID of the sync operation to get
-        
-    Returns:
-        SyncOperation or None if not found
-    """
-    with _sync_tracker_lock:
-        return _sync_operations.get(sync_id)
-
-
-def get_all_sync_operations() -> List[SyncOperation]:
-    """
-    Get all sync operations.
-    
-    Returns:
-        List of all SyncOperation instances
-    """
-    with _sync_tracker_lock:
-        return list(_sync_operations.values())
-
-
-def get_active_sync_operations() -> List[SyncOperation]:
-    """
-    Get active (running) sync operations.
-    
-    Returns:
-        List of active SyncOperation instances
-    """
-    with _sync_tracker_lock:
-        return [
-            op for op in _sync_operations.values()
-            if op.status == SyncStatus.RUNNING
-        ]
-
-
-def get_failed_sync_operations() -> List[SyncOperation]:
-    """
-    Get failed sync operations.
-    
-    Returns:
-        List of failed SyncOperation instances
-    """
-    with _sync_tracker_lock:
-        return [
-            op for op in _sync_operations.values()
-            if op.status == SyncStatus.FAILED
-        ]
-
-
-def get_recent_sync_operations(
-    limit: int = 10,
-    offset: int = 0,
-    sync_type: Optional[SyncType] = None,
-    source_system: Optional[str] = None,
-    target_system: Optional[str] = None,
-    status: Optional[SyncStatus] = None
-) -> List[SyncOperation]:
-    """
-    Get recent sync operations with optional filtering.
-    
-    Args:
-        limit: Maximum number of sync operations to return
-        offset: Number of sync operations to skip
-        sync_type: Filter by sync type
-        source_system: Filter by source system
-        target_system: Filter by target system
-        status: Filter by status
-        
-    Returns:
-        List of SyncOperation instances matching the filters
-    """
-    with _sync_tracker_lock:
-        # Filter sync operations
-        filtered_ops = _sync_operations.values()
-        
-        if sync_type:
-            filtered_ops = [op for op in filtered_ops if op.sync_type == sync_type]
-        
-        if source_system:
-            filtered_ops = [op for op in filtered_ops if op.source_system == source_system]
-        
-        if target_system:
-            filtered_ops = [op for op in filtered_ops if op.target_system == target_system]
+        # Apply filters to in-memory operations
+        if sync_pair_id:
+            operations = [op for op in operations if op.sync_pair_id == sync_pair_id]
         
         if status:
-            filtered_ops = [op for op in filtered_ops if op.status == status]
+            operations = [op for op in operations if op.status == status]
         
-        # Sort by started_at (newest first)
-        sorted_ops = sorted(
-            filtered_ops,
-            key=lambda op: op.started_at if op.started_at else datetime.datetime.min,
-            reverse=True
-        )
+        # Check database if available
+        if self.db_session:
+            try:
+                from ..models.database import SyncOperationRecord
+                from sqlalchemy import select
+                
+                # Build query
+                query = select(SyncOperationRecord)
+                
+                if sync_pair_id:
+                    query = query.where(SyncOperationRecord.sync_pair_id == sync_pair_id)
+                
+                if status:
+                    query = query.where(SyncOperationRecord.status == status)
+                
+                # Order by start_time descending (newest first)
+                query = query.order_by(SyncOperationRecord.start_time.desc())
+                
+                # Apply pagination
+                query = query.limit(limit).offset(offset)
+                
+                # Execute query
+                result = await self.db_session.execute(query)
+                records = result.scalars().all()
+                
+                # Convert records to SyncOperation objects
+                db_operations = []
+                for record in records:
+                    details = None
+                    if record.details:
+                        details = SyncOperationDetails(**record.details)
+                    
+                    op = SyncOperation(
+                        id=record.id,
+                        sync_pair_id=record.sync_pair_id,
+                        sync_type=record.sync_type,
+                        entity_types=record.entity_types,
+                        status=record.status,
+                        start_time=record.start_time,
+                        end_time=record.end_time,
+                        details=details,
+                        error=record.error
+                    )
+                    
+                    # Add to results if not already in active operations
+                    if op.id not in self.active_operations:
+                        db_operations.append(op)
+                
+                # Combine results
+                operations.extend(db_operations)
+                
+                # Sort by start_time descending
+                operations.sort(key=lambda op: op.start_time, reverse=True)
+                
+                # Apply pagination to combined results
+                operations = operations[offset:offset + limit]
+                
+            except Exception as e:
+                logger.error(f"Error retrieving sync operations: {str(e)}")
         
-        # Apply pagination
-        return sorted_ops[offset:offset + limit]
-
-
-def get_sync_summary() -> Dict[str, Any]:
-    """
-    Get a summary of sync operations.
+        return operations
     
-    Returns:
-        Dictionary with sync status summary information
-    """
-    with _sync_tracker_lock:
-        all_ops = list(_sync_operations.values())
-        active_ops = get_active_sync_operations()
-        failed_ops = get_failed_sync_operations()
+    async def get_active_operations(self) -> List[SyncOperation]:
+        """
+        Get a list of currently active sync operations.
         
-        # Count sync operations by status
-        status_counts = {}
-        for status in SyncStatus:
-            status_counts[status] = len([op for op in all_ops if op.status == status])
-        
-        # Calculate overall success rate
-        completed_ops = [op for op in all_ops if op.status == SyncStatus.COMPLETED]
-        total_completed_or_failed = len(completed_ops) + len(failed_ops)
-        success_rate = 0.0
-        if total_completed_or_failed > 0:
-            success_rate = (len(completed_ops) / total_completed_or_failed) * 100
-        
-        # Get recently completed sync operations
-        recently_completed = [
-            op.to_dict() for op in get_recent_sync_operations(
-                limit=5,
-                status=SyncStatus.COMPLETED
-            )
-        ]
-        
-        # Get recently failed sync operations
-        recently_failed = [
-            op.to_dict() for op in get_recent_sync_operations(
-                limit=5,
-                status=SyncStatus.FAILED
-            )
-        ]
-        
-        return {
-            'status_counts': status_counts,
-            'total_syncs': len(all_ops),
-            'active_syncs': [op.to_dict() for op in active_ops],
-            'recently_completed': recently_completed,
-            'recently_failed': recently_failed,
-            'success_rate': round(success_rate, 2)
-        }
-
-
-def get_entity_type_summary() -> Dict[str, Dict[str, Any]]:
-    """
-    Get a summary of sync operations by entity type.
+        Returns:
+            List of active sync operations
+        """
+        # Get operations with status IN_PROGRESS
+        return await self.get_operations(status=SyncStatus.IN_PROGRESS)
     
-    Returns:
-        Dictionary mapping entity type to summary metrics
-    """
-    with _sync_tracker_lock:
-        # Collect all entity types
-        entity_types = set()
-        for op in _sync_operations.values():
-            entity_types.update(op.entity_types)
+    async def track_entity_progress(
+        self,
+        operation_id: str,
+        entity_type: str,
+        processed: int = 0,
+        succeeded: int = 0,
+        failed: int = 0
+    ) -> bool:
+        """
+        Update the progress for a specific entity type in a sync operation.
         
-        # Initialize entity type metrics
-        entity_metrics = {}
-        for entity_type in entity_types:
-            entity_metrics[entity_type] = {
-                'total_records': 0,
-                'succeeded_records': 0,
-                'failed_records': 0,
-                'success_rate': 0.0
+        Args:
+            operation_id: ID of the sync operation
+            entity_type: Type of entity being tracked
+            processed: Number of records processed
+            succeeded: Number of records successfully synced
+            failed: Number of records that failed to sync
+            
+        Returns:
+            True if update was successful, False otherwise
+        """
+        logger.debug(f"Tracking entity progress for {operation_id}: {entity_type} - "
+                   f"processed: {processed}, succeeded: {succeeded}, failed: {failed}")
+        
+        # Check if operation exists
+        if operation_id not in self.active_operations:
+            logger.warning(f"Operation {operation_id} not found in active operations")
+            return False
+        
+        operation = self.active_operations[operation_id]
+        
+        # Initialize details if not present
+        if operation.details is None:
+            operation.details = SyncOperationDetails(
+                records_processed=0,
+                records_succeeded=0,
+                records_failed=0,
+                entities={}
+            )
+        
+        # Initialize entity stats if not present
+        if entity_type not in operation.details.entities:
+            operation.details.entities[entity_type] = {
+                "processed": 0,
+                "succeeded": 0,
+                "failed": 0
             }
         
-        # Aggregate metrics by entity type
-        for op in _sync_operations.values():
-            if op.status not in (SyncStatus.COMPLETED, SyncStatus.FAILED):
-                continue
-            
-            # Distribute records evenly across entity types
-            if not op.entity_types:
-                continue
-            
-            entity_count = len(op.entity_types)
-            for entity_type in op.entity_types:
-                # Add entity's share of records
-                entity_metrics[entity_type]['total_records'] += op.total_records // entity_count
-                entity_metrics[entity_type]['succeeded_records'] += op.succeeded_records // entity_count
-                entity_metrics[entity_type]['failed_records'] += op.failed_records // entity_count
+        # Update stats
+        operation.details.entities[entity_type]["processed"] += processed
+        operation.details.entities[entity_type]["succeeded"] += succeeded
+        operation.details.entities[entity_type]["failed"] += failed
         
-        # Calculate success rate for each entity type
-        for entity_type, metrics in entity_metrics.items():
-            total = metrics['succeeded_records'] + metrics['failed_records']
-            if total > 0:
-                metrics['success_rate'] = round((metrics['succeeded_records'] / total) * 100, 2)
+        # Update overall stats
+        operation.details.records_processed += processed
+        operation.details.records_succeeded += succeeded
+        operation.details.records_failed += failed
         
-        return entity_metrics
-
-
-def save_sync_operation(sync_op: SyncOperation) -> None:
-    """
-    Save a sync operation to disk.
+        # Update operation in storage
+        return await self.update_operation(
+            operation_id=operation_id,
+            details=operation.details
+        )
     
-    Args:
-        sync_op: SyncOperation to save
-    """
-    try:
-        sync_file = os.path.join(SYNC_STATUS_DIR, f"{sync_op.sync_id}.json")
+    async def calculate_sync_metrics(
+        self,
+        sync_pair_id: Optional[str] = None,
+        days: int = 7
+    ) -> Dict[str, Any]:
+        """
+        Calculate metrics for sync operations over a period of time.
         
-        with open(sync_file, 'w') as f:
-            json.dump(sync_op.to_dict(), f, indent=2)
+        Args:
+            sync_pair_id: Optional filter by sync pair ID
+            days: Number of days to include in the metrics
             
-        logger.debug(f"Sync operation {sync_op.sync_id} saved to {sync_file}")
-    except Exception as e:
-        logger.error(f"Error saving sync operation {sync_op.sync_id} to disk: {str(e)}")
-
-
-def load_sync_operations_from_disk() -> None:
-    """Load all sync operations from disk."""
-    global _sync_operations
-    
-    try:
-        # Clear existing sync operations
-        with _sync_tracker_lock:
-            _sync_operations.clear()
+        Returns:
+            Dictionary of sync metrics
+        """
+        # Calculate date range
+        end_time = datetime.utcnow()
+        start_time = end_time - timedelta(days=days)
         
-        # Load each sync operation file
-        for filename in os.listdir(SYNC_STATUS_DIR):
-            if not filename.endswith('.json'):
-                continue
-            
-            sync_file = os.path.join(SYNC_STATUS_DIR, filename)
-            
+        # Get completed operations in the time range
+        operations = []
+        
+        if self.db_session:
             try:
-                with open(sync_file, 'r') as f:
-                    sync_data = json.load(f)
+                from ..models.database import SyncOperationRecord
+                from sqlalchemy import select
                 
-                sync_op = SyncOperation.from_dict(sync_data)
+                # Build query
+                query = select(SyncOperationRecord).where(
+                    SyncOperationRecord.status == SyncStatus.COMPLETED
+                ).where(
+                    SyncOperationRecord.start_time >= start_time
+                ).where(
+                    SyncOperationRecord.start_time <= end_time
+                )
                 
-                with _sync_tracker_lock:
-                    _sync_operations[sync_op.sync_id] = sync_op
+                if sync_pair_id:
+                    query = query.where(SyncOperationRecord.sync_pair_id == sync_pair_id)
                 
-                logger.debug(f"Loaded sync operation {sync_op.sync_id} from {sync_file}")
+                # Execute query
+                result = await self.db_session.execute(query)
+                records = result.scalars().all()
+                
+                # Convert to SyncOperation objects
+                for record in records:
+                    details = None
+                    if record.details:
+                        details = SyncOperationDetails(**record.details)
+                    
+                    op = SyncOperation(
+                        id=record.id,
+                        sync_pair_id=record.sync_pair_id,
+                        sync_type=record.sync_type,
+                        entity_types=record.entity_types,
+                        status=record.status,
+                        start_time=record.start_time,
+                        end_time=record.end_time,
+                        details=details,
+                        error=record.error
+                    )
+                    
+                    operations.append(op)
+                
             except Exception as e:
-                logger.error(f"Error loading sync operation from {sync_file}: {str(e)}")
+                logger.error(f"Error calculating sync metrics: {str(e)}")
         
-        logger.info(f"Loaded {len(_sync_operations)} sync operations from disk")
-    except Exception as e:
-        logger.error(f"Error loading sync operations from disk: {str(e)}")
-
-
-# Initialize by loading sync operations from disk
-load_sync_operations_from_disk()
+        # Add active operations if they match the criteria
+        for op in self.active_operations.values():
+            if op.status == SyncStatus.COMPLETED and start_time <= op.start_time <= end_time:
+                if sync_pair_id is None or op.sync_pair_id == sync_pair_id:
+                    if op.id not in [o.id for o in operations]:
+                        operations.append(op)
+        
+        # Calculate metrics
+        if not operations:
+            return {
+                "start_time": start_time.isoformat(),
+                "end_time": end_time.isoformat(),
+                "total_operations": 0,
+                "total_records_processed": 0,
+                "total_records_succeeded": 0,
+                "total_records_failed": 0,
+                "success_rate": 0,
+                "avg_duration_seconds": 0,
+                "entity_stats": {}
+            }
+        
+        # Count operations by type
+        total_operations = len(operations)
+        full_syncs = sum(1 for op in operations if op.sync_type.value == "full")
+        incremental_syncs = total_operations - full_syncs
+        
+        # Calculate record stats
+        total_processed = 0
+        total_succeeded = 0
+        total_failed = 0
+        entity_stats = {}
+        
+        for op in operations:
+            if op.details:
+                total_processed += op.details.records_processed
+                total_succeeded += op.details.records_succeeded
+                total_failed += op.details.records_failed
+                
+                # Aggregate by entity type
+                for entity_type, stats in op.details.entities.items():
+                    if entity_type not in entity_stats:
+                        entity_stats[entity_type] = {
+                            "processed": 0,
+                            "succeeded": 0,
+                            "failed": 0
+                        }
+                    
+                    entity_stats[entity_type]["processed"] += stats["processed"]
+                    entity_stats[entity_type]["succeeded"] += stats["succeeded"]
+                    entity_stats[entity_type]["failed"] += stats["failed"]
+        
+        # Calculate success rate
+        success_rate = 0
+        if total_processed > 0:
+            success_rate = (total_succeeded / total_processed) * 100
+        
+        # Calculate average duration
+        durations = []
+        for op in operations:
+            if op.end_time and op.start_time:
+                duration = (op.end_time - op.start_time).total_seconds()
+                durations.append(duration)
+        
+        avg_duration = 0
+        if durations:
+            avg_duration = sum(durations) / len(durations)
+        
+        return {
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat(),
+            "total_operations": total_operations,
+            "full_syncs": full_syncs,
+            "incremental_syncs": incremental_syncs,
+            "total_records_processed": total_processed,
+            "total_records_succeeded": total_succeeded,
+            "total_records_failed": total_failed,
+            "success_rate": success_rate,
+            "avg_duration_seconds": avg_duration,
+            "entity_stats": entity_stats
+        }
+    
+    async def detect_stalled_operations(self, max_duration_minutes: int = 60) -> List[str]:
+        """
+        Detect operations that have been running for longer than expected.
+        
+        Args:
+            max_duration_minutes: Maximum expected duration in minutes
+            
+        Returns:
+            List of operation IDs that appear to be stalled
+        """
+        stalled_ops = []
+        now = datetime.utcnow()
+        threshold = timedelta(minutes=max_duration_minutes)
+        
+        # Check active operations
+        for op_id, operation in self.active_operations.items():
+            if operation.status == SyncStatus.IN_PROGRESS:
+                duration = now - operation.start_time
+                if duration > threshold:
+                    stalled_ops.append(op_id)
+                    logger.warning(f"Detected stalled operation: {op_id}, "
+                                 f"running for {duration.total_seconds() / 60:.2f} minutes")
+        
+        return stalled_ops
