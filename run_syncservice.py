@@ -6,52 +6,41 @@ This script will be executed by the workflow to start the SyncService.
 
 import os
 import sys
-import socket
+import subprocess
 
-# Function to check if port 5000 is in use and select 8000 as an alternative
-def get_available_port():
-    # First try port 8000 (preferred)
+def main():
+    # Get the path to the syncservice package
+    syncservice_dir = os.path.join(os.getcwd(), "apps/backend/syncservice")
+    
+    if not os.path.exists(syncservice_dir):
+        print(f"Error: SyncService directory not found at {syncservice_dir}")
+        sys.exit(1)
+    
+    # Change to the syncservice directory
+    os.chdir(syncservice_dir)
+    
+    # Always use port 8000 for SyncService
+    port = 8000
+    host = "0.0.0.0"
+    
+    print(f"Starting SyncService on {host}:{port}")
+    
+    # Run the uvicorn server with the FastAPI app
+    cmd = [
+        "python", "-m", "uvicorn", 
+        "syncservice.main:app", 
+        "--host", host, 
+        "--port", str(port)
+    ]
+    
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.bind(('0.0.0.0', 8000))
-        s.close()
-        return 8000
-    except socket.error:
-        # If port 8000 is not available
-        try:
-            # Check if port 5000 is available
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.bind(('0.0.0.0', 5000))
-            s.close()
-            return 5000
-        except socket.error:
-            # If neither port is available, try port 8080
-            try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.bind(('0.0.0.0', 8080))
-                s.close()
-                return 8080
-            except socket.error:
-                # If all ports are taken, default to 8000 and let uvicorn handle the error
-                return 8000
+        process = subprocess.Popen(cmd)
+        process.wait()
+    except KeyboardInterrupt:
+        print("SyncService stopped by user")
+    except Exception as e:
+        print(f"Error running SyncService: {str(e)}")
+        sys.exit(1)
 
 if __name__ == "__main__":
-    port = get_available_port()
-    
-    # Add apps/backend/syncservice to the Python path
-    syncservice_path = os.path.join(os.getcwd(), "apps/backend/syncservice")
-    if syncservice_path not in sys.path:
-        sys.path.insert(0, syncservice_path)
-    
-    print(f"Starting SyncService on port {port}")
-    print(f"Python path: {sys.path}")
-    
-    # Import and run uvicorn
-    import uvicorn
-    
-    uvicorn.run(
-        "syncservice.main:app",
-        host="0.0.0.0",
-        port=port,
-        reload=True
-    )
+    main()

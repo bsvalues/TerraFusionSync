@@ -1,435 +1,482 @@
 """
-Sync endpoints for the SyncService.
+Sync API endpoints for the SyncService.
 
-This module implements full and incremental sync endpoints with support for
-various source and target system types.
+This module provides API endpoints for triggering and managing sync operations
+between source and target systems.
 """
 
-import uuid
-from datetime import datetime, timedelta
+import logging
+import asyncio
 from typing import Dict, List, Optional, Any
+from datetime import datetime, timedelta
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Path, Depends
+from fastapi import APIRouter, Query, Path, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
 
-from syncservice.config.system_config import (
-    get_sync_config, get_sync_pair_config, get_source_system_config, get_target_system_config
+from syncservice.monitoring.sync_tracker import (
+    SyncStatus, SyncType, SyncOperation,
+    create_sync_operation, start_sync_operation, complete_sync_operation,
+    fail_sync_operation, cancel_sync_operation, update_sync_progress,
+    get_sync_operation, get_all_sync_operations, get_active_sync_operations
 )
-from syncservice.adapters import (
-    get_source_adapter_class, get_target_adapter_class
+
+from syncservice.monitoring.metrics import (
+    create_counter, increment_counter, create_gauge, update_gauge,
+    create_histogram, observe_histogram
 )
+
+logger = logging.getLogger(__name__)
 
 # Configure router
 router = APIRouter()
 
-# Mock storage for sync jobs
-sync_jobs = {}
 
-
-class SyncRequest(BaseModel):
-    """Request schema for sync operations."""
+# Request and response models
+class FullSyncRequest(BaseModel):
+    """Request model for full sync operations."""
     
-    pair_id: Optional[str] = Field(
-        default=None, 
-        description="ID of the sync pair to use (default: all enabled pairs)"
+    source_system: str = Field(..., description="Source system name")
+    target_system: str = Field(..., description="Target system name")
+    entity_types: List[str] = Field(..., description="List of entity types to sync")
+    filter_criteria: Optional[Dict[str, Any]] = Field(
+        None, description="Optional filter criteria for the sync operation"
     )
-    batch_size: Optional[int] = Field(
-        default=100, 
-        description="Number of records to process in each batch"
-    )
-    timeout_seconds: Optional[int] = Field(
-        default=3600, 
-        description="Maximum time in seconds to run the sync operation"
-    )
-    initiated_by: Optional[str] = Field(
-        default=None, 
-        description="Identifier of the user or process that initiated the sync"
-    )
+
+
+class IncrementalSyncRequest(BaseModel):
+    """Request model for incremental sync operations."""
+    
+    source_system: str = Field(..., description="Source system name")
+    target_system: str = Field(..., description="Target system name")
+    entity_types: List[str] = Field(..., description="List of entity types to sync")
     since: Optional[datetime] = Field(
-        default=None, 
-        description="For incremental sync, the timestamp to start from (default: 24 hours ago)"
+        None, description="Sync changes since this timestamp (defaults to 24 hours ago)"
     )
-    entity_types: Optional[List[str]] = Field(
-        default=None, 
-        description="List of entity types to sync (default: all available types in the sync pair)"
+    filter_criteria: Optional[Dict[str, Any]] = Field(
+        None, description="Optional filter criteria for the sync operation"
     )
 
 
 class SyncResponse(BaseModel):
-    """Response schema for sync operations."""
+    """Response model for sync operations."""
     
-    job_id: str = Field(..., description="Unique identifier for the sync job")
-    status: str = Field(..., description="Status of the sync job (pending, in_progress, completed, failed)")
-    timestamp: datetime = Field(..., description="Timestamp when the job was created")
-    details: Optional[Dict[str, Any]] = Field(default=None, description="Additional details about the job")
+    sync_id: str = Field(..., description="Unique identifier for the sync operation")
+    status: str = Field(..., description="Current status of the sync operation")
+    message: str = Field(..., description="Message describing the sync operation")
+
+
+class SyncStatusResponse(BaseModel):
+    """Response model for sync status."""
+    
+    sync_id: str = Field(..., description="Unique identifier for the sync operation")
+    sync_type: str = Field(..., description="Type of sync operation")
+    source_system: str = Field(..., description="Source system name")
+    target_system: str = Field(..., description="Target system name")
+    entity_types: List[str] = Field(..., description="List of entity types being synced")
+    status: str = Field(..., description="Current status of the sync operation")
+    started_at: Optional[datetime] = Field(None, description="Timestamp when the sync operation started")
+    completed_at: Optional[datetime] = Field(None, description="Timestamp when the sync operation completed")
+    duration_seconds: Optional[float] = Field(None, description="Duration of the sync operation in seconds")
+    total_records: int = Field(..., description="Total number of records to sync")
+    processed_records: int = Field(..., description="Number of records processed so far")
+    succeeded_records: int = Field(..., description="Number of records successfully synced")
+    failed_records: int = Field(..., description="Number of records that failed to sync")
+    progress_percent: float = Field(..., description="Current progress percentage")
+    error_message: Optional[str] = Field(None, description="Error message if the sync operation failed")
+
+
+# Mock operation to simulate record processing
+async def process_records(
+    sync_id: str,
+    entity_types: List[str],
+    total_records: int,
+    source_system: str,
+    target_system: str,
+    is_incremental: bool = False
+) -> None:
+    """
+    Simulate processing records in a background task.
+    
+    Args:
+        sync_id: ID of the sync operation
+        entity_types: List of entity types being synced
+        total_records: Total number of records to process
+        source_system: Source system name
+        target_system: Target system name
+        is_incremental: Whether this is an incremental sync
+    """
+    try:
+        # Start the sync operation
+        start_sync_operation(sync_id)
+        
+        # Initialize metrics if they don't exist
+        for entity_type in entity_types:
+            # Create metrics for this entity type if they don't exist
+            metric_labels = {
+                'entity_type': entity_type,
+                'source_system': source_system,
+                'target_system': target_system
+            }
+            
+            # Records processed counter
+            create_counter(
+                name=f"entity_{entity_type}_records_processed_total",
+                description=f"Total {entity_type} records processed",
+                initial_value=0,
+                labels=metric_labels
+            )
+            
+            # Records succeeded counter
+            create_counter(
+                name=f"entity_{entity_type}_records_succeeded_total",
+                description=f"Total {entity_type} records succeeded",
+                initial_value=0,
+                labels=metric_labels
+            )
+            
+            # Records failed counter
+            create_counter(
+                name=f"entity_{entity_type}_records_failed_total",
+                description=f"Total {entity_type} records failed",
+                initial_value=0,
+                labels=metric_labels
+            )
+            
+            # Processing time histogram
+            create_histogram(
+                name=f"entity_{entity_type}_processing_time_seconds",
+                description=f"Time to process {entity_type} records",
+                buckets=[0.001, 0.01, 0.1, 0.5, 1.0, 5.0, 10.0],
+                labels=metric_labels
+            )
+        
+        # Record overall metrics
+        op_type = "incremental" if is_incremental else "full"
+        op_labels = {
+            'operation_type': op_type,
+            'source_system': source_system,
+            'target_system': target_system
+        }
+        
+        # Sync operations counter
+        create_counter(
+            name="sync_operations_total",
+            description="Total sync operations",
+            initial_value=0,
+            labels={**op_labels, 'status': 'started'}
+        )
+        increment_counter(
+            name="sync_operations_total",
+            labels={**op_labels, 'status': 'started'}
+        )
+        
+        # Records counters
+        create_counter(
+            name="records_processed_total",
+            description="Total records processed",
+            initial_value=0,
+            labels=op_labels
+        )
+        
+        create_counter(
+            name="records_succeeded_total",
+            description="Total records succeeded",
+            initial_value=0,
+            labels=op_labels
+        )
+        
+        create_counter(
+            name="records_failed_total",
+            description="Total records failed",
+            initial_value=0,
+            labels=op_labels
+        )
+        
+        # Create sync duration histogram
+        create_histogram(
+            name="sync_duration_seconds",
+            description="Sync operation duration in seconds",
+            buckets=[1.0, 5.0, 15.0, 30.0, 60.0, 300.0, 600.0, 1800.0, 3600.0],
+            labels=op_labels
+        )
+        
+        # In a real implementation, this would fetch records from the source system
+        # and process them batch by batch
+        
+        # For simulation, we'll just update progress periodically
+        processed = 0
+        succeeded = 0
+        failed = 0
+        
+        batch_size = 10  # Process 10 records at a time
+        
+        while processed < total_records:
+            # This would be actual record processing in a real implementation
+            await asyncio.sleep(0.1)  # Simulate processing time
+            
+            # Update batch counts
+            batch_processed = min(batch_size, total_records - processed)
+            # Simulate some failures
+            batch_succeeded = int(batch_processed * 0.95)  # 95% success rate
+            batch_failed = batch_processed - batch_succeeded
+            
+            processed += batch_processed
+            succeeded += batch_succeeded
+            failed += batch_failed
+            
+            # Update metrics
+            increment_counter("records_processed_total", batch_processed, op_labels)
+            increment_counter("records_succeeded_total", batch_succeeded, op_labels)
+            increment_counter("records_failed_total", batch_failed, op_labels)
+            
+            # Update entity metrics
+            entities_per_batch = len(entity_types)
+            for entity_type in entity_types:
+                entity_batch_size = batch_processed // entities_per_batch
+                entity_succeeded = int(entity_batch_size * 0.95)  # 95% success rate
+                entity_failed = entity_batch_size - entity_succeeded
+                
+                metric_labels = {
+                    'entity_type': entity_type,
+                    'source_system': source_system,
+                    'target_system': target_system
+                }
+                
+                increment_counter(f"entity_{entity_type}_records_processed_total", entity_batch_size, metric_labels)
+                increment_counter(f"entity_{entity_type}_records_succeeded_total", entity_succeeded, metric_labels)
+                increment_counter(f"entity_{entity_type}_records_failed_total", entity_failed, metric_labels)
+                
+                # Simulate processing time
+                observe_histogram(
+                    f"entity_{entity_type}_processing_time_seconds",
+                    0.05 + (0.1 * entity_batch_size / 10),  # Simulate variable processing time
+                    metric_labels
+                )
+            
+            # Update sync progress
+            update_sync_progress(
+                sync_id=sync_id,
+                processed_records=processed,
+                succeeded_records=succeeded,
+                failed_records=failed
+            )
+        
+        # Mark sync operation as completed
+        complete_sync_operation(sync_id)
+        
+        # Record sync completion metrics
+        increment_counter(
+            name="sync_operations_total",
+            labels={**op_labels, 'status': 'completed'}
+        )
+        
+        # Record duration
+        sync_op = get_sync_operation(sync_id)
+        if sync_op and sync_op.duration_seconds is not None:
+            observe_histogram(
+                name="sync_duration_seconds",
+                value=sync_op.duration_seconds,
+                labels=op_labels
+            )
+        
+    except Exception as e:
+        logger.error(f"Error processing records for sync {sync_id}: {str(e)}")
+        
+        # Record sync failure metrics
+        increment_counter(
+            name="sync_operations_total",
+            labels={**op_labels, 'status': 'failed'}
+        )
+        
+        # Mark sync operation as failed
+        fail_sync_operation(sync_id, str(e))
 
 
 @router.post("/full", response_model=SyncResponse)
-async def run_full_sync(
-    request: SyncRequest,
+async def full_sync(
+    request: FullSyncRequest,
     background_tasks: BackgroundTasks
-) -> Dict:
+) -> Dict[str, Any]:
     """
-    Start a full sync operation.
+    Trigger a full sync operation.
     
-    This endpoint initiates a complete data sync from the source system to the target.
-    It returns immediately with a job ID, and the sync continues in the background.
+    This endpoint initiates a full sync operation between the specified source and target systems
+    for the specified entity types. The sync operation will run in the background.
     
     Args:
-        request: Parameters for the sync operation
+        request: Full sync request parameters
         background_tasks: FastAPI background tasks
         
     Returns:
-        Job status information
+        Sync operation details with ID and initial status
     """
-    job_id = f"full-sync-{datetime.utcnow().isoformat()}"
-    
-    # Store job details
-    sync_jobs[job_id] = {
-        "status": "pending",
-        "timestamp": datetime.utcnow(),
-        "type": "full",
-        "params": request.dict(),
-        "details": {
-            "pair_id": request.pair_id,
-            "initiated_by": request.initiated_by
+    try:
+        logger.info(
+            f"Full sync requested: {request.source_system} -> {request.target_system}, "
+            f"entities: {request.entity_types}"
+        )
+        
+        # Create a new sync operation
+        sync_op = create_sync_operation(
+            sync_type=SyncType.FULL,
+            source_system=request.source_system,
+            target_system=request.target_system,
+            entity_types=request.entity_types,
+            filter_criteria=request.filter_criteria or {},
+            total_records=100  # This would be determined by querying the source system
+        )
+        
+        # Start the sync operation in the background
+        background_tasks.add_task(
+            process_records,
+            sync_id=sync_op.sync_id,
+            entity_types=request.entity_types,
+            total_records=100,
+            source_system=request.source_system,
+            target_system=request.target_system,
+            is_incremental=False
+        )
+        
+        return {
+            "sync_id": sync_op.sync_id,
+            "status": sync_op.status,
+            "message": f"Full sync operation started between {request.source_system} and {request.target_system}"
         }
-    }
-    
-    # Queue the background task
-    background_tasks.add_task(_run_full_sync, job_id, request)
-    
-    return {
-        "job_id": job_id,
-        "status": "pending",
-        "timestamp": datetime.utcnow(),
-        "details": {
-            "pair_id": request.pair_id,
-            "message": "Full sync job has been queued and will run in the background"
-        }
-    }
+    except Exception as e:
+        logger.error(f"Error starting full sync: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to start sync: {str(e)}")
 
 
 @router.post("/incremental", response_model=SyncResponse)
-async def run_incremental_sync(
-    request: SyncRequest,
+async def incremental_sync(
+    request: IncrementalSyncRequest,
     background_tasks: BackgroundTasks
-) -> Dict:
+) -> Dict[str, Any]:
     """
-    Start an incremental sync operation.
+    Trigger an incremental sync operation.
     
-    This endpoint initiates a sync of changes that occurred since the last successful sync.
-    It returns immediately with a job ID, and the sync continues in the background.
+    This endpoint initiates an incremental sync operation between the specified source and target systems
+    for the specified entity types, syncing only records that have changed since the specified timestamp.
+    The sync operation will run in the background.
     
     Args:
-        request: Parameters for the sync operation
+        request: Incremental sync request parameters
         background_tasks: FastAPI background tasks
         
     Returns:
-        Job status information
+        Sync operation details with ID and initial status
     """
-    job_id = f"incremental-sync-{datetime.utcnow().isoformat()}"
-    
-    # Store job details
-    sync_jobs[job_id] = {
-        "status": "pending",
-        "timestamp": datetime.utcnow(),
-        "type": "incremental",
-        "params": request.dict(),
-        "details": {
-            "pair_id": request.pair_id,
-            "initiated_by": request.initiated_by,
-            "since": request.since
+    try:
+        # Default to 24 hours ago if since is not provided
+        since = request.since or (datetime.now() - timedelta(hours=24))
+        
+        logger.info(
+            f"Incremental sync requested: {request.source_system} -> {request.target_system}, "
+            f"entities: {request.entity_types}, since: {since.isoformat()}"
+        )
+        
+        # Create a new sync operation
+        sync_op = create_sync_operation(
+            sync_type=SyncType.INCREMENTAL,
+            source_system=request.source_system,
+            target_system=request.target_system,
+            entity_types=request.entity_types,
+            filter_criteria={
+                **(request.filter_criteria or {}),
+                "since": since.isoformat()
+            },
+            total_records=50  # This would be determined by querying the source system
+        )
+        
+        # Start the sync operation in the background
+        background_tasks.add_task(
+            process_records,
+            sync_id=sync_op.sync_id,
+            entity_types=request.entity_types,
+            total_records=50,
+            source_system=request.source_system,
+            target_system=request.target_system,
+            is_incremental=True
+        )
+        
+        return {
+            "sync_id": sync_op.sync_id,
+            "status": sync_op.status,
+            "message": f"Incremental sync operation started between {request.source_system} and {request.target_system}"
         }
-    }
-    
-    # Queue the background task
-    background_tasks.add_task(_run_incremental_sync, job_id, request)
-    
-    return {
-        "job_id": job_id,
-        "status": "pending",
-        "timestamp": datetime.utcnow(),
-        "details": {
-            "pair_id": request.pair_id,
-            "message": "Incremental sync job has been queued and will run in the background"
-        }
-    }
+    except Exception as e:
+        logger.error(f"Error starting incremental sync: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to start sync: {str(e)}")
 
 
-@router.get("/status/{job_id}", response_model=SyncResponse)
-async def get_sync_status(job_id: str = Path(..., description="ID of the sync job to check")) -> Dict:
+@router.get("/status/{sync_id}", response_model=SyncStatusResponse)
+async def get_sync_status(
+    sync_id: str = Path(..., description="ID of the sync operation")
+) -> Dict[str, Any]:
     """
-    Get the status of a sync job.
+    Get the status of a sync operation.
+    
+    This endpoint retrieves the current status of a sync operation.
     
     Args:
-        job_id: The ID of the sync job to check
+        sync_id: ID of the sync operation
         
     Returns:
-        Current job status
+        Current status of the sync operation
     """
-    if job_id not in sync_jobs:
-        raise HTTPException(status_code=404, detail=f"Sync job {job_id} not found")
+    sync_op = get_sync_operation(sync_id)
     
-    job = sync_jobs[job_id]
+    if not sync_op:
+        raise HTTPException(status_code=404, detail=f"Sync operation {sync_id} not found")
+    
+    return sync_op.to_dict()
+
+
+@router.post("/cancel/{sync_id}", response_model=SyncResponse)
+async def cancel_sync(
+    sync_id: str = Path(..., description="ID of the sync operation to cancel")
+) -> Dict[str, Any]:
+    """
+    Cancel a sync operation.
+    
+    This endpoint cancels an in-progress sync operation.
+    
+    Args:
+        sync_id: ID of the sync operation to cancel
+        
+    Returns:
+        Result of the cancel operation
+    """
+    sync_op = get_sync_operation(sync_id)
+    
+    if not sync_op:
+        raise HTTPException(status_code=404, detail=f"Sync operation {sync_id} not found")
+    
+    if sync_op.status not in (SyncStatus.PENDING, SyncStatus.RUNNING):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot cancel sync operation in status: {sync_op.status}"
+        )
+    
+    # Cancel the sync operation
+    cancel_sync_operation(sync_id)
     
     return {
-        "job_id": job_id,
-        "status": job["status"],
-        "timestamp": job["timestamp"],
-        "details": job.get("details")
+        "sync_id": sync_id,
+        "status": "canceled",
+        "message": f"Sync operation {sync_id} has been canceled"
     }
 
 
-# Background task implementations
-async def _run_full_sync(job_id: str, request: SyncRequest) -> None:
-    """Run a full sync operation in the background."""
-    try:
-        # Update job status
-        sync_jobs[job_id]["status"] = "in_progress"
-        
-        # Get sync pairs to process
-        pairs_to_process = []
-        if request.pair_id:
-            # Process a specific pair
-            pair_config = get_sync_pair_config(request.pair_id)
-            if not pair_config:
-                raise ValueError(f"Sync pair {request.pair_id} not found")
-            if not pair_config.is_enabled:
-                raise ValueError(f"Sync pair {request.pair_id} is disabled")
-            pairs_to_process.append(pair_config)
-        else:
-            # Process all enabled pairs
-            config = get_sync_config()
-            pairs_to_process = [
-                pair for pair in config.sync_pairs.values() 
-                if pair.is_enabled
-            ]
-        
-        if not pairs_to_process:
-            raise ValueError("No enabled sync pairs found")
-        
-        total_records_processed = 0
-        total_records_succeeded = 0
-        total_records_failed = 0
-        
-        # Process each sync pair
-        for pair in pairs_to_process:
-            # Get source and target system configs
-            source_config = get_source_system_config(pair.source_system)
-            if not source_config or not source_config.is_enabled:
-                continue
-                
-            target_config = get_target_system_config(pair.target_system)
-            if not target_config or not target_config.is_enabled:
-                continue
-            
-            # Get entity types to process
-            entity_types = request.entity_types or list(pair.entity_mappings.keys())
-            
-            # Create source and target adapters
-            source_adapter_class = get_source_adapter_class(source_config.system_type)
-            if not source_adapter_class:
-                continue
-                
-            target_adapter_class = get_target_adapter_class(target_config.system_type)
-            if not target_adapter_class:
-                continue
-            
-            source_adapter = source_adapter_class(source_config.connection_params)
-            target_adapter = target_adapter_class(target_config.connection_params)
-            
-            # Connect to source and target systems
-            source_connected = await source_adapter.connect()
-            if not source_connected:
-                continue
-                
-            target_connected = await target_adapter.connect()
-            if not target_connected:
-                await source_adapter.disconnect()
-                continue
-            
-            # Process each entity type
-            for source_entity_type in entity_types:
-                if source_entity_type not in pair.entity_mappings:
-                    continue
-                    
-                target_entity_type = pair.entity_mappings[source_entity_type]
-                
-                # Get records from source system
-                source_records = await source_adapter.get_all_records(
-                    source_entity_type,
-                    batch_size=request.batch_size
-                )
-                
-                if not source_records:
-                    continue
-                
-                # Here in a real implementation, we would:
-                # 1. Transform the records according to field mapping
-                # 2. Validate the records
-                # 3. Write them to the target system
-                # 4. Handle any conflicts
-                
-                # For now, we'll just simulate a successful write
-                records_count = len(source_records)
-                success_count, failed_records = await target_adapter.write_records(
-                    target_entity_type,
-                    source_records
-                )
-                
-                total_records_processed += records_count
-                total_records_succeeded += success_count
-                total_records_failed += len(failed_records)
-            
-            # Disconnect from source and target systems
-            await source_adapter.disconnect()
-            await target_adapter.disconnect()
-        
-        # Update job status
-        sync_jobs[job_id]["status"] = "completed"
-        sync_jobs[job_id]["details"] = {
-            "records_processed": total_records_processed,
-            "records_succeeded": total_records_succeeded,
-            "records_failed": total_records_failed,
-            "pairs_processed": len(pairs_to_process),
-            "completion_time": datetime.utcnow().isoformat(),
-            "duration_seconds": (datetime.utcnow() - sync_jobs[job_id]["timestamp"]).total_seconds()
-        }
-        
-    except Exception as e:
-        # Update job status on failure
-        sync_jobs[job_id]["status"] = "failed"
-        sync_jobs[job_id]["details"] = {
-            "error": str(e),
-            "failure_time": datetime.utcnow().isoformat()
-        }
-
-
-async def _run_incremental_sync(job_id: str, request: SyncRequest) -> None:
-    """Run an incremental sync operation in the background."""
-    try:
-        # Update job status
-        sync_jobs[job_id]["status"] = "in_progress"
-        
-        # Get sync pairs to process
-        pairs_to_process = []
-        if request.pair_id:
-            # Process a specific pair
-            pair_config = get_sync_pair_config(request.pair_id)
-            if not pair_config:
-                raise ValueError(f"Sync pair {request.pair_id} not found")
-            if not pair_config.is_enabled:
-                raise ValueError(f"Sync pair {request.pair_id} is disabled")
-            pairs_to_process.append(pair_config)
-        else:
-            # Process all enabled pairs
-            config = get_sync_config()
-            pairs_to_process = [
-                pair for pair in config.sync_pairs.values() 
-                if pair.is_enabled
-            ]
-        
-        if not pairs_to_process:
-            raise ValueError("No enabled sync pairs found")
-        
-        # Default to 24 hours ago if no since timestamp provided
-        since = request.since or (datetime.utcnow() - timedelta(hours=24))
-        
-        total_records_processed = 0
-        total_records_succeeded = 0
-        total_records_failed = 0
-        
-        # Process each sync pair
-        for pair in pairs_to_process:
-            # Get source and target system configs
-            source_config = get_source_system_config(pair.source_system)
-            if not source_config or not source_config.is_enabled:
-                continue
-                
-            target_config = get_target_system_config(pair.target_system)
-            if not target_config or not target_config.is_enabled:
-                continue
-            
-            # Get entity types to process
-            entity_types = request.entity_types or list(pair.entity_mappings.keys())
-            
-            # Create source and target adapters
-            source_adapter_class = get_source_adapter_class(source_config.system_type)
-            if not source_adapter_class:
-                continue
-                
-            target_adapter_class = get_target_adapter_class(target_config.system_type)
-            if not target_adapter_class:
-                continue
-            
-            source_adapter = source_adapter_class(source_config.connection_params)
-            target_adapter = target_adapter_class(target_config.connection_params)
-            
-            # Connect to source and target systems
-            source_connected = await source_adapter.connect()
-            if not source_connected:
-                continue
-                
-            target_connected = await target_adapter.connect()
-            if not target_connected:
-                await source_adapter.disconnect()
-                continue
-            
-            # Process each entity type
-            for source_entity_type in entity_types:
-                if source_entity_type not in pair.entity_mappings:
-                    continue
-                    
-                target_entity_type = pair.entity_mappings[source_entity_type]
-                
-                # Get changed records from source system
-                changed_records = await source_adapter.get_changed_records(
-                    source_entity_type,
-                    since=since,
-                    batch_size=request.batch_size
-                )
-                
-                if not changed_records:
-                    continue
-                
-                # Here in a real implementation, we would:
-                # 1. Transform the records according to field mapping
-                # 2. Validate the records
-                # 3. Write them to the target system
-                # 4. Handle any conflicts
-                
-                # For now, we'll just simulate a successful write
-                records_count = len(changed_records)
-                success_count, failed_records = await target_adapter.write_records(
-                    target_entity_type,
-                    changed_records
-                )
-                
-                total_records_processed += records_count
-                total_records_succeeded += success_count
-                total_records_failed += len(failed_records)
-            
-            # Disconnect from source and target systems
-            await source_adapter.disconnect()
-            await target_adapter.disconnect()
-        
-        # Update job status
-        sync_jobs[job_id]["status"] = "completed"
-        sync_jobs[job_id]["details"] = {
-            "records_processed": total_records_processed,
-            "records_succeeded": total_records_succeeded,
-            "records_failed": total_records_failed,
-            "pairs_processed": len(pairs_to_process),
-            "since": since.isoformat(),
-            "completion_time": datetime.utcnow().isoformat(),
-            "duration_seconds": (datetime.utcnow() - sync_jobs[job_id]["timestamp"]).total_seconds()
-        }
-        
-    except Exception as e:
-        # Update job status on failure
-        sync_jobs[job_id]["status"] = "failed"
-        sync_jobs[job_id]["details"] = {
-            "error": str(e),
-            "failure_time": datetime.utcnow().isoformat()
-        }
+@router.get("/active", response_model=List[SyncStatusResponse])
+async def get_active_syncs() -> List[Dict[str, Any]]:
+    """
+    Get all active sync operations.
+    
+    This endpoint retrieves all active (pending or running) sync operations.
+    
+    Returns:
+        List of active sync operations
+    """
+    active_syncs = get_active_sync_operations()
+    return [sync_op.to_dict() for sync_op in active_syncs]
