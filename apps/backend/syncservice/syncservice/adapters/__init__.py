@@ -80,3 +80,18 @@ def get_available_target_systems() -> List[str]:
         List of target system type identifiers
     """
     return list(_target_adapters.keys())
+
+
+# Import adapters
+from syncservice.adapters.pacs_adapter import PACSAdapter
+from syncservice.adapters.cama_adapter import CAMAAdapter
+from syncservice.adapters.gis_adapter import GISAdapter
+from syncservice.adapters.erp_adapter import ERPAdapter
+
+# Register source adapters
+register_source_adapter("pacs", PACSAdapter)
+register_source_adapter("gis", GISAdapter)
+
+# Register target adapters
+register_target_adapter("cama", CAMAAdapter)
+register_target_adapter("erp", ERPAdapter)
