@@ -1,131 +1,130 @@
 # TerraFusion SyncService
 
-A sophisticated microservice for synchronizing data between multiple enterprise systems including PACS, CAMA, GIS, and ERP platforms.
+A sophisticated SyncService platform for enterprise data migration, designed to enable seamless integration across diverse system architectures with advanced monitoring and adaptive synchronization capabilities.
 
 ## Architecture Overview
 
-TerraFusion SyncService uses a two-tier microservice architecture:
+The TerraFusion SyncService uses a two-tier microservice architecture:
 
-### 1. API Gateway (Flask, port 5000)
-- Main entry point for all client requests
-- Handles authentication and routing
-- Proxies API requests to the SyncService
-- Provides auto-recovery of the SyncService if it stops
-- Status monitoring and management endpoints
+1. **API Gateway (Flask, port 5000):**
+   - Main entry point for all client requests
+   - Handles authentication and routing
+   - Proxies API requests to the SyncService
+   - Provides auto-recovery of the SyncService if it stops
+   - Status monitoring and management endpoints
 
-### 2. SyncService (FastAPI, port 8080)
-- Core business logic for synchronization
-- Implements change detection, transformation, validation
-- Provides detailed metrics and monitoring
-- Self-healing capabilities for failed syncs
-- Handles direct database interactions
+2. **SyncService (FastAPI, port 8080):**
+   - Core business logic for synchronization
+   - Implements change detection, transformation, validation
+   - Provides detailed metrics and monitoring
+   - Self-healing capabilities for failed syncs
+   - Handles direct database interactions
 
-### Communication Flow
-Client → API Gateway (port 5000) → SyncService (port 8080) → External Systems
+## Communication Flow
 
-## Core Components
+```
+Client -> API Gateway (port 5000) -> SyncService (port 8080) -> External Systems
+```
 
-### Change Detector
-- Identifies changes in source systems since last sync
-- Supports both full and incremental sync modes
-- Query optimization for large datasets
-- Configurable change detection logic per system type
+## Key Features
 
-### Transformer
-- Converts source data format to target system format
-- Field mapping configuration through YAML files
-- Supports complex transformations with custom scripts
-- Handles data type conversion and validation
+- **Multi-system Integration**: Connect and synchronize data between PACS, CAMA, GIS, ERP, and CRM systems
+- **Incremental and Full Sync**: Support for both full data transfers and efficient incremental updates
+- **Real-time Monitoring**: Comprehensive metrics and health monitoring for all components
+- **Self-healing Capabilities**: Automatic recovery from failures and connection issues
+- **Defensive Programming**: Robust error handling with fallbacks at every level
 
-### Validator
-- Schema-based validation for transformed data
-- Business rule validation using configurable rules engine
-- Historical data consistency checks
-- Warning and error severity levels
+## Component Details
 
-### Self-Healing Orchestrator
-- Retries failed operations with exponential backoff
-- Dependency-aware ordering of sync operations
-- Transaction management across systems
-- Error isolation to prevent cascading failures
+### API Gateway
 
-### Monitoring System
-- Real-time metrics collection with time series support
-- System resource monitoring (CPU, memory, disk)
-- Sync operation tracking with detailed logs
-- Health check endpoints for status verification
+Built using Flask, provides a unified API surface for all clients. Features include:
 
-## Configuration
+- Status monitoring and health checks
+- Service discovery and routing
+- Authentication and API key management
+- Database access for configuration and operations history
+- Dashboard UI for monitoring sync operations
 
-### Port Configuration
-- The main Flask application MUST run on port 5000
-- The SyncService MUST run on port 8080 to avoid conflicts
+### SyncService
 
-This separation allows independent scaling, updating, and management of each component while maintaining a unified API surface for clients.
+Built using FastAPI, implements the core business logic for data synchronization:
 
-## API Endpoints
+- Incremental and full sync operations
+- Change detection and differential updates
+- Data transformation and mapping
+- System resource monitoring
+- Error recovery and retry mechanisms
 
-### Gateway Endpoints (port 5000)
-- `/` - Gateway information
-- `/status` - System status information
-- `/dashboard` - Redirects to dashboard UI
-- `/api-docs` - Redirects to API documentation
-- `/api/*` - Proxies all API requests to SyncService
-- `/start-syncservice` - Manually starts SyncService if needed
+## Setup and Configuration
 
-### SyncService Endpoints (port 8080)
-- `/` - SyncService information
-- `/health/live` - Liveness probe
-- `/health/ready` - Readiness probe
-- `/health/status` - Detailed health status
-- `/api/metrics` - System metrics
-- `/api/system` - System information
-- `/api/sync/operations` - Sync operations status
-- `/api/sync/metrics` - Sync metrics
-- `/api/sync/active` - Active sync operations
-- `/api/config` - Service configuration
+### Requirements
 
-## Starting the Service
-
-The system is designed to start automatically on initialization:
-
-1. The API Gateway (Flask) starts first on port 5000
-2. The Gateway automatically starts the SyncService on port 8080
-3. The Gateway monitors the SyncService and restarts it if needed
-
-### Important Note About Workflows
-
-The system uses two different approaches to start and manage the SyncService:
-
-1. **Primary Method (Recommended)**: The main application on port 5000 automatically starts, monitors, and manages the SyncService on port 8080. This happens through the `ensure_syncservice_running()` function in main.py.
-
-2. **Secondary Method (Standalone)**: The "syncservice" workflow in .replit is configured to start the SyncService independently, but this method is less reliable and not recommended for normal operation.
-
-For normal operation, you should only need to start the "Start application" workflow, as it will handle the SyncService automatically.
-
-### Manual Control
-
-You can manually restart or manage the SyncService:
-- Using the API: `GET /start-syncservice`
-- Using the command line: `python run_syncservice_direct.py`
-
-The system will automatically handle port configurations to ensure the SyncService runs on port 8080.
-
-## Additional Information
+- Python 3.11+
+- PostgreSQL database
+- Dependencies as listed in `pyproject.toml`
 
 ### Environment Variables
-- `SYNC_SERVICE_API_KEY` - API key for protected endpoints (default: "dev-api-key")
-- `SYNC_SERVICE_DB_URL` - Database URL for metrics and sync tracking
-- `SYNC_SERVICE_PORT` - Always set to 8080
 
-### System Requirements
-- Python 3.7+
-- PostgreSQL database
-- FastAPI and Flask
-- SQLAlchemy for database operations
-- Required Python packages in pyproject.toml
+The following environment variables are required:
 
-### Logging
-- Gateway logs to stdout
-- SyncService logs with Python logging system
-- Log level configurable via environment
+- `DATABASE_URL`: PostgreSQL connection string
+- `SYNCSERVICE_API_KEY`: API key for SyncService authentication
+
+### Installation
+
+1. Clone the repository
+2. Install dependencies: `pip install -e .`
+3. Set up the database: `flask db upgrade`
+4. Start the services:
+   - API Gateway: `gunicorn --bind 0.0.0.0:5000 main:app`
+   - SyncService: `cd apps/backend/syncservice && uvicorn syncservice.main:app --host 0.0.0.0 --port 8080`
+
+## API Documentation
+
+### API Gateway Endpoints
+
+- `GET /`: Root endpoint providing API information
+- `GET /dashboard`: Dashboard UI for monitoring
+- `GET /api/status`: API status and component health
+- `GET /api/sync-pairs`: List of configured sync pairs
+- `GET /api/sync-operations`: History of sync operations
+
+### SyncService Endpoints
+
+- `GET /health`: Health check endpoint
+- `POST /api/sync/full`: Start a full sync operation
+- `POST /api/sync/incremental`: Start an incremental sync operation
+- `GET /api/sync/operations`: List active and completed operations
+- `GET /api/metrics/system`: System metrics and performance data
+
+## Development
+
+### Project Structure
+
+```
+terrafusion/
+├── apps/
+│   ├── backend/
+│   │   ├── api/         # API Gateway code
+│   │   └── syncservice/ # SyncService code
+│   └── frontend/        # Dashboard UI
+├── libs/
+│   └── shared/          # Shared utilities
+├── docs/                # Documentation
+└── tests/               # Test cases
+```
+
+### Testing
+
+Run tests with: `pytest tests/`
+
+## Troubleshooting
+
+- **API Gateway can't connect to SyncService**: Ensure SyncService is running on port 8080
+- **Database errors**: Check the DATABASE_URL environment variable
+- **SyncService crashes**: Check system monitoring logs for resource issues
+
+## License
+
+MIT License

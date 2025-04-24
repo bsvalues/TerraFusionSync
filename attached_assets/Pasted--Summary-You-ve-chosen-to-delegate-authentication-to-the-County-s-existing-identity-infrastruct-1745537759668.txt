@@ -1,0 +1,61 @@
+## Summary  
+You’ve chosen to delegate authentication to the County’s existing identity infrastructure—whether that’s on-prem Active Directory (AD) via Kerberos/LDAP, Azure AD (via Azure AD Connect), AWS Managed Microsoft AD, or a SAML-based federation. Next, you’ll (1) confirm which IdP the County uses, (2) extend your Replit AI Agent bootstrap to include the corresponding Python integration library and configuration, (3) implement and test the chosen method in both the Flask gateway and FastAPI sync service, and (4) validate end-to-end SSO in your development environment before rolling out to production.
+
+---
+
+## 1. Confirm the County’s Identity Provider  
+Before coding, verify which of these your County has in place:  
+- **On-Prem AD/Kerberos** (pure intranet): integrates with `Flask-Kerberos` for SPNEGO and optionally `python-ldap`/`ldap3` for credential binds citeturn0search0turn0search5.  
+- **Hybrid Azure AD** (via Azure AD Connect): leverage **FastAPI-Azure-Auth** or **MSAL for Python** to protect APIs with Azure Entra ID tokens citeturn0search1turn0search7.  
+- **AWS Managed Microsoft AD**: join hosts to the domain and reuse the Kerberos/LDAP patterns above.  
+- **SAML Federation** (ADFS/Keycloak/Okta): use libraries like `Flask-SAML` or `fastapi-saml` to handle SAML 2.0 flows.
+
+---
+
+## 2. Update Your Bootstrap Prompt for Security  
+In your Replit AI Agent bootstrap template, insert an additional step after “Configure Env” to wire in the County’s auth mechanism. For example, if using on-prem AD/Kerberos:
+
+```text
+7. **Integrate Enterprise Authentication**  
+   - Install `Flask-Kerberos` and `python-ldap`.  
+   - In `apps/backend/main.py`, wrap secure endpoints with `@requires_auth` from Flask-Kerberos.  
+   - Add an LDAP-bind helper using `ldap3` for any non-Kerberos clients.  
+   - Store Kerberos service principal and keytab path in Secrets Vault.  
+```
+
+Or, for Azure AD:
+
+```text
+7. **Integrate Azure Entra ID Authentication**  
+   - Install `fastapi-azure-auth`.  
+   - In `apps/backend/syncservice/src/syncservice/main.py`, add `SingleTenantAzureAuthorizationCodeBearer` as a dependency for protected routes.  
+   - Store `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and client secret in Secrets.  
+```
+
+---
+
+## 3. Implement & Test Locally  
+1. **Enable the Agent** in your Repl’s AI pane.  
+2. **Phase 1 – Planning Prompt**  
+   > “Generate a detailed plan to integrate [chosen mechanism] into both the Flask gateway (`main.py`) and FastAPI sync service (`syncservice/main.py`), listing packages, code snippets, and Secrets entries.”  
+3. **Review & Refine** until the plan matches your environment.  
+4. **Phase 2 – Execution Prompt**  
+   > “Implement the plan: install packages, update endpoints with auth decorators or dependencies, configure Pydantic settings for env-vars, and run `pytest`.”  
+5. **Iterate** on any test failures by prompting “Fix the Kerberos (or Azure AD) test failures without changing other business logic.”
+
+---
+
+## 4. Validate End-to-End SSO  
+- **Kerberos Flow:** From a domain-joined client on the County network, access `http://localhost:5000/api/secure` and confirm IWA passes automatically citeturn0search0.  
+- **Azure AD Flow:** Navigate to your OpenAPI docs at `http://localhost:8000/docs`, click “Authorize,” and complete the AD login—verifying token-protected sync endpoints citeturn0search1.  
+
+Once successful, merge these changes, update your `.replit` workflows to include auth-related environment variables, and roll out to your CI/CD pipeline.
+
+---
+
+## 5. Roll Out & Monitor  
+- **Secrets Management:** Ensure all service principals, keytabs, and client secrets are stored in Replit’s Secrets Vault—never in plaintext.  
+- **Health Checks:** Extend your `/health/ready` endpoint to verify both the database and the AD/SSO connection are healthy.  
+- **Logging & Alerts:** Instrument failures (e.g., `401 Unauthorized`) in your logs and set up alerts so you can detect auth regressions early.
+
+With these steps, your TerraFusionSync services will seamlessly honor the County’s security posture, providing frictionless access for end users and centralizing authentication with the existing infrastructure.

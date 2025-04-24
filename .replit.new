@@ -1,37 +1,67 @@
-run = "cd $REPL_HOME && python -m main"
+modules = ["python-3.11"]
 
 [nix]
-channel = "stable-23_11"
+channel = "stable-24_05"
+packages = ["libxcrypt", "libyaml", "nats-server", "openssl", "postgresql", "unixODBC"]
 
 [deployment]
-run = ["sh", "-c", "cd $REPL_HOME && python -m main"]
+deploymentTarget = "autoscale"
+run = ["gunicorn", "--bind", "0.0.0.0:5000", "main:app"]
 
-[unitTest]
-language = "python3"
+[workflows]
+runButton = "Project"
 
-# Host the web server on port 5000
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "syncservice"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[workflows.workflow.metadata]
+agentRequireRestartOnSave = false
+
+[[workflows.workflow.tasks]]
+task = "packager.installForAll"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "gunicorn --bind 0.0.0.0:5000 --reuse-port --reload main:app"
+waitForPort = 5000
+
+[[workflows.workflow]]
+name = "syncservice"
+author = "agent"
+
+[workflows.workflow.metadata]
+agentRequireRestartOnSave = false
+
+[[workflows.workflow.tasks]]
+task = "packager.installForAll"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd apps/backend/syncservice && python -m uvicorn syncservice.main:app --host 0.0.0.0 --port 8080"
+waitForPort = 8080
+
 [[ports]]
 localPort = 5000
 externalPort = 80
 
-# Host the SyncService on port 8000
 [[ports]]
 localPort = 8000
 externalPort = 8000
 
-# Run the application in the main workflow
-[[http]]
-localPort = 5000
-externalPort = 80
-name = "Start application"
-status = "Start application"
-workflow = "Start application"
-
-# Configure the SyncService workflow
-[[workflow]]
-name = "syncservice"
-command = "cd $REPL_HOME && python3 syncservice_workflow_runner.py"
-
-[[hints]]
-regex = "SyncService started"
-message = "The SyncService has started successfully. You can access it at:\n  - Dashboard: https://{{ domain }}/dashboard\n  - API: https://{{ domain }}/api/\n  - API Docs: https://{{ domain }}/api-docs\n\nUse the gateway at https://{{ domain }} to interact with the service."
+[[ports]]
+localPort = 8080
+externalPort = 8080

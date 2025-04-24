@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TerraFusion SyncService</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="/">TerraFusion SyncService</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/">Home</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/dashboard">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/dashboard/sync">Sync Operations</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/dashboard/metrics">Metrics</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-lg-8">
+                <div class="card mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">Welcome to TerraFusion SyncService</h5>
+                    </div>
+                    <div class="card-body">
+                        <p>TerraFusion SyncService is a sophisticated platform for enterprise data migration, 
+                        designed to enable seamless integration across diverse system architectures with advanced 
+                        monitoring and adaptive synchronization capabilities.</p>
+                        
+                        <h5>Key Features:</h5>
+                        <ul>
+                            <li>Multi-system integration between PACS, CAMA, GIS, ERP, and CRM systems</li>
+                            <li>Support for both full data transfers and efficient incremental updates</li>
+                            <li>Comprehensive metrics and health monitoring for all components</li>
+                            <li>Automatic recovery from failures and connection issues</li>
+                            <li>Robust error handling with fallbacks at every level</li>
+                        </ul>
+                        
+                        <div class="alert alert-{{ 'success' if service_status else 'danger' }} mt-3">
+                            <strong>SyncService Status:</strong> {{ 'Online' if service_status else 'Offline' }}
+                        </div>
+                        
+                        <a href="/dashboard" class="btn btn-primary mt-3">Go to Dashboard</a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-4">
+                <div class="card mb-4">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0">Configured Sync Pairs</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if sync_pairs %}
+                            <ul class="list-group">
+                                {% for pair in sync_pairs %}
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    {{ pair.name }}
+                                    <span class="badge bg-{{ 'success' if pair.active else 'secondary' }} rounded-pill">
+                                        {{ pair.source_system }} → {{ pair.target_system }}
+                                    </span>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                        {% else %}
+                            <p>No sync pairs configured yet.</p>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">Quick Links</h5>
+                    </div>
+                    <div class="card-body">
+                        <ul class="list-group">
+                            <li class="list-group-item">
+                                <a href="/api/docs">API Documentation</a>
+                            </li>
+                            <li class="list-group-item">
+                                <a href="/api/status">System Status</a>
+                            </li>
+                            <li class="list-group-item">
+                                <a href="/dashboard/metrics">Performance Metrics</a>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="mt-5 py-3 bg-light">
+        <div class="container">
+            <p class="text-center text-muted">
+                &copy; 2023 TerraFusion SyncService
+            </p>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
