@@ -4,77 +4,47 @@ Main module for the SyncService.
 This module initializes and runs the FastAPI application for the SyncService.
 """
 
+import asyncio
 import logging
 import os
-import yaml
-from typing import Dict, List, Any, Optional
-from fastapi import FastAPI, Depends, HTTPException, Request, status, APIRouter
+import signal
+import sys
+import traceback
+from datetime import datetime
+from typing import Dict, List, Any, Optional, Callable
+
+from fastapi import FastAPI, Depends, HTTPException, Request, Query
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader
-from contextlib import asynccontextmanager
+
 import uvicorn
 
-from .models.base import HealthStatus, HealthCheckResponse
 from .monitoring.metrics import MetricsCollector
 from .monitoring.system_monitoring import SystemMonitor
-from .monitoring.sync_tracker import SyncTracker
-from .api import sync
+from .monitoring.sync_tracker import SyncTracker, SyncStatus
 
-# Configure logging
+# Set up logging
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler()]
 )
-
 logger = logging.getLogger("syncservice")
 
-# Global variables for service components
-metrics_collector = None
-system_monitor = None
-sync_tracker = None
+# Get API key and port from environment
+API_KEY = os.environ.get("SYNC_SERVICE_API_KEY", "dev-api-key")
+PORT = int(os.environ.get("SYNC_SERVICE_PORT", "8000"))  # Default to port 8000
 
+# Create API key header
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """
-    Context manager for FastAPI application lifecycle events.
-    
-    This function is called when the application starts up and shuts down.
-    """
-    # Startup
-    logger.info("Starting SyncService...")
-    
-    # Initialize components
-    global metrics_collector, system_monitor, sync_tracker
-    metrics_collector = MetricsCollector()
-    system_monitor = SystemMonitor(metrics_collector)
-    sync_tracker = SyncTracker()
-    
-    # Start monitoring
-    await system_monitor.start()
-    
-    logger.info("SyncService started successfully")
-    
-    yield
-    
-    # Shutdown
-    logger.info("Shutting down SyncService...")
-    
-    # Stop monitoring
-    if system_monitor:
-        await system_monitor.stop()
-    
-    logger.info("SyncService shut down successfully")
-
-
-# Create the FastAPI application
+# Create FastAPI app
 app = FastAPI(
-    title="SyncService API",
-    description="API for the TerraFusion SyncService",
+    title="TerraFusion SyncService API",
+    description="API for synchronizing data between different systems",
     version="1.0.0",
-    lifespan=lifespan
 )
 
 # Add CORS middleware
@@ -86,9 +56,139 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Optional API key authentication
-API_KEY = os.environ.get("SYNC_SERVICE_API_KEY")
-api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+# Initialize services
+metrics_collector = None
+system_monitor = None
+sync_tracker = None
+
+
+async def lifespan(app: FastAPI):
+    """
+    Context manager for FastAPI application lifecycle events.
+    
+    This function is called when the application starts up and shuts down.
+    """
+    global metrics_collector, system_monitor, sync_tracker
+    
+    # Startup
+    logger.info("Starting SyncService...")
+    
+    # Initialize metrics collector (optional)
+    metrics_collector = MetricsCollector(
+        db_url=os.environ.get("SYNC_SERVICE_DB_URL")
+    )
+    await metrics_collector.setup()
+    
+    # Initialize system monitor
+    system_monitor = SystemMonitor(interval=60)
+    await system_monitor.start()
+    
+    # Initialize sync tracker (optional)
+    sync_tracker = SyncTracker(
+        db_url=os.environ.get("SYNC_SERVICE_DB_URL")
+    )
+    await sync_tracker.setup()
+    
+    logger.info("SyncService started successfully")
+    
+    yield
+    
+    # Shutdown
+    logger.info("Shutting down SyncService...")
+    
+    if system_monitor:
+        await system_monitor.stop()
+    
+    logger.info("SyncService shut down successfully")
+
+
+app.router.lifespan_context = lifespan
+
+
+# Try to mount static files for dashboard UI
+try:
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    static_dir = os.path.join(current_dir, "static")
+    
+    if os.path.exists(static_dir) and os.path.isdir(static_dir):
+        app.mount("/dashboard", StaticFiles(directory=static_dir, html=True), name="dashboard")
+    else:
+        logger.warning(f"Could not mount dashboard static files: Directory 'static' does not exist")
+except Exception as e:
+    logger.warning(f"Failed to mount static files: {str(e)}")
+
+
+# Add API routes
+@app.get("/", tags=["Info"])
+async def root():
+    """
+    Get API information.
+    
+    Returns:
+        Basic information about the API
+    """
+    return {
+        "name": "TerraFusion SyncService API",
+        "version": "1.0.0",
+        "description": "API for synchronizing data between different systems",
+        "docs_url": "/docs",
+        "dashboard_url": "/dashboard"
+    }
+
+
+@app.get("/health/live", tags=["Health"])
+async def health_live():
+    """
+    Liveness probe endpoint.
+    
+    Returns:
+        Health status with timestamp
+    """
+    return {
+        "status": "UP",
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+
+@app.get("/health/ready", tags=["Health"])
+async def health_ready():
+    """
+    Readiness probe endpoint.
+    
+    Returns:
+        Readiness status with timestamp
+    
+    Raises:
+        HTTPException: If the service is not ready
+    """
+    # Check if all required services are available
+    if not system_monitor:
+        raise HTTPException(status_code=503, detail="System monitor not initialized")
+    
+    return {
+        "status": "READY",
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+
+@app.get("/health/status", tags=["Health"])
+async def health_status():
+    """
+    Detailed health status endpoint.
+    
+    Returns:
+        Detailed health status with component statuses
+    """
+    return {
+        "status": "UP",
+        "timestamp": datetime.utcnow().isoformat(),
+        "version": "1.0.0",
+        "components": {
+            "system_monitor": "UP" if system_monitor else "DOWN",
+            "metrics_collector": "UP" if metrics_collector else "DOWN",
+            "sync_tracker": "UP" if sync_tracker else "DOWN"
+        }
+    }
 
 
 async def verify_api_key(api_key: str = Depends(api_key_header)):
@@ -104,62 +204,21 @@ async def verify_api_key(api_key: str = Depends(api_key_header)):
     Raises:
         HTTPException: If key is invalid
     """
-    if not API_KEY:
-        # No API key set, authentication is disabled
-        return True
-    
-    if api_key == API_KEY:
-        return True
-    
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid or missing API key",
-        headers={"WWW-Authenticate": "ApiKey"},
-    )
+    if api_key != API_KEY:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid API key",
+            headers={"WWW-Authenticate": "ApiKey"}
+        )
+    return True
 
 
-# Include routers from other modules
-app.include_router(sync.router, dependencies=[Depends(verify_api_key)])
-
-# Create a router for monitoring and health endpoints
-monitor_router = APIRouter(prefix="/api/monitor", tags=["monitoring"])
-
-
-@monitor_router.get("/health", response_model=HealthCheckResponse)
-async def health_check():
-    """
-    Check the health of the SyncService.
-    
-    Returns:
-        Health status information
-    """
-    # Get system health
-    system_health = await system_monitor.get_system_health()
-    
-    # Determine overall status
-    status = HealthStatus.UP
-    
-    # Return health check response
-    return HealthCheckResponse(
-        status=status,
-        service="SyncService",
-        version="1.0.0",
-        dependencies={
-            "database": HealthStatus.UNKNOWN,  # Database not configured yet
-            "system": system_health.get("error") and HealthStatus.DEGRADED or HealthStatus.UP
-        },
-        performance={
-            "cpu_percent": str(system_health.get("cpu", {}).get("percent", 0)) + "%",
-            "memory_percent": str(system_health.get("memory", {}).get("percent", 0)) + "%"
-        }
-    )
-
-
-@monitor_router.get("/metrics")
+@app.get("/api/metrics", tags=["Monitoring"])
 async def get_metrics(
     prefix: Optional[str] = None,
     hours: int = 1,
-    limit: int = 100
+    limit: int = 100,
+    api_key: str = Depends(verify_api_key)
 ):
     """
     Get system metrics.
@@ -168,40 +227,46 @@ async def get_metrics(
         prefix: Optional metric name prefix filter
         hours: Number of hours of data to return
         limit: Maximum number of metrics to return
+        api_key: API key from dependency
         
     Returns:
         List of metrics
     """
-    from datetime import datetime, timedelta
-    
-    end_time = datetime.utcnow()
-    start_time = end_time - timedelta(hours=hours)
-    
+    if not metrics_collector:
+        return []
+        
     return await metrics_collector.get_metrics(
-        metric_name_prefix=prefix or "",
-        start_time=start_time,
-        end_time=end_time,
+        metric_name_prefix=prefix,
+        start_time=datetime.utcnow() - timedelta(hours=hours),
+        end_time=datetime.utcnow(),
         limit=limit
     )
 
 
-@monitor_router.get("/system")
-async def get_system_info():
+@app.get("/api/system", tags=["Monitoring"])
+async def get_system_info(api_key: str = Depends(verify_api_key)):
     """
     Get current system information.
     
+    Args:
+        api_key: API key from dependency
+        
     Returns:
         Dictionary of system information
     """
+    if not system_monitor:
+        return {}
+        
     return await system_monitor.get_system_health()
 
 
-@monitor_router.get("/sync/operations")
+@app.get("/api/sync/operations", tags=["Sync"])
 async def get_sync_operations(
     sync_pair_id: Optional[str] = None,
     status: Optional[str] = None,
     limit: int = 10,
-    offset: int = 0
+    offset: int = 0,
+    api_key: str = Depends(verify_api_key)
 ):
     """
     Get sync operations.
@@ -211,51 +276,34 @@ async def get_sync_operations(
         status: Optional filter by status
         limit: Maximum number of operations to return
         offset: Offset for pagination
+        api_key: API key from dependency
         
     Returns:
         List of sync operations
     """
-    from .models.base import SyncStatus
-    
-    # Convert status string to enum if provided
-    status_enum = None
+    if not sync_tracker:
+        return []
+        
+    status_filter = None
     if status:
         try:
-            status_enum = SyncStatus(status)
+            status_filter = SyncStatus(status.upper())
         except ValueError:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid status value: {status}"
-            )
-    
-    operations = await sync_tracker.get_operations(
+            pass
+            
+    return await sync_tracker.get_operations(
         sync_pair_id=sync_pair_id,
-        status=status_enum,
+        status=status_filter,
         limit=limit,
         offset=offset
     )
-    
-    # Convert operations to dictionary for JSON response
-    return [
-        {
-            "id": op.id,
-            "sync_pair_id": op.sync_pair_id,
-            "sync_type": op.sync_type.value,
-            "entity_types": op.entity_types,
-            "status": op.status.value,
-            "start_time": op.start_time.isoformat(),
-            "end_time": op.end_time.isoformat() if op.end_time else None,
-            "details": op.details.dict() if op.details else None,
-            "error": op.error
-        }
-        for op in operations
-    ]
 
 
-@monitor_router.get("/sync/metrics")
+@app.get("/api/sync/metrics", tags=["Sync"])
 async def get_sync_metrics(
     sync_pair_id: Optional[str] = None,
-    days: int = 7
+    days: int = 7,
+    api_key: str = Depends(verify_api_key)
 ):
     """
     Get sync metrics.
@@ -263,53 +311,37 @@ async def get_sync_metrics(
     Args:
         sync_pair_id: Optional filter by sync pair ID
         days: Number of days to include in metrics
+        api_key: API key from dependency
         
     Returns:
         Dictionary of sync metrics
     """
+    if not sync_tracker:
+        return {}
+        
     return await sync_tracker.calculate_sync_metrics(
         sync_pair_id=sync_pair_id,
         days=days
     )
 
 
-@monitor_router.get("/sync/active")
-async def get_active_sync_operations():
+@app.get("/api/sync/active", tags=["Sync"])
+async def get_active_sync_operations(api_key: str = Depends(verify_api_key)):
     """
     Get currently active sync operations.
     
+    Args:
+        api_key: API key from dependency
+        
     Returns:
         List of active sync operations
     """
-    operations = await sync_tracker.get_active_operations()
-    
-    # Convert operations to dictionary for JSON response
-    return [
-        {
-            "id": op.id,
-            "sync_pair_id": op.sync_pair_id,
-            "sync_type": op.sync_type.value,
-            "entity_types": op.entity_types,
-            "status": op.status.value,
-            "start_time": op.start_time.isoformat(),
-            "duration_minutes": (datetime.utcnow() - op.start_time).total_seconds() / 60,
-            "details": op.details.dict() if op.details else None
-        }
-        for op in operations
-    ]
+    if not sync_tracker:
+        return []
+        
+    return await sync_tracker.get_active_operations()
 
 
-# Include the monitoring router
-app.include_router(monitor_router)
-
-# Mount static files for the dashboard UI
-try:
-    app.mount("/dashboard", StaticFiles(directory="static", html=True), name="dashboard")
-except RuntimeError as e:
-    logger.warning(f"Could not mount dashboard static files: {str(e)}")
-
-
-# Add global exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """
@@ -325,13 +357,17 @@ async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {str(exc)}", exc_info=True)
     
     return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"detail": f"Internal server error: {str(exc)}"}
+        status_code=500,
+        content={
+            "error": "Internal Server Error",
+            "detail": str(exc),
+            "timestamp": datetime.utcnow().isoformat(),
+            "path": request.url.path
+        }
     )
 
 
-# Add endpoint for internal configuration
-@app.get("/internal/config")
+@app.get("/api/config", tags=["Admin"])
 async def get_config(api_key: str = Depends(verify_api_key)):
     """
     Get current service configuration.
@@ -342,26 +378,23 @@ async def get_config(api_key: str = Depends(verify_api_key)):
     Returns:
         Dictionary of configuration values
     """
-    # This would normally load configuration from a file or database
-    # For now, returning a placeholder
     return {
         "version": "1.0.0",
         "environment": os.environ.get("ENVIRONMENT", "development"),
-        "components": {
-            "metrics_collector": metrics_collector is not None,
-            "system_monitor": system_monitor is not None,
-            "sync_tracker": sync_tracker is not None
-        }
+        "api_port": PORT,
+        "logging_level": logging.getLevelName(logger.level),
+        "db_url_configured": bool(os.environ.get("SYNC_SERVICE_DB_URL")),
+        "api_key_configured": API_KEY != "dev-api-key"
     }
 
 
-# Main entry point
+# Import and include API routers
+from .api import dashboard, sync
+
+app.include_router(dashboard.router)
+app.include_router(sync.router)
+
+
 if __name__ == "__main__":
-    port = int(os.environ.get("SYNC_SERVICE_PORT", 8000))
-    
-    uvicorn.run(
-        "syncservice.main:app",
-        host="0.0.0.0",
-        port=port,
-        reload=False
-    )
+    # Only use this for development; in production use uvicorn or gunicorn
+    uvicorn.run(app, host="0.0.0.0", port=PORT)

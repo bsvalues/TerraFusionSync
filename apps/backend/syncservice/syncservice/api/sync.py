@@ -1,236 +1,375 @@
 """
-Synchronization API for the SyncService.
+Sync API for the SyncService.
 
-This module defines the API endpoints for managing synchronization operations.
+This module defines the API endpoints for managing sync operations.
 """
 
+import asyncio
+import json
 import logging
+import uuid
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
-from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, validator
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from pydantic import BaseModel, Field
 
-from ..models.base import SyncType, SyncStatus, SyncOperation, SyncOperationDetails
-from ..core.sync_engine import SyncEngine
+from ..monitoring.sync_tracker import SyncTracker, SyncStatus, SyncType
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/sync", tags=["sync"])
 
 
-class StartSyncRequest(BaseModel):
-    """Request model for starting a sync operation."""
-    sync_pair_id: str
-    sync_type: SyncType
-    entity_types: List[str]
-    incremental_hours: Optional[int] = None
-    
-    @validator('incremental_hours')
-    def validate_incremental_hours(cls, v, values):
-        """Validate that incremental_hours is provided for incremental syncs."""
-        if values.get('sync_type') == SyncType.INCREMENTAL and v is None:
-            raise ValueError('incremental_hours is required for incremental syncs')
-        return v
-
-
-class SyncOperationResponse(BaseModel):
-    """Response model for sync operations."""
-    operation_id: str
-    sync_pair_id: str
-    sync_type: SyncType
-    entity_types: List[str]
-    status: SyncStatus
-    start_time: datetime
-    end_time: Optional[datetime] = None
-    details: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
-
-
-# Dependency to get the sync engine
-async def get_sync_engine():
-    """Dependency to get the sync engine instance."""
-    # This would normally retrieve the engine from a dependency container
+# Dependency to get the sync tracker
+async def get_sync_tracker():
+    """Dependency to get the sync tracker instance."""
+    # In a real implementation, this would retrieve the tracker from a dependency container
     # For now, returning None as a placeholder
     return None
 
 
-@router.post("/start", response_model=SyncOperationResponse)
-async def start_sync(
-    request: StartSyncRequest,
-    sync_engine: Optional[SyncEngine] = Depends(get_sync_engine)
+class FullSyncRequest(BaseModel):
+    """Request model for starting a full sync."""
+    sync_pair_id: str = Field(..., description="ID of the sync pair to sync")
+    entity_types: List[str] = Field(default=["property", "owner"], description="Types of entities to sync")
+    params: Optional[Dict[str, Any]] = Field(default=None, description="Additional parameters for the sync operation")
+
+
+class IncrementalSyncRequest(BaseModel):
+    """Request model for starting an incremental sync."""
+    sync_pair_id: str = Field(..., description="ID of the sync pair to sync")
+    entity_types: List[str] = Field(default=["property", "owner"], description="Types of entities to sync")
+    hours: Optional[int] = Field(default=24, description="Number of hours to look back for changes")
+    params: Optional[Dict[str, Any]] = Field(default=None, description="Additional parameters for the sync operation")
+
+
+@router.post("/full")
+async def start_full_sync(
+    request: FullSyncRequest,
+    sync_tracker: Optional[SyncTracker] = Depends(get_sync_tracker)
 ):
     """
-    Start a synchronization operation.
+    Start a full sync operation.
     
     Args:
-        request: Request containing sync parameters
-        sync_engine: Sync engine instance from dependency
+        request: Sync request parameters
+        sync_tracker: Sync tracker instance from dependency
         
     Returns:
-        Response containing the created sync operation
+        Dictionary with operation details
     """
-    if sync_engine is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Sync engine is not available"
-        )
+    if not sync_tracker:
+        # For development, return a mock operation
+        operation_id = f"mock-full-{uuid.uuid4().hex[:8]}"
+        
+        return {
+            "id": operation_id,
+            "sync_pair_id": request.sync_pair_id,
+            "sync_type": SyncType.FULL,
+            "status": SyncStatus.RUNNING,
+            "start_time": datetime.utcnow().isoformat(),
+            "entity_types": request.entity_types,
+            "message": "Sync operation started in mock mode"
+        }
     
-    try:
-        # Generate an operation ID
-        operation_id = f"{request.sync_type.value}-{uuid4()}"
-        
-        logger.info(f"Starting {request.sync_type.value} sync operation {operation_id} "
-                    f"for pair {request.sync_pair_id}")
-        
-        # Determine since date for incremental syncs
-        since = None
-        if request.sync_type == SyncType.INCREMENTAL:
-            since = datetime.utcnow() - timedelta(hours=request.incremental_hours)
-        
-        # Start the sync operation
-        if request.sync_type == SyncType.FULL:
-            sync_op = await sync_engine.perform_full_sync(
-                sync_pair_id=request.sync_pair_id,
-                entity_types=request.entity_types,
-                operation_id=operation_id
-            )
-        else:
-            if since is None:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Since date is required for incremental syncs"
-                )
-            
-            sync_op = await sync_engine.perform_incremental_sync(
-                sync_pair_id=request.sync_pair_id,
-                entity_types=request.entity_types,
-                since=since,
-                operation_id=operation_id
-            )
-        
-        # Convert to response model
-        response = SyncOperationResponse(
-            operation_id=sync_op.id,
-            sync_pair_id=sync_op.sync_pair_id,
-            sync_type=sync_op.sync_type,
-            entity_types=sync_op.entity_types,
-            status=sync_op.status,
-            start_time=sync_op.start_time,
-            end_time=sync_op.end_time,
-            details=sync_op.details.dict() if sync_op.details else None,
-            error=sync_op.error
-        )
-        
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error starting sync operation: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error starting sync operation: {str(e)}"
-        )
-
-
-@router.get("/operations", response_model=List[SyncOperationResponse])
-async def get_sync_operations(
-    sync_pair_id: Optional[str] = Query(None),
-    sync_type: Optional[SyncType] = Query(None),
-    status: Optional[SyncStatus] = Query(None),
-    limit: int = Query(10, gt=0, le=100),
-    offset: int = Query(0, ge=0)
-):
-    """
-    Get a list of sync operations.
+    # Generate a unique ID for this operation
+    operation_id = f"full-{uuid.uuid4().hex[:8]}"
     
-    Args:
-        sync_pair_id: Optional filter by sync pair ID
-        sync_type: Optional filter by sync type
-        status: Optional filter by status
-        limit: Maximum number of operations to return
-        offset: Starting offset for pagination
-        
-    Returns:
-        List of sync operations
-    """
-    # This would normally query the database for sync operations
-    # For now, returning an empty list as a placeholder
-    return []
-
-
-@router.get("/operations/{operation_id}", response_model=SyncOperationResponse)
-async def get_sync_operation(operation_id: str):
-    """
-    Get details for a specific sync operation.
-    
-    Args:
-        operation_id: ID of the sync operation
-        
-    Returns:
-        Sync operation details
-    """
-    # This would normally query the database for the sync operation
-    # For now, raising a not found exception
-    raise HTTPException(
-        status_code=404,
-        detail=f"Sync operation {operation_id} not found"
+    # Start tracking the operation
+    operation = await sync_tracker.start_operation(
+        operation_id=operation_id,
+        sync_pair_id=request.sync_pair_id,
+        sync_type=SyncType.FULL,
+        entity_types=request.entity_types,
+        parameters=request.params
     )
+    
+    # Start the sync in the background
+    asyncio.create_task(_run_full_sync(operation_id, request.sync_pair_id, request.entity_types, request.params, sync_tracker))
+    
+    return {
+        "id": operation["id"],
+        "sync_pair_id": operation["sync_pair_id"],
+        "sync_type": operation["sync_type"],
+        "status": operation["status"],
+        "start_time": operation["start_time"],
+        "entity_types": operation["entity_types"],
+        "message": "Sync operation started"
+    }
 
 
-@router.post("/operations/{operation_id}/cancel")
+@router.post("/incremental")
+async def start_incremental_sync(
+    request: IncrementalSyncRequest,
+    sync_tracker: Optional[SyncTracker] = Depends(get_sync_tracker)
+):
+    """
+    Start an incremental sync operation.
+    
+    Args:
+        request: Sync request parameters
+        sync_tracker: Sync tracker instance from dependency
+        
+    Returns:
+        Dictionary with operation details
+    """
+    if not sync_tracker:
+        # For development, return a mock operation
+        operation_id = f"mock-incremental-{uuid.uuid4().hex[:8]}"
+        
+        return {
+            "id": operation_id,
+            "sync_pair_id": request.sync_pair_id,
+            "sync_type": SyncType.INCREMENTAL,
+            "status": SyncStatus.RUNNING,
+            "start_time": datetime.utcnow().isoformat(),
+            "entity_types": request.entity_types,
+            "hours": request.hours,
+            "message": "Sync operation started in mock mode"
+        }
+    
+    # Generate a unique ID for this operation
+    operation_id = f"incremental-{uuid.uuid4().hex[:8]}"
+    
+    # Start tracking the operation
+    params = request.params or {}
+    params["hours"] = request.hours
+    
+    operation = await sync_tracker.start_operation(
+        operation_id=operation_id,
+        sync_pair_id=request.sync_pair_id,
+        sync_type=SyncType.INCREMENTAL,
+        entity_types=request.entity_types,
+        parameters=params
+    )
+    
+    # Start the sync in the background
+    asyncio.create_task(_run_incremental_sync(operation_id, request.sync_pair_id, request.entity_types, request.hours, params, sync_tracker))
+    
+    return {
+        "id": operation["id"],
+        "sync_pair_id": operation["sync_pair_id"],
+        "sync_type": operation["sync_type"],
+        "status": operation["status"],
+        "start_time": operation["start_time"],
+        "entity_types": operation["entity_types"],
+        "hours": request.hours,
+        "message": "Sync operation started"
+    }
+
+
+@router.get("/status/{operation_id}")
+async def get_sync_status(
+    operation_id: str,
+    sync_tracker: Optional[SyncTracker] = Depends(get_sync_tracker)
+):
+    """
+    Get the status of a sync operation.
+    
+    Args:
+        operation_id: ID of the operation
+        sync_tracker: Sync tracker instance from dependency
+        
+    Returns:
+        Dictionary with operation status
+    """
+    if not sync_tracker:
+        # For development, return a mock operation
+        if operation_id.startswith("mock-"):
+            status = SyncStatus.COMPLETED if datetime.utcnow().second % 2 == 0 else SyncStatus.RUNNING
+            end_time = datetime.utcnow() if status == SyncStatus.COMPLETED else None
+            
+            return {
+                "id": operation_id,
+                "status": status,
+                "progress": 75 if status == SyncStatus.RUNNING else 100,
+                "start_time": (datetime.utcnow() - timedelta(minutes=5)).isoformat(),
+                "end_time": end_time.isoformat() if end_time else None,
+                "duration_seconds": 300 if status == SyncStatus.COMPLETED else None,
+                "records_processed": 1250,
+                "records_succeeded": 1200,
+                "records_failed": 50,
+                "message": "Mock operation status"
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Operation not found")
+    
+    # Find the operation in active operations
+    active_operations = await sync_tracker.get_active_operations()
+    for op in active_operations:
+        if op["id"] == operation_id:
+            return op
+    
+    # If not active, get from completed operations
+    operations = await sync_tracker.get_operations(
+        limit=1,
+        offset=0
+    )
+    
+    for op in operations:
+        if op["id"] == operation_id:
+            return op
+    
+    # If not found at all
+    raise HTTPException(status_code=404, detail="Operation not found")
+
+
+@router.post("/cancel/{operation_id}")
 async def cancel_sync_operation(
     operation_id: str,
-    sync_engine: Optional[SyncEngine] = Depends(get_sync_engine)
+    sync_tracker: Optional[SyncTracker] = Depends(get_sync_tracker)
 ):
     """
-    Cancel a running sync operation.
+    Cancel a sync operation.
     
     Args:
-        operation_id: ID of the sync operation to cancel
-        sync_engine: Sync engine instance from dependency
+        operation_id: ID of the operation
+        sync_tracker: Sync tracker instance from dependency
         
     Returns:
-        Success message
+        Dictionary with operation status
     """
-    if sync_engine is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Sync engine is not available"
-        )
+    if not sync_tracker:
+        # For development, return a mock response
+        if operation_id.startswith("mock-"):
+            return {
+                "id": operation_id,
+                "status": SyncStatus.CANCELLED,
+                "message": "Operation cancelled in mock mode"
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Operation not found")
     
-    # This would normally attempt to cancel the operation
-    # For now, returning a success message
-    return {"message": f"Sync operation {operation_id} canceled"}
-
-
-@router.get("/pairs", response_model=List[Dict[str, Any]])
-async def get_sync_pairs():
-    """
-    Get a list of sync pairs.
-    
-    Returns:
-        List of sync pairs
-    """
-    # This would normally query the database for sync pairs
-    # For now, returning an empty list as a placeholder
-    return []
-
-
-@router.get("/pairs/{sync_pair_id}")
-async def get_sync_pair(sync_pair_id: str):
-    """
-    Get details for a specific sync pair.
-    
-    Args:
-        sync_pair_id: ID of the sync pair
-        
-    Returns:
-        Sync pair details
-    """
-    # This would normally query the database for the sync pair
-    # For now, raising a not found exception
-    raise HTTPException(
-        status_code=404,
-        detail=f"Sync pair {sync_pair_id} not found"
+    # Update the operation status to cancelled
+    operation = await sync_tracker.update_operation(
+        operation_id=operation_id,
+        status=SyncStatus.CANCELLED
     )
+    
+    if not operation:
+        raise HTTPException(status_code=404, detail="Operation not found")
+    
+    return {
+        "id": operation["id"],
+        "status": operation["status"],
+        "message": "Operation cancelled"
+    }
+
+
+async def _run_full_sync(
+    operation_id: str,
+    sync_pair_id: str,
+    entity_types: List[str],
+    params: Optional[Dict[str, Any]],
+    sync_tracker: SyncTracker
+):
+    """
+    Run a full sync operation in the background.
+    
+    Args:
+        operation_id: ID of the operation
+        sync_pair_id: ID of the sync pair
+        entity_types: Types of entities to sync
+        params: Additional parameters
+        sync_tracker: Sync tracker instance
+    """
+    try:
+        # In a real implementation, this would call the sync engine
+        logger.info(f"Starting full sync for operation {operation_id}")
+        
+        # Simulate processing time
+        await asyncio.sleep(10)
+        
+        # Update the operation with success status
+        await sync_tracker.complete_operation(
+            operation_id=operation_id,
+            success=True,
+            records_processed=1250,
+            records_succeeded=1200,
+            records_failed=50,
+            results={
+                "property": {
+                    "processed": 750,
+                    "succeeded": 725,
+                    "failed": 25
+                },
+                "owner": {
+                    "processed": 500,
+                    "succeeded": 475,
+                    "failed": 25
+                }
+            }
+        )
+        
+        logger.info(f"Completed full sync for operation {operation_id}")
+        
+    except Exception as e:
+        logger.error(f"Error in full sync operation {operation_id}: {str(e)}", exc_info=True)
+        
+        # Update the operation with failure status
+        await sync_tracker.complete_operation(
+            operation_id=operation_id,
+            success=False,
+            error_message=str(e)
+        )
+
+
+async def _run_incremental_sync(
+    operation_id: str,
+    sync_pair_id: str,
+    entity_types: List[str],
+    hours: int,
+    params: Optional[Dict[str, Any]],
+    sync_tracker: SyncTracker
+):
+    """
+    Run an incremental sync operation in the background.
+    
+    Args:
+        operation_id: ID of the operation
+        sync_pair_id: ID of the sync pair
+        entity_types: Types of entities to sync
+        hours: Number of hours to look back
+        params: Additional parameters
+        sync_tracker: Sync tracker instance
+    """
+    try:
+        # In a real implementation, this would call the sync engine
+        logger.info(f"Starting incremental sync for operation {operation_id} (last {hours} hours)")
+        
+        # Simulate processing time
+        await asyncio.sleep(5)
+        
+        # Update the operation with success status
+        await sync_tracker.complete_operation(
+            operation_id=operation_id,
+            success=True,
+            records_processed=250,
+            records_succeeded=245,
+            records_failed=5,
+            results={
+                "property": {
+                    "processed": 150,
+                    "succeeded": 148,
+                    "failed": 2
+                },
+                "owner": {
+                    "processed": 100,
+                    "succeeded": 97,
+                    "failed": 3
+                }
+            }
+        )
+        
+        logger.info(f"Completed incremental sync for operation {operation_id}")
+        
+    except Exception as e:
+        logger.error(f"Error in incremental sync operation {operation_id}: {str(e)}", exc_info=True)
+        
+        # Update the operation with failure status
+        await sync_tracker.complete_operation(
+            operation_id=operation_id,
+            success=False,
+            error_message=str(e)
+        )

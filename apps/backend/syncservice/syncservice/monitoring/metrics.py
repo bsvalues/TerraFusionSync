@@ -1,495 +1,208 @@
 """
-Metrics collector for the SyncService.
+Metrics collection for SyncService.
 
-This module is responsible for collecting, storing, and retrieving metrics related to
-the SyncService operations and performance.
+This module provides functionality for collecting and storing metrics.
 """
 
+import asyncio
+import json
 import logging
+import os
 import time
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, Union, Tuple
+from typing import Dict, List, Any, Optional, Union
+
+try:
+    import sqlalchemy as sa
+    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+    from sqlalchemy.orm import sessionmaker
+    DB_AVAILABLE = True
+except ImportError:
+    DB_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
 
 class MetricsCollector:
     """
-    Component responsible for collecting, storing, and retrieving metrics.
-    
-    This component collects various metrics related to system performance and
-    synchronization operations.
+    Collect and store metrics for the SyncService.
     """
     
-    def __init__(self, db_session=None):
+    def __init__(self, db_url: Optional[str] = None):
         """
-        Initialize the Metrics Collector.
+        Initialize the metrics collector.
         
         Args:
-            db_session: Database session for storing metrics
+            db_url: Database URL for metrics storage
         """
-        self.db_session = db_session
-        self.memory_metrics = {}  # For in-memory storage when db is not available
-    
-    async def record_sync_duration(
-        self,
-        sync_type: str,
-        entity_type: str,
-        duration_ms: float,
-        record_count: int,
-        operation_id: str
-    ):
+        self.db_url = db_url
+        self.engine = None
+        self.async_session = None
+        self.in_memory_metrics = []
+        self.max_in_memory_metrics = 10000  # Limit to prevent memory issues
+        
+    async def setup(self):
         """
-        Record the duration of a synchronization operation.
-        
-        Args:
-            sync_type: Type of sync operation (full, incremental)
-            entity_type: Type of entity being synchronized
-            duration_ms: Duration in milliseconds
-            record_count: Number of records processed
-            operation_id: ID of the sync operation
+        Set up the metrics collector.
         """
-        metric_name = f"sync_duration.{sync_type}.{entity_type}"
-        timestamp = datetime.utcnow()
-        
-        metric_data = {
-            "value": duration_ms,
-            "unit": "ms",
-            "count": record_count,
-            "operation_id": operation_id,
-            "timestamp": timestamp
-        }
-        
-        logger.debug(f"Recording sync duration: {metric_name} = {duration_ms}ms "
-                     f"for {record_count} records")
-        
-        try:
-            if self.db_session:
-                # Store in database
-                from ..models.database import SystemMetric
-                
-                metric = SystemMetric(
-                    metric_name=metric_name,
-                    metric_value=duration_ms,
-                    metric_unit="ms",
-                    collection_time=timestamp
+        if self.db_url and DB_AVAILABLE:
+            try:
+                # Create async engine and session
+                self.engine = create_async_engine(self.db_url)
+                self.async_session = sessionmaker(
+                    self.engine, class_=AsyncSession, expire_on_commit=False
                 )
                 
-                self.db_session.add(metric)
-                await self.db_session.commit()
-            else:
-                # Store in memory
-                if metric_name not in self.memory_metrics:
-                    self.memory_metrics[metric_name] = []
-                
-                self.memory_metrics[metric_name].append(metric_data)
-                
-                # Limit the size of in-memory storage
-                if len(self.memory_metrics[metric_name]) > 1000:
-                    self.memory_metrics[metric_name] = self.memory_metrics[metric_name][-1000:]
-        
-        except Exception as e:
-            logger.error(f"Error recording sync duration metric: {str(e)}")
+                # Create metrics table if it doesn't exist
+                async with self.engine.begin() as conn:
+                    await conn.run_sync(self._create_tables)
+                    
+                logger.info("Metrics database connection established")
+            except Exception as e:
+                logger.error(f"Failed to set up metrics database: {str(e)}", exc_info=True)
+        else:
+            logger.warning("No database URL provided or SQLAlchemy not available. Using in-memory metrics storage.")
     
-    async def record_api_request(
-        self,
-        endpoint: str,
-        method: str,
-        status_code: int,
-        duration_ms: float
-    ):
+    def _create_tables(self, conn):
         """
-        Record metrics for an API request.
+        Create metrics tables if they don't exist.
+        """
+        if not DB_AVAILABLE:
+            return
+            
+        metadata = sa.MetaData()
+        
+        # Metrics table
+        sa.Table(
+            "metrics",
+            metadata,
+            sa.Column("id", sa.Integer, primary_key=True),
+            sa.Column("name", sa.String(255), nullable=False, index=True),
+            sa.Column("value", sa.Float, nullable=False),
+            sa.Column("tags", sa.JSON, nullable=True),
+            sa.Column("timestamp", sa.DateTime, nullable=False, index=True)
+        )
+        
+        metadata.create_all(conn)
+    
+    async def record_metric(self, name: str, value: Union[int, float], tags: Optional[Dict[str, str]] = None):
+        """
+        Record a metric.
         
         Args:
-            endpoint: API endpoint path
-            method: HTTP method
-            status_code: HTTP status code
-            duration_ms: Request duration in milliseconds
-        """
-        metric_name = f"api_request.{method}.{endpoint}.{status_code}"
-        timestamp = datetime.utcnow()
-        
-        metric_data = {
-            "value": duration_ms,
-            "unit": "ms",
-            "endpoint": endpoint,
-            "method": method,
-            "status_code": status_code,
-            "timestamp": timestamp
-        }
-        
-        logger.debug(f"Recording API request: {metric_name} = {duration_ms}ms")
-        
-        try:
-            if self.db_session:
-                # Store in database
-                from ..models.database import SystemMetric
-                
-                metric = SystemMetric(
-                    metric_name=metric_name,
-                    metric_value=duration_ms,
-                    metric_unit="ms",
-                    collection_time=timestamp
-                )
-                
-                self.db_session.add(metric)
-                await self.db_session.commit()
-            else:
-                # Store in memory
-                if metric_name not in self.memory_metrics:
-                    self.memory_metrics[metric_name] = []
-                
-                self.memory_metrics[metric_name].append(metric_data)
-                
-                # Limit the size of in-memory storage
-                if len(self.memory_metrics[metric_name]) > 1000:
-                    self.memory_metrics[metric_name] = self.memory_metrics[metric_name][-1000:]
-        
-        except Exception as e:
-            logger.error(f"Error recording API request metric: {str(e)}")
-    
-    async def record_system_metric(
-        self,
-        name: str,
-        value: float,
-        unit: str = ""
-    ):
-        """
-        Record a system metric.
-        
-        Args:
-            name: Name of the metric
+            name: Metric name
             value: Metric value
-            unit: Unit of measurement
+            tags: Optional tags for the metric
         """
-        metric_name = f"system.{name}"
         timestamp = datetime.utcnow()
         
-        metric_data = {
-            "value": value,
-            "unit": unit,
-            "timestamp": timestamp
+        metric = {
+            "name": name,
+            "value": float(value),
+            "tags": tags or {},
+            "timestamp": timestamp.isoformat()
         }
         
-        logger.debug(f"Recording system metric: {metric_name} = {value}{unit}")
+        # Add to in-memory storage (with limit)
+        self.in_memory_metrics.append(metric)
+        if len(self.in_memory_metrics) > self.max_in_memory_metrics:
+            self.in_memory_metrics = self.in_memory_metrics[-self.max_in_memory_metrics:]
         
-        try:
-            if self.db_session:
-                # Store in database
-                from ..models.database import SystemMetric
-                
-                metric = SystemMetric(
-                    metric_name=metric_name,
-                    metric_value=value,
-                    metric_unit=unit,
-                    collection_time=timestamp
-                )
-                
-                self.db_session.add(metric)
-                await self.db_session.commit()
-            else:
-                # Store in memory
-                if metric_name not in self.memory_metrics:
-                    self.memory_metrics[metric_name] = []
-                
-                self.memory_metrics[metric_name].append(metric_data)
-                
-                # Limit the size of in-memory storage
-                if len(self.memory_metrics[metric_name]) > 1000:
-                    self.memory_metrics[metric_name] = self.memory_metrics[metric_name][-1000:]
-        
-        except Exception as e:
-            logger.error(f"Error recording system metric: {str(e)}")
+        # Store in database if available
+        if self.async_session and DB_AVAILABLE:
+            try:
+                async with self.async_session() as session:
+                    # Create new metric record
+                    stmt = sa.text(
+                        "INSERT INTO metrics (name, value, tags, timestamp) VALUES (:name, :value, :tags, :timestamp)"
+                    )
+                    await session.execute(
+                        stmt,
+                        {
+                            "name": name,
+                            "value": value,
+                            "tags": json.dumps(tags or {}),
+                            "timestamp": timestamp
+                        }
+                    )
+                    await session.commit()
+            except Exception as e:
+                logger.error(f"Failed to store metric in database: {str(e)}", exc_info=True)
     
     async def get_metrics(
         self,
-        metric_name_prefix: str,
+        metric_name_prefix: Optional[str] = None,
         start_time: Optional[datetime] = None,
         end_time: Optional[datetime] = None,
         limit: int = 100
     ) -> List[Dict[str, Any]]:
         """
-        Get metrics matching a prefix within a time range.
+        Get metrics matching the specified criteria.
         
         Args:
-            metric_name_prefix: Prefix to match metric names
-            start_time: Start of time range
-            end_time: End of time range
+            metric_name_prefix: Optional prefix to filter metrics by name
+            start_time: Optional start time for time range filtering
+            end_time: Optional end time for time range filtering
             limit: Maximum number of metrics to return
             
         Returns:
             List of metrics
         """
+        # Default end time to now if not specified
         if end_time is None:
             end_time = datetime.utcnow()
-        
+            
+        # Default start time to 1 hour ago if not specified
         if start_time is None:
             start_time = end_time - timedelta(hours=1)
         
-        logger.debug(f"Getting metrics with prefix {metric_name_prefix} from {start_time} to {end_time}")
+        # If database is available, query from there
+        if self.async_session and DB_AVAILABLE:
+            try:
+                async with self.async_session() as session:
+                    query = "SELECT name, value, tags, timestamp FROM metrics WHERE timestamp BETWEEN :start_time AND :end_time"
+                    params = {"start_time": start_time, "end_time": end_time}
+                    
+                    if metric_name_prefix:
+                        query += " AND name LIKE :name_prefix"
+                        params["name_prefix"] = f"{metric_name_prefix}%"
+                        
+                    query += " ORDER BY timestamp DESC LIMIT :limit"
+                    params["limit"] = limit
+                    
+                    result = await session.execute(sa.text(query), params)
+                    
+                    metrics = []
+                    for row in result:
+                        metrics.append({
+                            "name": row.name,
+                            "value": row.value,
+                            "tags": json.loads(row.tags) if isinstance(row.tags, str) else (row.tags or {}),
+                            "timestamp": row.timestamp.isoformat() if hasattr(row.timestamp, 'isoformat') else row.timestamp
+                        })
+                    
+                    return metrics
+            except Exception as e:
+                logger.error(f"Failed to query metrics from database: {str(e)}", exc_info=True)
         
-        try:
-            if self.db_session:
-                # Query from database
-                from ..models.database import SystemMetric
-                from sqlalchemy import select
-                
-                query = (
-                    select(SystemMetric)
-                    .where(SystemMetric.metric_name.startswith(metric_name_prefix))
-                    .where(SystemMetric.collection_time >= start_time)
-                    .where(SystemMetric.collection_time <= end_time)
-                    .order_by(SystemMetric.collection_time.desc())
-                    .limit(limit)
-                )
-                
-                result = await self.db_session.execute(query)
-                metrics = result.scalars().all()
-                
-                return [
-                    {
-                        "name": metric.metric_name,
-                        "value": metric.metric_value,
-                        "unit": metric.metric_unit,
-                        "timestamp": metric.collection_time.isoformat()
-                    }
-                    for metric in metrics
-                ]
-            else:
-                # Get from memory
-                result = []
-                
-                for name, metrics in self.memory_metrics.items():
-                    if name.startswith(metric_name_prefix):
-                        for metric in metrics:
-                            timestamp = metric["timestamp"]
-                            if start_time <= timestamp <= end_time:
-                                result.append({
-                                    "name": name,
-                                    "value": metric["value"],
-                                    "unit": metric.get("unit", ""),
-                                    "timestamp": timestamp.isoformat()
-                                })
-                
-                # Sort by timestamp, newest first
-                result.sort(key=lambda x: x["timestamp"], reverse=True)
-                
-                # Limit the results
-                return result[:limit]
-        
-        except Exception as e:
-            logger.error(f"Error getting metrics: {str(e)}")
-            return []
-    
-    async def get_sync_performance_metrics(
-        self,
-        sync_type: Optional[str] = None,
-        entity_type: Optional[str] = None,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None
-    ) -> Dict[str, Any]:
-        """
-        Get performance metrics for synchronization operations.
-        
-        Args:
-            sync_type: Optional filter by sync type
-            entity_type: Optional filter by entity type
-            start_time: Start of time range
-            end_time: End of time range
+        # Fall back to in-memory metrics
+        filtered_metrics = []
+        for metric in self.in_memory_metrics:
+            # Parse timestamp for comparison
+            metric_time = datetime.fromisoformat(metric["timestamp"]) if isinstance(metric["timestamp"], str) else metric["timestamp"]
             
-        Returns:
-            Dictionary of performance metrics
-        """
-        # Determine the metric name prefix
-        prefix = "sync_duration"
-        if sync_type:
-            prefix = f"{prefix}.{sync_type}"
-            if entity_type:
-                prefix = f"{prefix}.{entity_type}"
-        
-        # Get raw metrics
-        raw_metrics = await self.get_metrics(
-            metric_name_prefix=prefix,
-            start_time=start_time,
-            end_time=end_time,
-            limit=1000
-        )
-        
-        # Process metrics into summary statistics
-        if not raw_metrics:
-            return {
-                "count": 0,
-                "total_duration_ms": 0,
-                "avg_duration_ms": 0,
-                "min_duration_ms": 0,
-                "max_duration_ms": 0,
-                "total_records": 0,
-                "avg_records_per_second": 0
-            }
-        
-        count = len(raw_metrics)
-        total_duration_ms = sum(m["value"] for m in raw_metrics)
-        avg_duration_ms = total_duration_ms / count
-        min_duration_ms = min(m["value"] for m in raw_metrics)
-        max_duration_ms = max(m["value"] for m in raw_metrics)
-        
-        # Calculate records processed if available
-        total_records = 0
-        for m in raw_metrics:
-            if "count" in m:
-                total_records += m["count"]
-        
-        # Calculate average records per second
-        avg_records_per_second = 0
-        if total_duration_ms > 0:
-            avg_records_per_second = (total_records * 1000) / total_duration_ms
-        
-        return {
-            "count": count,
-            "total_duration_ms": total_duration_ms,
-            "avg_duration_ms": avg_duration_ms,
-            "min_duration_ms": min_duration_ms,
-            "max_duration_ms": max_duration_ms,
-            "total_records": total_records,
-            "avg_records_per_second": avg_records_per_second
-        }
-    
-    async def calculate_api_response_times(
-        self,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None
-    ) -> Dict[str, Dict[str, Any]]:
-        """
-        Calculate API response time statistics.
-        
-        Args:
-            start_time: Start of time range
-            end_time: End of time range
-            
-        Returns:
-            Dictionary mapping endpoints to response time statistics
-        """
-        # Get raw metrics
-        raw_metrics = await self.get_metrics(
-            metric_name_prefix="api_request",
-            start_time=start_time,
-            end_time=end_time,
-            limit=10000
-        )
-        
-        # Group by endpoint
-        endpoint_metrics = {}
-        for metric in raw_metrics:
-            parts = metric["name"].split('.')
-            if len(parts) >= 4:
-                method = parts[1]
-                endpoint = parts[2]
-                status = parts[3]
-                
-                key = f"{method} {endpoint}"
-                
-                if key not in endpoint_metrics:
-                    endpoint_metrics[key] = {
-                        "count": 0,
-                        "total_ms": 0,
-                        "success_count": 0,
-                        "error_count": 0,
-                        "values": []
-                    }
-                
-                endpoint_metrics[key]["count"] += 1
-                endpoint_metrics[key]["total_ms"] += metric["value"]
-                endpoint_metrics[key]["values"].append(metric["value"])
-                
-                if status.startswith('2'):
-                    endpoint_metrics[key]["success_count"] += 1
-                else:
-                    endpoint_metrics[key]["error_count"] += 1
-        
-        # Calculate statistics for each endpoint
-        result = {}
-        for endpoint, data in endpoint_metrics.items():
-            values = data["values"]
-            count = data["count"]
-            
-            if count == 0:
+            # Apply time range filter
+            if metric_time < start_time or metric_time > end_time:
                 continue
+                
+            # Apply name prefix filter
+            if metric_name_prefix and not metric["name"].startswith(metric_name_prefix):
+                continue
+                
+            filtered_metrics.append(metric)
             
-            avg_ms = data["total_ms"] / count
-            min_ms = min(values) if values else 0
-            max_ms = max(values) if values else 0
-            
-            # Calculate 95th percentile
-            if values:
-                values.sort()
-                idx = int(count * 0.95)
-                p95_ms = values[idx] if idx < count else values[-1]
-            else:
-                p95_ms = 0
-            
-            error_rate = (data["error_count"] / count) * 100 if count > 0 else 0
-            
-            result[endpoint] = {
-                "count": count,
-                "avg_ms": avg_ms,
-                "min_ms": min_ms,
-                "max_ms": max_ms,
-                "p95_ms": p95_ms,
-                "error_rate": error_rate
-            }
-        
-        return result
-
-
-# Create a performance timing context manager
-class TimingContext:
-    """Context manager for measuring execution time of a block of code."""
-    
-    def __init__(self, metrics_collector, metric_type, **kwargs):
-        """
-        Initialize the timing context.
-        
-        Args:
-            metrics_collector: Metrics collector to record timing
-            metric_type: Type of metric to record
-            **kwargs: Additional parameters for the metric
-        """
-        self.metrics_collector = metrics_collector
-        self.metric_type = metric_type
-        self.kwargs = kwargs
-        self.start_time = None
-    
-    async def __aenter__(self):
-        """Start timing when entering the context."""
-        self.start_time = time.time()
-        return self
-    
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Record timing when exiting the context."""
-        if self.start_time is None:
-            return
-        
-        duration_ms = (time.time() - self.start_time) * 1000
-        
-        if self.metric_type == "sync":
-            await self.metrics_collector.record_sync_duration(
-                sync_type=self.kwargs.get("sync_type", "unknown"),
-                entity_type=self.kwargs.get("entity_type", "unknown"),
-                duration_ms=duration_ms,
-                record_count=self.kwargs.get("record_count", 0),
-                operation_id=self.kwargs.get("operation_id", "unknown")
-            )
-        elif self.metric_type == "api":
-            await self.metrics_collector.record_api_request(
-                endpoint=self.kwargs.get("endpoint", "unknown"),
-                method=self.kwargs.get("method", "unknown"),
-                status_code=self.kwargs.get("status_code", 0),
-                duration_ms=duration_ms
-            )
-        elif self.metric_type == "system":
-            await self.metrics_collector.record_system_metric(
-                name=self.kwargs.get("name", "unknown"),
-                value=duration_ms,
-                unit="ms"
-            )
+            # Respect limit
+            if len(filtered_metrics) >= limit:
+                break
+                
+        return filtered_metrics
