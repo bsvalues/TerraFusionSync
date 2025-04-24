@@ -32,8 +32,8 @@ def ensure_syncservice_running():
             # Get the directory containing this file
             current_dir = os.path.dirname(os.path.abspath(__file__))
             
-            # Path to the sync_service_runner script
-            runner_script = os.path.join(current_dir, "apps/backend/syncservice/sync_service_runner.py")
+            # Path to the run_syncservice script
+            runner_script = os.path.join(current_dir, "run_syncservice.py")
             
             if os.path.exists(runner_script):
                 # Start the SyncService in a separate process

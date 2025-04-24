@@ -1,55 +1,56 @@
+#!/usr/bin/env python
 """
-Workflow starter script for the SyncService.
+Wrapper script to start SyncService on the correct port.
 
-This script is a wrapper that will detect the port before running the actual application.
-It's designed to intercept the workflow command and adjust it to use port 8000.
+This script is used by the Replit workflow to start the SyncService.
+It enforces using port 8000 to avoid conflicts with the main application.
 """
 
-import sys
 import os
-import subprocess
+import sys
 import signal
+import subprocess
 
-# Set up signal handlers
 def signal_handler(sig, frame):
-    print("Shutting down SyncService...")
+    print("Terminating SyncService workflow starter...")
     sys.exit(0)
 
 def main():
     """
-    Run the SyncService on port 8000 regardless of what the workflow command specifies.
-    This avoids port conflicts with the main application on port 5000.
+    Start the SyncService on port 8000 regardless of workflow command.
+    This avoids conflicts with the main Flask application on port 5000.
     """
-    # Register signal handlers
+    # Register the signal handler
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-    
-    print("Starting SyncService workflow starter...")
-    
+
     # Get the current directory
     current_dir = os.path.dirname(os.path.abspath(__file__))
     
-    # Set up the command to run the SyncService on port 8000
-    command = [
-        "python", "-m", "uvicorn", "syncservice.main:app", 
-        "--host", "0.0.0.0", "--port", "8000", "--reload"
+    # Build the command to run the uvicorn server on port 8000
+    cmd = [
+        sys.executable, "-m", "uvicorn",
+        "syncservice.main:app",
+        "--host", "0.0.0.0",
+        "--port", "8000",
+        "--reload"
     ]
-    
-    print(f"Running command: {' '.join(command)}")
-    
-    # Start the process
-    process = subprocess.Popen(
-        command,
-        cwd=current_dir,
-        stdout=sys.stdout,
-        stderr=sys.stderr
-    )
-    
-    # Wait for the process to complete
-    process.wait()
-    
-    # Return the process exit code
-    return process.returncode
+
+    print(f"Starting SyncService with command: {' '.join(cmd)}")
+
+    try:
+        # Run the command and wait for it to complete
+        subprocess.check_call(cmd)
+    except KeyboardInterrupt:
+        print("Caught keyboard interrupt, exiting...")
+    except subprocess.CalledProcessError as e:
+        print(f"Error running SyncService: {e}")
+        return 1
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        return 1
+
+    return 0
 
 if __name__ == "__main__":
     sys.exit(main())
