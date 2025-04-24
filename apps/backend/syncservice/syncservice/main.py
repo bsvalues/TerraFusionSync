@@ -214,15 +214,21 @@ async def get_metrics(
     Returns:
         List of metrics
     """
-    if not metrics_collector:
+    try:
+        if not metrics_collector:
+            logger.warning("Metrics collector not initialized, returning empty list")
+            return []
+            
+        return await metrics_collector.get_metrics(
+            metric_name_prefix=prefix,
+            start_time=datetime.utcnow() - timedelta(hours=hours),
+            end_time=datetime.utcnow(),
+            limit=limit
+        )
+    except Exception as e:
+        logger.error(f"Error retrieving metrics: {str(e)}", exc_info=True)
+        # Return empty list on error to avoid breaking clients
         return []
-        
-    return await metrics_collector.get_metrics(
-        metric_name_prefix=prefix,
-        start_time=datetime.utcnow() - timedelta(hours=hours),
-        end_time=datetime.utcnow(),
-        limit=limit
-    )
 
 
 @app.get("/api/system", tags=["Monitoring"])
@@ -236,10 +242,28 @@ async def get_system_info(api_key: str = Depends(verify_api_key)):
     Returns:
         Dictionary of system information
     """
-    if not system_monitor:
-        return {}
-        
-    return await system_monitor.get_system_health()
+    try:
+        if not system_monitor:
+            return {
+                "status": "ERROR",
+                "timestamp": datetime.utcnow().isoformat(),
+                "error": "System monitor not initialized",
+                "cpu_percent": 0,
+                "memory_percent": 0,
+                "disk_percent": 0
+            }
+            
+        return await system_monitor.get_system_health()
+    except Exception as e:
+        logger.error(f"Error retrieving system info: {str(e)}", exc_info=True)
+        return {
+            "status": "ERROR",
+            "timestamp": datetime.utcnow().isoformat(),
+            "error": str(e),
+            "cpu_percent": 0,
+            "memory_percent": 0,
+            "disk_percent": 0
+        }
 
 
 @app.get("/api/sync/operations", tags=["Sync"])
@@ -263,22 +287,28 @@ async def get_sync_operations(
     Returns:
         List of sync operations
     """
-    if not sync_tracker:
-        return []
-        
-    status_filter = None
-    if status:
-        try:
-            status_filter = SyncStatus(status.upper())
-        except ValueError:
-            pass
+    try:
+        if not sync_tracker:
+            logger.warning("Sync tracker not initialized, returning empty list")
+            return []
             
-    return await sync_tracker.get_operations(
-        sync_pair_id=sync_pair_id,
-        status=status_filter,
-        limit=limit,
-        offset=offset
-    )
+        status_filter = None
+        if status:
+            try:
+                status_filter = SyncStatus(status.upper())
+            except ValueError:
+                logger.warning(f"Invalid status filter: {status}")
+                
+        return await sync_tracker.get_operations(
+            sync_pair_id=sync_pair_id,
+            status=status_filter,
+            limit=limit,
+            offset=offset
+        )
+    except Exception as e:
+        logger.error(f"Error retrieving sync operations: {str(e)}", exc_info=True)
+        # Return empty list on error
+        return []
 
 
 @app.get("/api/sync/metrics", tags=["Sync"])
@@ -298,13 +328,52 @@ async def get_sync_metrics(
     Returns:
         Dictionary of sync metrics
     """
-    if not sync_tracker:
-        return {}
-        
-    return await sync_tracker.calculate_sync_metrics(
-        sync_pair_id=sync_pair_id,
-        days=days
-    )
+    try:
+        if not sync_tracker:
+            logger.warning("Sync tracker not initialized, returning empty metrics")
+            return {
+                "total_operations": 0,
+                "successful_operations": 0,
+                "success_rate": 0,
+                "full_syncs": 0,
+                "incremental_syncs": 0,
+                "avg_duration_seconds": 0,
+                "total_records_processed": 0,
+                "total_records_succeeded": 0, 
+                "total_records_failed": 0,
+                "entity_stats": {},
+                "time_range": {
+                    "start": (datetime.utcnow() - timedelta(days=days)).isoformat(),
+                    "end": datetime.utcnow().isoformat(),
+                    "days": days
+                }
+            }
+            
+        return await sync_tracker.calculate_sync_metrics(
+            sync_pair_id=sync_pair_id,
+            days=days
+        )
+    except Exception as e:
+        logger.error(f"Error retrieving sync metrics: {str(e)}", exc_info=True)
+        # Return empty metrics on error
+        return {
+            "error": str(e),
+            "total_operations": 0,
+            "successful_operations": 0,
+            "success_rate": 0,
+            "full_syncs": 0,
+            "incremental_syncs": 0,
+            "avg_duration_seconds": 0,
+            "total_records_processed": 0,
+            "total_records_succeeded": 0, 
+            "total_records_failed": 0,
+            "entity_stats": {},
+            "time_range": {
+                "start": (datetime.utcnow() - timedelta(days=days)).isoformat(),
+                "end": datetime.utcnow().isoformat(),
+                "days": days
+            }
+        }
 
 
 @app.get("/api/sync/active", tags=["Sync"])
@@ -318,10 +387,16 @@ async def get_active_sync_operations(api_key: str = Depends(verify_api_key)):
     Returns:
         List of active sync operations
     """
-    if not sync_tracker:
+    try:
+        if not sync_tracker:
+            logger.warning("Sync tracker not initialized, returning empty list")
+            return []
+            
+        return await sync_tracker.get_active_operations()
+    except Exception as e:
+        logger.error(f"Error retrieving active sync operations: {str(e)}", exc_info=True)
+        # Return empty list on error
         return []
-        
-    return await sync_tracker.get_active_operations()
 
 
 @app.exception_handler(Exception)

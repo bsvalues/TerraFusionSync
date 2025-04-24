@@ -185,11 +185,21 @@ class SystemMonitor:
             Dictionary with system health metrics
         """
         try:
-            if self.last_metrics and time.time() - self._get_timestamp_seconds(self.last_metrics.get("timestamp")) < 10:
-                # Return cached metrics if they're recent (within 10 seconds)
-                return self.last_metrics
+            # First check if we have valid cached metrics that are recent
+            if isinstance(self.last_metrics, dict) and self.last_metrics:
+                try:
+                    # Safely get the timestamp and compare with current time
+                    timestamp = self.last_metrics.get("timestamp")
+                    if timestamp and time.time() - self._get_timestamp_seconds(timestamp) < 10:
+                        # Return cached metrics if they're recent (within 10 seconds)
+                        logger.debug("Using cached system metrics")
+                        return self.last_metrics
+                except Exception as cache_error:
+                    logger.warning(f"Error checking cached metrics: {str(cache_error)}")
+                    # Continue to get fresh metrics
                 
             # Get fresh metrics
+            logger.debug("Getting fresh system metrics")
             return self.get_system_health_sync()
         except Exception as e:
             logger.error(f"Error getting system health: {str(e)}", exc_info=True)
