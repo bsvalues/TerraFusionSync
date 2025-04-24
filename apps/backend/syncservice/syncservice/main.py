@@ -4,11 +4,36 @@ Simplified FastAPI application for the syncservice.
 This is a minimal version to get the workflow running.
 """
 
+import os
+import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from syncservice.api import health, sync
 
+# Function to check if port 5000 is in use and select 8000 as an alternative
+def get_available_port():
+    import socket
+    
+    # First try port 8000 (preferred)
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind(('0.0.0.0', 8000))
+        s.close()
+        return 8000
+    except socket.error:
+        # If port 8000 is not available
+        try:
+            # Check if port 5000 is available
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.bind(('0.0.0.0', 5000))
+            s.close()
+            return 5000
+        except socket.error:
+            # If neither port is available, use 8000 anyway
+            return 8000
+
+# Create FastAPI application
 app = FastAPI(
     title="TerraFusion SyncService",
     description="Service for syncing data between legacy PACS and CAMA systems",
