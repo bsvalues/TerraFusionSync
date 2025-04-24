@@ -1,8 +1,35 @@
 """
-Main entry point for the SyncService API.
+Main entry point for the TerraFusion SyncService API Gateway.
 
-This module creates a Flask application that serves as a wrapper for the SyncService FastAPI application.
-The main Flask app runs on port 5000, while the SyncService FastAPI app runs on port 8000.
+Architecture Overview:
+---------------------
+This system uses a two-tier microservice architecture:
+
+1. API Gateway (Flask, port 5000):
+   - Main entry point for all client requests
+   - Handles authentication and routing
+   - Proxies API requests to the SyncService
+   - Provides auto-recovery of the SyncService if it stops
+   - Status monitoring and management endpoints
+
+2. SyncService (FastAPI, port 8000):
+   - Core business logic for synchronization
+   - Implements change detection, transformation, validation
+   - Provides detailed metrics and monitoring
+   - Self-healing capabilities for failed syncs
+   - Handles direct database interactions
+
+Communication Flow:
+-----------------
+Client -> API Gateway (port 5000) -> SyncService (port 8000) -> External Systems
+
+Port Configuration:
+-----------------
+- The main Flask application MUST run on port 5000
+- The SyncService MUST run on port 8000 to avoid conflicts
+
+This separation allows independent scaling, updating, and management of each component
+while maintaining a unified API surface for clients.
 """
 
 import os
