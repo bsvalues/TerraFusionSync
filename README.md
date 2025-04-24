@@ -13,7 +13,7 @@ TerraFusion SyncService uses a two-tier microservice architecture:
 - Provides auto-recovery of the SyncService if it stops
 - Status monitoring and management endpoints
 
-### 2. SyncService (FastAPI, port 8000)
+### 2. SyncService (FastAPI, port 8080)
 - Core business logic for synchronization
 - Implements change detection, transformation, validation
 - Provides detailed metrics and monitoring
@@ -21,7 +21,7 @@ TerraFusion SyncService uses a two-tier microservice architecture:
 - Handles direct database interactions
 
 ### Communication Flow
-Client → API Gateway (port 5000) → SyncService (port 8000) → External Systems
+Client → API Gateway (port 5000) → SyncService (port 8080) → External Systems
 
 ## Core Components
 
