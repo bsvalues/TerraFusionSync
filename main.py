@@ -95,9 +95,15 @@ def check_syncservice_status():
         bool: True if the SyncService is running, False otherwise.
     """
     try:
-        resp = requests.get(f"{SYNCSERVICE_URL}/", timeout=2)
-        return resp.status_code == 200
-    except requests.exceptions.RequestException:
+        print(f"Checking SyncService status at {SYNCSERVICE_URL}...")
+        resp = requests.get(f"{SYNCSERVICE_URL}/health", timeout=5)
+        print(f"SyncService response: {resp.status_code}")
+        if resp.status_code == 200:
+            print(f"SyncService health check successful: {resp.text}")
+            return True
+        return False
+    except requests.exceptions.RequestException as e:
+        print(f"SyncService connection error: {str(e)}")
         return False
 
 # Start SyncService in a separate thread if auto-start is enabled
