@@ -1,229 +1,381 @@
 """
-System adapter interfaces for SyncService.
+System adapter interfaces for the SyncService.
 
-This module defines the abstract interfaces for source and target system adapters,
-allowing for pluggable support of different system types beyond PACS and CAMA.
+This module defines the interfaces that system adapters must implement to
+integrate with the SyncService for data synchronization.
 """
 
-import abc
+from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Any, Tuple, Set
+
+from ..models.base import SourceRecord, TargetRecord, ValidationResult
 
 
-class BaseSystemAdapter(abc.ABC):
+class SourceSystemAdapter(ABC):
     """
-    Base abstract class for all system adapters.
-    
-    This class defines the common interface that all system adapters must implement,
-    regardless of whether they are source or target systems.
-    """
-    
-    def __init__(self, connection_params: Dict[str, Any]):
-        """
-        Initialize the system adapter with connection parameters.
-        
-        Args:
-            connection_params: Dictionary containing connection parameters for the system
-        """
-        self.connection_params = connection_params
-        self.session = None
-    
-    @abc.abstractmethod
-    async def connect(self) -> bool:
-        """
-        Establish a connection to the system.
-        
-        Returns:
-            True if connection was successful, False otherwise
-        """
-        pass
-        
-    @abc.abstractmethod
-    async def disconnect(self) -> bool:
-        """
-        Close the connection to the system.
-        
-        Returns:
-            True if disconnection was successful, False otherwise
-        """
-        pass
-    
-    @abc.abstractmethod
-    async def check_connection(self) -> bool:
-        """
-        Check if the connection to the system is active.
-        
-        Returns:
-            True if connection is active, False otherwise
-        """
-        pass
-    
-    @abc.abstractmethod
-    def get_system_type(self) -> str:
-        """
-        Get the type of system this adapter connects to.
-        
-        Returns:
-            String identifier for the system type
-        """
-        pass
-
-
-class SourceSystemAdapter(BaseSystemAdapter):
-    """
-    Abstract class for source system adapters.
+    Interface for adapters that connect to source systems.
     
     Source systems are the systems from which data is extracted for synchronization.
     """
     
-    @abc.abstractmethod
-    async def get_all_records(
-        self, 
+    @abstractmethod
+    async def connect(self) -> bool:
+        """
+        Establish a connection to the source system.
+        
+        Returns:
+            bool: True if connection was successful, False otherwise
+        """
+        pass
+    
+    @abstractmethod
+    async def disconnect(self) -> None:
+        """
+        Close the connection to the source system.
+        """
+        pass
+    
+    @abstractmethod
+    async def get_records(
+        self,
         entity_type: str,
+        modified_since: Optional[datetime] = None,
         batch_size: int = 100,
-        **kwargs
-    ) -> List[Dict[str, Any]]:
+        offset: int = 0
+    ) -> Tuple[List[SourceRecord], int]:
         """
-        Get all records of a specific entity type from the source system.
+        Get records from the source system.
         
         Args:
-            entity_type: Type of entity to retrieve (e.g., "property", "owner")
-            batch_size: Number of records to retrieve in each batch
-            **kwargs: Additional filters or parameters
+            entity_type: Type of entity to retrieve
+            modified_since: Only retrieve records modified since this time
+            batch_size: Number of records to retrieve in this batch
+            offset: Starting offset for pagination
             
         Returns:
-            List of records from the source system
+            Tuple containing list of records and total count
         """
         pass
     
-    @abc.abstractmethod
-    async def get_changed_records(
-        self,
-        entity_type: str,
-        since: datetime,
-        batch_size: int = 100,
-        **kwargs
-    ) -> List[Dict[str, Any]]:
+    @abstractmethod
+    async def get_record_by_id(self, entity_type: str, source_id: str) -> Optional[SourceRecord]:
         """
-        Get records of a specific entity type that have changed since a given timestamp.
+        Get a specific record by its ID.
         
         Args:
-            entity_type: Type of entity to retrieve (e.g., "property", "owner")
-            since: Timestamp to filter changes by
-            batch_size: Number of records to retrieve in each batch
-            **kwargs: Additional filters or parameters
-            
-        Returns:
-            List of changed records from the source system
-        """
-        pass
-    
-    @abc.abstractmethod
-    async def get_related_records(
-        self,
-        entity_type: str,
-        related_ids: List[str],
-        **kwargs
-    ) -> List[Dict[str, Any]]:
-        """
-        Get related records for a set of entity identifiers.
-        
-        Args:
-            entity_type: Type of related entity to retrieve (e.g., "owner" for properties)
-            related_ids: List of IDs to find related records for
-            **kwargs: Additional filters or parameters
-            
-        Returns:
-            List of related records from the source system
-        """
-        pass
-
-
-class TargetSystemAdapter(BaseSystemAdapter):
-    """
-    Abstract class for target system adapters.
-    
-    Target systems are the systems to which transformed data is written during synchronization.
-    """
-    
-    @abc.abstractmethod
-    async def write_records(
-        self,
-        entity_type: str,
-        records: List[Dict[str, Any]],
-        **kwargs
-    ) -> Tuple[int, List[Dict[str, Any]]]:
-        """
-        Write records to the target system.
-        
-        Args:
-            entity_type: Type of entity to write (e.g., "property", "owner")
-            records: List of records to write to the target system
-            **kwargs: Additional parameters
-            
-        Returns:
-            Tuple containing count of successfully written records and list of failed records
-        """
-        pass
-    
-    @abc.abstractmethod
-    async def get_existing_record(
-        self,
-        entity_type: str,
-        source_id: str,
-        **kwargs
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Get an existing record from the target system by source identifier.
-        
-        Args:
-            entity_type: Type of entity to retrieve (e.g., "property", "owner")
-            source_id: Source system ID to look up
-            **kwargs: Additional parameters
+            entity_type: Type of entity to retrieve
+            source_id: ID of the record in the source system
             
         Returns:
             Record if found, None otherwise
         """
         pass
     
-    @abc.abstractmethod
+    @abstractmethod
+    async def get_record_count(
+        self,
+        entity_type: str,
+        modified_since: Optional[datetime] = None
+    ) -> int:
+        """
+        Get the count of records of a specific type.
+        
+        Args:
+            entity_type: Type of entity to count
+            modified_since: Only count records modified since this time
+            
+        Returns:
+            Count of records
+        """
+        pass
+    
+    @abstractmethod
+    async def get_supported_entity_types(self) -> List[str]:
+        """
+        Get the entity types supported by this source system.
+        
+        Returns:
+            List of supported entity types
+        """
+        pass
+    
+    @abstractmethod
+    async def get_field_mapping(self, entity_type: str) -> Dict[str, str]:
+        """
+        Get the field mapping for a specific entity type.
+        
+        This mapping defines how fields in the source system map to the
+        normalized field names used by the SyncService.
+        
+        Args:
+            entity_type: Type of entity to get mapping for
+            
+        Returns:
+            Dictionary mapping source field names to normalized field names
+        """
+        pass
+    
+    @abstractmethod
+    async def get_related_records(
+        self,
+        entity_type: str,
+        parent_entity_type: str,
+        parent_id: str
+    ) -> List[SourceRecord]:
+        """
+        Get records related to a specific parent record.
+        
+        Args:
+            entity_type: Type of entity to retrieve
+            parent_entity_type: Type of the parent entity
+            parent_id: ID of the parent record
+            
+        Returns:
+            List of related records
+        """
+        pass
+    
+    @abstractmethod
+    async def search_records(
+        self,
+        entity_type: str,
+        criteria: Dict[str, Any],
+        batch_size: int = 100,
+        offset: int = 0
+    ) -> Tuple[List[SourceRecord], int]:
+        """
+        Search for records matching specific criteria.
+        
+        Args:
+            entity_type: Type of entity to search for
+            criteria: Dictionary of field-value pairs to match
+            batch_size: Number of records to retrieve in this batch
+            offset: Starting offset for pagination
+            
+        Returns:
+            Tuple containing list of records and total count
+        """
+        pass
+    
+    @abstractmethod
+    async def get_system_info(self) -> Dict[str, Any]:
+        """
+        Get information about the source system.
+        
+        Returns:
+            Dictionary containing system information
+        """
+        pass
+
+
+class TargetSystemAdapter(ABC):
+    """
+    Interface for adapters that connect to target systems.
+    
+    Target systems are the systems to which data is written during synchronization.
+    """
+    
+    @abstractmethod
+    async def connect(self) -> bool:
+        """
+        Establish a connection to the target system.
+        
+        Returns:
+            bool: True if connection was successful, False otherwise
+        """
+        pass
+    
+    @abstractmethod
+    async def disconnect(self) -> None:
+        """
+        Close the connection to the target system.
+        """
+        pass
+    
+    @abstractmethod
+    async def create_record(
+        self,
+        entity_type: str,
+        source_id: str,
+        data: Dict[str, Any]
+    ) -> str:
+        """
+        Create a new record in the target system.
+        
+        Args:
+            entity_type: Type of entity to create
+            source_id: ID of the record in the source system
+            data: Data to be stored in the target system
+            
+        Returns:
+            ID of the created record in the target system
+        """
+        pass
+    
+    @abstractmethod
     async def update_record(
         self,
         entity_type: str,
         target_id: str,
-        record_data: Dict[str, Any],
-        **kwargs
+        data: Dict[str, Any]
     ) -> bool:
         """
         Update an existing record in the target system.
         
         Args:
-            entity_type: Type of entity to update (e.g., "property", "owner")
-            target_id: Target system ID to update
-            record_data: Updated record data
-            **kwargs: Additional parameters
+            entity_type: Type of entity to update
+            target_id: ID of the record in the target system
+            data: Data to update in the target system
             
         Returns:
             True if update was successful, False otherwise
         """
         pass
     
-    @abc.abstractmethod
+    @abstractmethod
     async def delete_record(
         self,
         entity_type: str,
-        target_id: str,
-        **kwargs
+        target_id: str
     ) -> bool:
         """
         Delete a record from the target system.
         
         Args:
-            entity_type: Type of entity to delete (e.g., "property", "owner")
-            target_id: Target system ID to delete
-            **kwargs: Additional parameters
+            entity_type: Type of entity to delete
+            target_id: ID of the record in the target system
             
         Returns:
             True if deletion was successful, False otherwise
+        """
+        pass
+    
+    @abstractmethod
+    async def get_record_by_id(
+        self,
+        entity_type: str,
+        target_id: str
+    ) -> Optional[TargetRecord]:
+        """
+        Get a specific record by its ID.
+        
+        Args:
+            entity_type: Type of entity to retrieve
+            target_id: ID of the record in the target system
+            
+        Returns:
+            Record if found, None otherwise
+        """
+        pass
+    
+    @abstractmethod
+    async def get_existing_record(
+        self,
+        entity_type: str,
+        source_id: str
+    ) -> Optional[TargetRecord]:
+        """
+        Get an existing record that was previously synced from the source system.
+        
+        This method should find a record based on the source system ID that was stored
+        during a previous synchronization.
+        
+        Args:
+            entity_type: Type of entity to retrieve
+            source_id: ID of the record in the source system
+            
+        Returns:
+            Record if found, None otherwise
+        """
+        pass
+    
+    @abstractmethod
+    async def validate_record(
+        self,
+        entity_type: str,
+        data: Dict[str, Any]
+    ) -> ValidationResult:
+        """
+        Validate a record before creating or updating it in the target system.
+        
+        Args:
+            entity_type: Type of entity to validate
+            data: Data to validate
+            
+        Returns:
+            Validation result object
+        """
+        pass
+    
+    @abstractmethod
+    async def get_supported_entity_types(self) -> List[str]:
+        """
+        Get the entity types supported by this target system.
+        
+        Returns:
+            List of supported entity types
+        """
+        pass
+    
+    @abstractmethod
+    async def get_field_mapping(self, entity_type: str) -> Dict[str, str]:
+        """
+        Get the field mapping for a specific entity type.
+        
+        This mapping defines how normalized field names used by the SyncService
+        map to field names in the target system.
+        
+        Args:
+            entity_type: Type of entity to get mapping for
+            
+        Returns:
+            Dictionary mapping normalized field names to target field names
+        """
+        pass
+    
+    @abstractmethod
+    async def bulk_create_records(
+        self,
+        entity_type: str,
+        records: List[Tuple[str, Dict[str, Any]]]
+    ) -> List[Tuple[str, str]]:
+        """
+        Create multiple records in bulk.
+        
+        Args:
+            entity_type: Type of entity to create
+            records: List of tuples containing source ID and data
+            
+        Returns:
+            List of tuples containing source ID and corresponding target ID
+        """
+        pass
+    
+    @abstractmethod
+    async def bulk_update_records(
+        self,
+        entity_type: str,
+        records: List[Tuple[str, Dict[str, Any]]]
+    ) -> List[str]:
+        """
+        Update multiple records in bulk.
+        
+        Args:
+            entity_type: Type of entity to update
+            records: List of tuples containing target ID and data
+            
+        Returns:
+            List of target IDs that were successfully updated
+        """
+        pass
+    
+    @abstractmethod
+    async def get_system_info(self) -> Dict[str, Any]:
+        """
+        Get information about the target system.
+        
+        Returns:
+            Dictionary containing system information
         """
         pass
