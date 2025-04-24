@@ -301,29 +301,46 @@ def serve_static(path):
     """
     Serve static files from the SyncService.
     """
-    return proxy(f"static/{path}")
+    target_url = f"{SYNCSERVICE_URL}/static/{path}"
+    print(f"DEBUG - Proxying static file: {target_url}")
+    return requests.get(target_url, timeout=10).content
 
 @app.route('/js/<path:path>')
 def serve_js(path):
     """
     Serve JavaScript files from the SyncService.
     """
-    return proxy(f"static/js/{path}")
+    target_url = f"{SYNCSERVICE_URL}/static/js/{path}"
+    print(f"DEBUG - Proxying JS file: {target_url}")
+    return Response(
+        requests.get(target_url, timeout=10).content,
+        content_type="application/javascript"
+    )
 
 @app.route('/css/<path:path>')
 def serve_css(path):
     """
     Serve CSS files from the SyncService.
     """
-    return proxy(f"static/css/{path}")
+    target_url = f"{SYNCSERVICE_URL}/static/css/{path}"
+    print(f"DEBUG - Proxying CSS file: {target_url}")
+    return Response(
+        requests.get(target_url, timeout=10).content,
+        content_type="text/css"
+    )
 
 @app.route('/api', defaults={'path': ''})
 @app.route('/api/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
 def proxy(path):
     """
     Proxy all requests to the SyncService FastAPI application running on syncservice workflow.
+    
+    For routes that match /api/*, we route to the same /api/* path in the SyncService.
+    For other special routes like static, we handle them directly.
     """
-    target_url = f"{SYNCSERVICE_URL}/{path}"
+    # Make sure to keep the /api/ prefix for the SyncService API
+    target_url = f"{SYNCSERVICE_URL}/api/{path}" if path else f"{SYNCSERVICE_URL}/api"
+    print(f"DEBUG - Proxying request to: {target_url}")
     
     # Forward the request headers and data
     headers = {key: value for key, value in request.headers.items() if key != 'Host'}
@@ -342,6 +359,8 @@ def proxy(path):
             resp = requests.options(target_url, headers=headers, timeout=10)
         else:
             return jsonify({"error": "Method not allowed"}), 405
+            
+        print(f"DEBUG - Response status: {resp.status_code}, Content-Type: {resp.headers.get('Content-Type')}")
         
         # Check if the response has content
         if resp.status_code == 200:
