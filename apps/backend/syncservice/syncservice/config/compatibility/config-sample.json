@@ -1,0 +1,31 @@
+{
+  "id": "config-sample",
+  "name": "PACS to CAMA Migration",
+  "description": "Sample configuration for PACS to CAMA data migration",
+  "sourceSystem": "pacs",
+  "targetSystem": "cama",
+  "entityMappings": [
+    {
+      "sourceEntity": "property",
+      "targetEntity": "property",
+      "compatibility": 0.9,
+      "transformationComplexity": "low"
+    },
+    {
+      "sourceEntity": "owner",
+      "targetEntity": "owner",
+      "compatibility": 0.85,
+      "transformationComplexity": "medium"
+    },
+    {
+      "sourceEntity": "valuation",
+      "targetEntity": "valuation",
+      "compatibility": 0.7,
+      "transformationComplexity": "high"
+    }
+  ],
+  "overallCompatibility": 0.82,
+  "connectionOptions": ["api", "database"],
+  "createdAt": "2025-04-24T15:45:00.000Z",
+  "updatedAt": "2025-04-24T15:45:00.000Z"
+}
