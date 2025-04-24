@@ -33,8 +33,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("syncservice")
 
-# Always use port 8000 for SyncService to avoid conflicts with main app
-PORT = 8000
+# Always use port 8080 for SyncService to avoid conflicts with main app
+PORT = 8080
 # Override the environment variable to ensure consistency
 os.environ["SYNC_SERVICE_PORT"] = str(PORT)
 
@@ -379,20 +379,20 @@ app.include_router(compatibility.router)
 
 
 if __name__ == "__main__":
-    # Force port 8000 for SyncService to avoid conflicts with main Flask app on port 5000
+    # Force port 8080 for SyncService to avoid conflicts with main Flask app on port 5000
     if 'SYNC_SERVICE_PORT' in os.environ:
         try:
-            # Try to use the environment variable, but if it's 5000, override to 8000
+            # Try to use the environment variable, but if it's 5000, override to 8080
             port = int(os.environ['SYNC_SERVICE_PORT'])
             if port == 5000:
-                logger.warning("Detected port 5000 which conflicts with main app. Forcing port 8000 instead.")
-                port = 8000
+                logger.warning("Detected port 5000 which conflicts with main app. Forcing port 8080 instead.")
+                port = 8080
         except (ValueError, TypeError):
-            logger.warning("Invalid port in environment variable. Using default port 8000.")
-            port = 8000
+            logger.warning("Invalid port in environment variable. Using default port 8080.")
+            port = 8080
     else:
         # No environment variable, use the default
-        port = 8000
+        port = 8080
     
     # Log the port we're using
     logger.info(f"Starting SyncService on port {port}")

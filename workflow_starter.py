@@ -25,8 +25,8 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     
-    # Force port 8000 no matter what
-    port = 8000
+    # Force port 8080 no matter what
+    port = 8080
     os.environ["SYNC_SERVICE_PORT"] = str(port)
     
     print(f"Starting SyncService on port {port}...")
