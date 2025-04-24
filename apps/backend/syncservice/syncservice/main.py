@@ -8,6 +8,8 @@ import os
 import sys
 from fastapi import FastAPI, Query, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse, RedirectResponse
 from typing import Dict, List, Optional
 
 from syncservice.api import health, sync, dashboard
@@ -44,6 +46,24 @@ app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 
 # Start system monitoring on application startup
 system_monitoring.start_monitoring(interval=60)
+
+# Mount static files directory
+current_dir = os.path.dirname(os.path.abspath(__file__))
+static_dir = os.path.join(current_dir, "static")
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+# Dashboard frontend route
+@app.get("/dashboard-ui", response_class=HTMLResponse, tags=["dashboard"])
+async def dashboard_ui():
+    """Dashboard UI endpoint."""
+    with open(os.path.join(static_dir, "index.html"), "r") as f:
+        return f.read()
+
+# Redirect root to dashboard
+@app.get("/ui", response_class=RedirectResponse, tags=["dashboard"])
+async def redirect_to_dashboard():
+    """Redirect to dashboard UI."""
+    return RedirectResponse(url="/dashboard-ui")
 
 @app.get("/", tags=["root"])
 async def root():
