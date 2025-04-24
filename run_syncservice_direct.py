@@ -1,7 +1,7 @@
 """
-Direct runner for SyncService on port 8000.
+Direct runner for SyncService on port 8080.
 
-This script imports and directly runs the FastAPI application on port 8000 
+This script imports and directly runs the FastAPI application on port 8080 
 instead of relying on module imports.
 """
 
@@ -9,8 +9,8 @@ import os
 import sys
 import subprocess
 
-# Enforce port 8000
-PORT = 8000
+# Enforce port 8080
+PORT = 8080
 os.environ["SYNC_SERVICE_PORT"] = str(PORT)
 
 def main():
@@ -18,7 +18,7 @@ def main():
     
     print(f"Starting SyncService directly on port {PORT}...")
     
-    # Execute uvicorn with explicit port 8000
+    # Execute uvicorn with explicit port 8080
     cmd = [
         "python", "-m", "uvicorn",
         "--host", "0.0.0.0",

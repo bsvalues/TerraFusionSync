@@ -12,7 +12,7 @@ This system uses a two-tier microservice architecture:
    - Provides auto-recovery of the SyncService if it stops
    - Status monitoring and management endpoints
 
-2. SyncService (FastAPI, port 8000):
+2. SyncService (FastAPI, port 8080):
    - Core business logic for synchronization
    - Implements change detection, transformation, validation
    - Provides detailed metrics and monitoring
@@ -21,12 +21,12 @@ This system uses a two-tier microservice architecture:
 
 Communication Flow:
 -----------------
-Client -> API Gateway (port 5000) -> SyncService (port 8000) -> External Systems
+Client -> API Gateway (port 5000) -> SyncService (port 8080) -> External Systems
 
 Port Configuration:
 -----------------
 - The main Flask application MUST run on port 5000
-- The SyncService MUST run on port 8000 to avoid conflicts
+- The SyncService MUST run on port 8080 to avoid conflicts
 
 This separation allows independent scaling, updating, and management of each component
 while maintaining a unified API surface for clients.
@@ -60,7 +60,7 @@ def ensure_syncservice_running():
             # Get the directory containing this file
             current_dir = os.path.dirname(os.path.abspath(__file__))
             
-            # Path to the run_syncservice_direct script that explicitly uses port 8000
+            # Path to the run_syncservice_direct script that explicitly uses port 8080
             runner_script = os.path.join(current_dir, "run_syncservice_direct.py")
             
             if os.path.exists(runner_script):
