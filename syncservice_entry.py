@@ -1,78 +1,57 @@
 """
 Entry point for the SyncService workflow.
 
-This script will detect an available port and start the SyncService.
+This module provides a standardized entry point for running the SyncService in the Replit workflow.
 """
 
 import os
 import sys
-import socket
-import time
-import subprocess
+import logging
 
-# Function to check if port 5000 is in use and select 8000 as an alternative
-def get_available_port():
-    # Always use port 8000 for SyncService
-    return 8000
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 
-if __name__ == "__main__":
-    # Get working directory
-    working_dir = os.path.dirname(os.path.abspath(__file__))
-    if working_dir != os.getcwd():
-        print(f"Changing directory to: {working_dir}")
-        os.chdir(working_dir)
+# Set the port for the service
+os.environ["SYNC_SERVICE_PORT"] = "8000"
+
+def main():
+    """
+    Main entry point for the SyncService workflow.
+    """
+    import uvicorn
     
-    # Get the syncservice directory
-    syncservice_dir = os.path.join(os.getcwd(), "apps/backend/syncservice")
+    # Set up logging
+    logger = logging.getLogger("syncservice_entry")
+    logger.info("Starting SyncService on port 8000...")
     
-    if os.path.exists(syncservice_dir):
-        print(f"Found syncservice directory: {syncservice_dir}")
-    else:
-        print(f"Error: Directory not found: {syncservice_dir}")
-        sys.exit(1)
-    
-    # Move to the syncservice directory
-    os.chdir(syncservice_dir)
-    
-    # Get an available port (always use 8000)
-    port = get_available_port()
-    print(f"Starting SyncService on port {port}")
-    
-    # Add the current directory to the Python path
-    if syncservice_dir not in sys.path:
-        sys.path.insert(0, syncservice_dir)
-    
-    # Start the SyncService using subprocess
+    # Start uvicorn server
     try:
-        print("Running command: python -m uvicorn syncservice.main:app --host 0.0.0.0 --port 8000")
+        # Get the absolute path to the current file
+        current_dir = os.path.dirname(os.path.abspath(__file__))
         
-        process = subprocess.Popen(
-            ["python", "-m", "uvicorn", "syncservice.main:app", "--host", "0.0.0.0", "--port", "8000"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True
+        # Print debug information
+        logger.info(f"Working directory: {os.getcwd()}")
+        logger.info(f"Application directory: {current_dir}")
+        
+        # Add the application directory to Python path
+        if current_dir not in sys.path:
+            sys.path.insert(0, current_dir)
+        
+        # Start the application
+        uvicorn.run(
+            "apps.backend.syncservice.syncservice.main:app",
+            host="0.0.0.0",
+            port=8000,
+            reload=False,
+            log_level="info"
         )
         
-        # Wait a bit to make sure the process has started
-        time.sleep(2)
-        
-        # Check if the process is still running
-        if process.poll() is None:
-            print("SyncService started successfully!")
-            
-            # Read and print output
-            while True:
-                output = process.stdout.readline()
-                if output:
-                    print(output.strip())
-                if process.poll() is not None:
-                    break
-        else:
-            print("Error: SyncService failed to start")
-            stderr = process.stderr.read()
-            print(f"Error output: {stderr}")
-            sys.exit(1)
-            
     except Exception as e:
-        print(f"Error starting SyncService: {e}")
+        logger.error(f"Error starting SyncService: {str(e)}", exc_info=True)
         sys.exit(1)
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,37 @@
+run = "cd $REPL_HOME && python -m main"
+
+[nix]
+channel = "stable-23_11"
+
+[deployment]
+run = ["sh", "-c", "cd $REPL_HOME && python -m main"]
+
+[unitTest]
+language = "python3"
+
+# Host the web server on port 5000
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+# Host the SyncService on port 8000
+[[ports]]
+localPort = 8000
+externalPort = 8000
+
+# Run the application in the main workflow
+[[http]]
+localPort = 5000
+externalPort = 80
+name = "Start application"
+status = "Start application"
+workflow = "Start application"
+
+# Configure the SyncService workflow
+[[workflow]]
+name = "syncservice"
+command = "cd $REPL_HOME && python3 syncservice_workflow_runner.py"
+
+[[hints]]
+regex = "SyncService started"
+message = "The SyncService has started successfully. You can access it at:\n  - Dashboard: https://{{ domain }}/dashboard\n  - API: https://{{ domain }}/api/\n  - API Docs: https://{{ domain }}/api-docs\n\nUse the gateway at https://{{ domain }} to interact with the service."

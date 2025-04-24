@@ -1,11 +1,15 @@
 """
-API module for SyncService.
+API package for the SyncService.
 
-This module provides API endpoints for the SyncService, including health checks,
-sync operations, and dashboard functionality.
+This package contains API endpoints for managing and interacting with the SyncService.
 """
 
-# Import sub-modules for easy access
-from syncservice.api import health, sync, dashboard
+# You can uncomment these imports once the modules are created
+# from syncservice.api import health, sync, dashboard
 
-__all__ = ["health", "sync", "dashboard"]
+# Import just sync for now to avoid circular imports
+from syncservice.api import sync
+
+__all__ = [
+    'sync'
+]

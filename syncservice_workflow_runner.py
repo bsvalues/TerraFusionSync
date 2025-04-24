@@ -1,44 +1,40 @@
-#!/usr/bin/env python
 """
-Dedicated runner script for the SyncService workflow.
+Workflow runner for the SyncService.
 
-This script explicitly sets port 8000 for the SyncService to avoid conflicts with
-the main application running on port 5000. It's designed to be the entry point
-for the syncservice workflow.
+This script starts the SyncService as a separate workflow process.
 """
 
-import sys
 import os
-import subprocess
+import sys
+import uvicorn
+
+# Set environment variables
+os.environ["SYNC_SERVICE_PORT"] = "8000"
 
 def main():
     """
-    Run the SyncService workflow on port 8000.
+    Main entry point for the SyncService workflow.
     """
+    print("Starting SyncService workflow...")
+    
     try:
-        print("Starting SyncService workflow on port 8000...")
+        # Get the absolute path to the current file
+        current_dir = os.path.dirname(os.path.abspath(__file__))
         
-        # Get the path to the syncservice directory
-        syncservice_dir = os.path.join(os.getcwd(), "apps/backend/syncservice")
+        # Add the current directory to Python path
+        sys.path.insert(0, current_dir)
         
-        # Construct the command to run uvicorn directly with port 8000
-        cmd = [
-            sys.executable, "-m", "uvicorn", 
-            "syncservice.main:app", 
-            "--host", "0.0.0.0", 
-            "--port", "8000",
-            "--reload"
-        ]
+        # Start uvicorn server
+        uvicorn.run(
+            "apps.backend.syncservice.syncservice.main:app",
+            host="0.0.0.0",
+            port=8000,
+            reload=False,
+            log_level="info"
+        )
         
-        # Execute the command from the syncservice directory
-        print(f"Executing command: {' '.join(cmd)}")
-        subprocess.run(cmd, cwd=syncservice_dir, check=True)
-        
-    except subprocess.CalledProcessError as e:
-        print(f"Error running SyncService: {e}")
-        sys.exit(1)
     except Exception as e:
-        print(f"Unexpected error: {e}")
+        print(f"Error starting SyncService workflow: {str(e)}", file=sys.stderr)
         sys.exit(1)
 
 if __name__ == "__main__":
