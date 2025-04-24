@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TerraFusion SyncService Dashboard</title>
+    <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.0.0/dist/chart.umd.min.js"></script>
+    <style>
+        .card {
+            margin-bottom: 20px;
+        }
+        .card-header {
+            font-weight: bold;
+        }
+        .system-metric {
+            font-size: 24px;
+        }
+        .metric-label {
+            font-size: 14px;
+            opacity: 0.7;
+        }
+        .progress {
+            height: 10px;
+            margin-top: 10px;
+        }
+        .stats-card {
+            text-align: center;
+            padding: 15px;
+        }
+        .stats-card .number {
+            font-size: 28px;
+            font-weight: bold;
+        }
+        .stats-card .label {
+            font-size: 14px;
+            opacity: 0.7;
+        }
+        .table-sync-status {
+            font-size: 14px;
+        }
+        .badge-status {
+            padding: 5px 10px;
+        }
+        .header-metrics {
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        .refresh-btn {
+            cursor: pointer;
+        }
+        #errorAlert {
+            display: none;
+        }
+        .loading {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+        .chart-container {
+            height: 250px;
+        }
+    </style>
+</head>
+<body data-bs-theme="dark">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">
+                <i class="bi bi-arrow-repeat"></i> TerraFusion SyncService
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#system-metrics">System Metrics</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#sync-operations">Sync Operations</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#entity-metrics">Entity Metrics</a>
+                    </li>
+                </ul>
+                <div class="ms-auto d-flex align-items-center">
+                    <span id="lastUpdated" class="text-secondary me-3">Last updated: Never</span>
+                    <button id="refreshBtn" class="btn btn-outline-light btn-sm">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div id="errorAlert" class="alert alert-danger alert-dismissible fade show" role="alert">
+            <strong>Error!</strong> <span id="errorMessage"></span>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+
+        <!-- Overview Stats -->
+        <div class="row mt-4">
+            <div class="col-md-3">
+                <div class="card bg-primary text-white stats-card">
+                    <div class="number" id="totalSyncs">-</div>
+                    <div class="label">Total Sync Operations</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-success text-white stats-card">
+                    <div class="number" id="successRate">-</div>
+                    <div class="label">Success Rate</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-info text-white stats-card">
+                    <div class="number" id="activeJobs">-</div>
+                    <div class="label">Active Jobs</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-warning text-white stats-card">
+                    <div class="number" id="avgDuration">-</div>
+                    <div class="label">Avg. Duration (sec)</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Metrics -->
+        <h2 class="mt-5 mb-4" id="system-metrics">System Metrics</h2>
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>CPU Usage</span>
+                        <span class="header-metrics" id="cpuMetric">-</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="cpuChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>Memory Usage</span>
+                        <span class="header-metrics" id="memoryMetric">-</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="memoryChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row mt-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>Disk Usage</span>
+                        <span class="header-metrics" id="diskMetric">-</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="diskChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>Process Resources</span>
+                        <span class="header-metrics" id="processMetric">-</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-6">
+                                <div class="mb-3">
+                                    <span class="metric-label">CPU Usage</span>
+                                    <div class="system-metric" id="processCpuUsage">-</div>
+                                    <div class="progress">
+                                        <div id="processCpuBar" class="progress-bar" role="progressbar" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <span class="metric-label">Memory (RSS)</span>
+                                    <div class="system-metric" id="processMemoryRss">-</div>
+                                    <div class="progress">
+                                        <div id="processMemoryRssBar" class="progress-bar bg-info" role="progressbar" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="mb-3">
+                                    <span class="metric-label">Threads</span>
+                                    <div class="system-metric" id="processThreads">-</div>
+                                </div>
+                                <div class="mb-3">
+                                    <span class="metric-label">Connections</span>
+                                    <div class="system-metric" id="processConnections">-</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sync Operations -->
+        <h2 class="mt-5 mb-4" id="sync-operations">Sync Operations</h2>
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>Active Sync Operations</span>
+                        <button class="btn btn-sm btn-outline-secondary" id="refreshSyncBtn">
+                            <i class="bi bi-arrow-clockwise"></i> Refresh
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover table-sync-status">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Type</th>
+                                        <th>Source → Target</th>
+                                        <th>Progress</th>
+                                        <th>Records</th>
+                                        <th>Started</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="activeSyncTable">
+                                    <tr>
+                                        <td colspan="7" class="text-center">No active sync operations</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row mt-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">Recently Completed</div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover table-sync-status">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Type</th>
+                                        <th>Records</th>
+                                        <th>Duration</th>
+                                        <th>Completed</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="completedSyncTable">
+                                    <tr>
+                                        <td colspan="5" class="text-center">No completed sync operations</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">Recently Failed</div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover table-sync-status">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Type</th>
+                                        <th>Error</th>
+                                        <th>Failed At</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="failedSyncTable">
+                                    <tr>
+                                        <td colspan="4" class="text-center">No failed sync operations</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Entity Metrics -->
+        <h2 class="mt-5 mb-4" id="entity-metrics">Entity Metrics</h2>
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">Records Processed by Entity</div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="entitiesChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">Entity Success Rates</div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Entity Type</th>
+                                        <th>Success Rate</th>
+                                        <th>Succeeded</th>
+                                        <th>Failed</th>
+                                        <th>Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="entityTable">
+                                    <tr>
+                                        <td colspan="5" class="text-center">No entity metrics available</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-dark text-light mt-5 py-3">
+        <div class="container">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <span>TerraFusion SyncService Dashboard</span>
+                    <span class="text-secondary ms-3">v0.1.0</span>
+                </div>
+                <div class="text-secondary">
+                    © 2025 TerraFusion
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="js/dashboard.js"></script>
+</body>
+</html>

@@ -10,7 +10,8 @@ from fastapi import FastAPI, Query, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Dict, List, Optional
 
-from syncservice.api import health, sync
+from syncservice.api import health, sync, dashboard
+from syncservice.monitoring import system_monitoring
 
 # Function to check if port 5000 is in use and select 8000 as an alternative
 def get_available_port():
@@ -39,6 +40,10 @@ app.add_middleware(
 # Include API routers
 app.include_router(sync.router, prefix="/sync", tags=["sync"])
 app.include_router(health.router, prefix="/health", tags=["health"])
+app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
+
+# Start system monitoring on application startup
+system_monitoring.start_monitoring(interval=60)
 
 @app.get("/", tags=["root"])
 async def root():
