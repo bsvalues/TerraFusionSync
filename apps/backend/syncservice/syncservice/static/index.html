@@ -4,120 +4,137 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TerraFusion SyncService Dashboard</title>
-    <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
+    <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet" integrity="sha384-WB19mBN2C7gRJc3rSiTUzOg+YDQYp2JdLsF5I06K3zfnK+dBHJzJLCz70ELV8eRx" crossorigin="anonymous">
     <style>
-        .dashboard-header {
-            padding: 1.5rem 0;
-            margin-bottom: 2rem;
-            background-color: var(--bs-dark);
-            border-bottom: 1px solid var(--bs-border-color);
+        body {
+            padding-top: 2rem;
+            padding-bottom: 3rem;
         }
-        .card {
-            margin-bottom: 1.5rem;
-            border: 1px solid var(--bs-border-color);
-            background-color: var(--bs-dark);
+        
+        .feature-card {
+            height: 100%;
+            transition: all 0.2s ease;
         }
-        .stat-value {
+        
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        }
+        
+        .feature-icon {
             font-size: 2rem;
-            font-weight: bold;
-        }
-        .system-metric {
-            margin-bottom: 0.5rem;
-        }
-        .progress {
-            height: 0.5rem;
+            margin-bottom: 1rem;
         }
     </style>
 </head>
 <body data-bs-theme="dark">
-    <header class="dashboard-header">
-        <div class="container">
-            <div class="d-flex justify-content-between align-items-center">
-                <h1>TerraFusion SyncService Dashboard</h1>
-                <span class="badge bg-success" id="status-badge">ONLINE</span>
-            </div>
-            <p class="text-muted">Multi-system data synchronization and migration service</p>
-        </div>
-    </header>
-
-    <main class="container mb-5">
-        <div class="row mb-4">
-            <div class="col-md-12">
-                <div class="alert alert-info" role="alert">
-                    Welcome to the SyncService Dashboard. This dashboard provides real-time monitoring and management of data synchronization between enterprise systems.
-                </div>
+    <div class="container">
+        <div class="row mb-5">
+            <div class="col-md-8 mx-auto text-center">
+                <h1 class="display-4">TerraFusion SyncService</h1>
+                <p class="lead">Multi-system data synchronization and migration platform</p>
             </div>
         </div>
-
+        
         <div class="row mb-4">
-            <div class="col-md-6">
+            <div class="col">
                 <div class="card">
-                    <div class="card-header">
-                        <h5>Active Sync Operations</h5>
-                    </div>
                     <div class="card-body">
-                        <div id="active-operations">
-                            <div class="text-center py-3">
-                                <div class="spinner-border text-primary" role="status">
-                                    <span class="visually-hidden">Loading...</span>
-                                </div>
-                                <p class="mt-2">Loading active operations...</p>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h2 class="card-title h4">Service Status</h2>
+                                <p class="card-text text-success mb-0">
+                                    <i class="bi bi-check-circle-fill"></i> Service is running
+                                </p>
                             </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        <h5>System Health</h5>
-                    </div>
-                    <div class="card-body">
-                        <div id="system-health">
-                            <div class="text-center py-3">
-                                <div class="spinner-border text-primary" role="status">
-                                    <span class="visually-hidden">Loading...</span>
-                                </div>
-                                <p class="mt-2">Loading system health...</p>
+                            <div>
+                                <a href="/health/status" class="btn btn-sm btn-outline-info" target="_blank">Health Details</a>
+                                <a href="/docs" class="btn btn-sm btn-outline-primary" target="_blank">API Documentation</a>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-
-        <div class="row mb-4">
-            <div class="col-md-12">
-                <div class="card">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5>Sync Operations</h5>
-                        <div>
-                            <button class="btn btn-sm btn-primary" id="refresh-operations">Refresh</button>
-                            <button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#startSyncModal">Start New Sync</button>
+        
+        <div class="row mb-5">
+            <div class="col-lg-4 mb-4">
+                <div class="card feature-card">
+                    <div class="card-body text-center">
+                        <div class="feature-icon">
+                            <i class="bi bi-diagram-3"></i>
                         </div>
+                        <h3 class="card-title h5">System Compatibility Matrix</h3>
+                        <p class="card-text">Configure and manage system compatibility with drag-and-drop interface</p>
+                        <a href="/compatibility.html" class="btn btn-primary">Open Compatibility Matrix</a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-4 mb-4">
+                <div class="card feature-card">
+                    <div class="card-body text-center">
+                        <div class="feature-icon">
+                            <i class="bi bi-arrow-repeat"></i>
+                        </div>
+                        <h3 class="card-title h5">Sync Operations</h3>
+                        <p class="card-text">Monitor and manage ongoing and scheduled sync operations</p>
+                        <a href="#" class="btn btn-secondary">View Sync Operations</a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-4 mb-4">
+                <div class="card feature-card">
+                    <div class="card-body text-center">
+                        <div class="feature-icon">
+                            <i class="bi bi-graph-up"></i>
+                        </div>
+                        <h3 class="card-title h5">Metrics & Analytics</h3>
+                        <p class="card-text">View performance metrics and synchronization analytics</p>
+                        <a href="#" class="btn btn-secondary">View Metrics</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row">
+            <div class="col-lg-8">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h3 class="card-title h5 mb-0">Recent Sync Activity</h3>
                     </div>
                     <div class="card-body">
                         <div class="table-responsive">
-                            <table class="table table-hover">
+                            <table class="table table-dark table-striped">
                                 <thead>
                                     <tr>
                                         <th>Operation ID</th>
-                                        <th>Type</th>
+                                        <th>Source → Target</th>
                                         <th>Status</th>
-                                        <th>Start Time</th>
-                                        <th>Duration</th>
                                         <th>Progress</th>
-                                        <th>Actions</th>
+                                        <th>Started</th>
                                     </tr>
                                 </thead>
-                                <tbody id="operations-table-body">
+                                <tbody>
                                     <tr>
-                                        <td colspan="7" class="text-center">
-                                            <div class="spinner-border spinner-border-sm text-primary" role="status">
-                                                <span class="visually-hidden">Loading...</span>
-                                            </div>
-                                            Loading operations...
-                                        </td>
+                                        <td>op-12345</td>
+                                        <td>PACS → CAMA</td>
+                                        <td><span class="badge bg-success">Completed</span></td>
+                                        <td>100%</td>
+                                        <td>2 hours ago</td>
+                                    </tr>
+                                    <tr>
+                                        <td>op-12346</td>
+                                        <td>GIS → CAMA</td>
+                                        <td><span class="badge bg-warning">In Progress</span></td>
+                                        <td>65%</td>
+                                        <td>30 minutes ago</td>
+                                    </tr>
+                                    <tr>
+                                        <td>op-12347</td>
+                                        <td>ERP → CAMA</td>
+                                        <td><span class="badge bg-secondary">Scheduled</span></td>
+                                        <td>0%</td>
+                                        <td>Starts in 1 hour</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -125,347 +142,78 @@
                     </div>
                 </div>
             </div>
-        </div>
-
-        <div class="row">
-            <div class="col-md-6">
-                <div class="card">
+            
+            <div class="col-lg-4">
+                <div class="card mb-4">
                     <div class="card-header">
-                        <h5>Sync Metrics</h5>
+                        <h3 class="card-title h5 mb-0">System Health</h3>
                     </div>
                     <div class="card-body">
-                        <div id="sync-metrics">
-                            <div class="text-center py-3">
-                                <div class="spinner-border text-primary" role="status">
-                                    <span class="visually-hidden">Loading...</span>
-                                </div>
-                                <p class="mt-2">Loading sync metrics...</p>
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between mb-1">
+                                <span>CPU Usage</span>
+                                <span>45%</span>
+                            </div>
+                            <div class="progress">
+                                <div class="progress-bar bg-success" role="progressbar" style="width: 45%;" aria-valuenow="45" aria-valuemin="0" aria-valuemax="100"></div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between mb-1">
+                                <span>Memory</span>
+                                <span>68%</span>
+                            </div>
+                            <div class="progress">
+                                <div class="progress-bar bg-warning" role="progressbar" style="width: 68%;" aria-valuenow="68" aria-valuemin="0" aria-valuemax="100"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="d-flex justify-content-between mb-1">
+                                <span>Disk Space</span>
+                                <span>32%</span>
+                            </div>
+                            <div class="progress">
+                                <div class="progress-bar bg-success" role="progressbar" style="width: 32%;" aria-valuenow="32" aria-valuemin="0" aria-valuemax="100"></div>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
-            <div class="col-md-6">
+                
                 <div class="card">
                     <div class="card-header">
-                        <h5>System Configuration</h5>
+                        <h3 class="card-title h5 mb-0">Quick Actions</h3>
                     </div>
                     <div class="card-body">
-                        <div id="system-config">
-                            <div class="text-center py-3">
-                                <div class="spinner-border text-primary" role="status">
-                                    <span class="visually-hidden">Loading...</span>
-                                </div>
-                                <p class="mt-2">Loading system configuration...</p>
-                            </div>
+                        <div class="d-grid gap-2">
+                            <a href="/compatibility.html" class="btn btn-primary">
+                                <i class="bi bi-diagram-3"></i> Manage System Compatibility
+                            </a>
+                            <button class="btn btn-outline-primary" disabled>
+                                <i class="bi bi-arrow-repeat"></i> Start New Sync
+                            </button>
+                            <button class="btn btn-outline-primary" disabled>
+                                <i class="bi bi-gear"></i> System Configuration
+                            </button>
                         </div>
                     </div>
-                </div>
-            </div>
-        </div>
-    </main>
-
-    <!-- Start Sync Modal -->
-    <div class="modal fade" id="startSyncModal" tabindex="-1" aria-labelledby="startSyncModalLabel" aria-hidden="true">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="startSyncModalLabel">Start New Sync Operation</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="start-sync-form">
-                        <div class="mb-3">
-                            <label for="sync-pair-id" class="form-label">Sync Pair</label>
-                            <select class="form-select" id="sync-pair-id" required>
-                                <option value="">Select a sync pair</option>
-                                <option value="pacs-cama-001">PACS to CAMA (Production)</option>
-                                <option value="gis-cama-001">GIS to CAMA (Production)</option>
-                                <option value="pacs-erp-001">PACS to ERP (Testing)</option>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label for="sync-type" class="form-label">Sync Type</label>
-                            <select class="form-select" id="sync-type" required>
-                                <option value="full">Full Sync</option>
-                                <option value="incremental">Incremental Sync</option>
-                            </select>
-                        </div>
-                        <div class="mb-3" id="incremental-hours-container" style="display: none;">
-                            <label for="incremental-hours" class="form-label">Hours to Look Back</label>
-                            <input type="number" class="form-control" id="incremental-hours" min="1" value="24">
-                            <div class="form-text">For incremental sync, how many hours of data to include</div>
-                        </div>
-                        <div class="mb-3">
-                            <label for="entity-types" class="form-label">Entity Types</label>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" value="property" id="entity-property" checked>
-                                <label class="form-check-label" for="entity-property">
-                                    Property
-                                </label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" value="owner" id="entity-owner" checked>
-                                <label class="form-check-label" for="entity-owner">
-                                    Owner
-                                </label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" value="assessment" id="entity-assessment" checked>
-                                <label class="form-check-label" for="entity-assessment">
-                                    Assessment
-                                </label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" value="building" id="entity-building">
-                                <label class="form-check-label" for="entity-building">
-                                    Building
-                                </label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" value="land" id="entity-land">
-                                <label class="form-check-label" for="entity-land">
-                                    Land
-                                </label>
-                            </div>
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" id="start-sync-button">Start Sync</button>
                 </div>
             </div>
         </div>
     </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        // Basic dashboard functionality
-        document.addEventListener('DOMContentLoaded', function() {
-            // Show/hide incremental hours based on sync type
-            document.getElementById('sync-type').addEventListener('change', function() {
-                const incrementalContainer = document.getElementById('incremental-hours-container');
-                incrementalContainer.style.display = this.value === 'incremental' ? 'block' : 'none';
-            });
-
-            // Load initial data
-            loadActiveOperations();
-            loadSystemHealth();
-            loadOperations();
-            loadSyncMetrics();
-            loadSystemConfig();
-
-            // Set up refresh buttons
-            document.getElementById('refresh-operations').addEventListener('click', loadOperations);
-
-            // Set up start sync form
-            document.getElementById('start-sync-button').addEventListener('click', startSync);
-        });
-
-        // Function to load active operations
-        function loadActiveOperations() {
-            const container = document.getElementById('active-operations');
-            
-            // For demo purposes, showing a placeholder
-            // In a real implementation, this would fetch data from the API
-            container.innerHTML = `
-                <div class="text-center py-3">
-                    <p class="text-muted">No active sync operations</p>
+    
+    <footer class="bg-dark text-light mt-5 py-3">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <p class="mb-0">TerraFusion SyncService - Version 1.0.0</p>
                 </div>
-            `;
-        }
-
-        // Function to load system health
-        function loadSystemHealth() {
-            const container = document.getElementById('system-health');
-            
-            // For demo purposes, using placeholder values
-            // In a real implementation, this would fetch data from the API
-            container.innerHTML = `
-                <div class="system-metric">
-                    <div class="d-flex justify-content-between align-items-center mb-1">
-                        <span>CPU Usage</span>
-                        <span>25%</span>
-                    </div>
-                    <div class="progress">
-                        <div class="progress-bar bg-success" role="progressbar" style="width: 25%" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100"></div>
-                    </div>
+                <div class="col-md-6 text-md-end">
+                    <p class="mb-0">© 2025 TerraFusion. All rights reserved.</p>
                 </div>
-                <div class="system-metric">
-                    <div class="d-flex justify-content-between align-items-center mb-1">
-                        <span>Memory Usage</span>
-                        <span>45%</span>
-                    </div>
-                    <div class="progress">
-                        <div class="progress-bar bg-info" role="progressbar" style="width: 45%" aria-valuenow="45" aria-valuemin="0" aria-valuemax="100"></div>
-                    </div>
-                </div>
-                <div class="system-metric">
-                    <div class="d-flex justify-content-between align-items-center mb-1">
-                        <span>Disk Usage</span>
-                        <span>12%</span>
-                    </div>
-                    <div class="progress">
-                        <div class="progress-bar bg-success" role="progressbar" style="width: 12%" aria-valuenow="12" aria-valuemin="0" aria-valuemax="100"></div>
-                    </div>
-                </div>
-                <div class="mt-3">
-                    <small class="text-muted">Last updated: ${new Date().toLocaleTimeString()}</small>
-                </div>
-            `;
-        }
-
-        // Function to load operations
-        function loadOperations() {
-            const tableBody = document.getElementById('operations-table-body');
-            
-            // For demo purposes, using placeholder values
-            // In a real implementation, this would fetch data from the API
-            tableBody.innerHTML = `
-                <tr>
-                    <td><a href="#" class="text-decoration-none">full-d8e192a3</a></td>
-                    <td><span class="badge bg-primary">FULL</span></td>
-                    <td><span class="badge bg-success">COMPLETED</span></td>
-                    <td>2025-04-23 14:30:22</td>
-                    <td>12m 45s</td>
-                    <td>
-                        <div class="progress">
-                            <div class="progress-bar bg-success" role="progressbar" style="width: 100%" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100">100%</div>
-                        </div>
-                    </td>
-                    <td>
-                        <button class="btn btn-sm btn-outline-info">View</button>
-                    </td>
-                </tr>
-                <tr>
-                    <td><a href="#" class="text-decoration-none">incremental-c4a571b9</a></td>
-                    <td><span class="badge bg-info">INCREMENTAL</span></td>
-                    <td><span class="badge bg-success">COMPLETED</span></td>
-                    <td>2025-04-24 08:15:10</td>
-                    <td>3m 12s</td>
-                    <td>
-                        <div class="progress">
-                            <div class="progress-bar bg-success" role="progressbar" style="width: 100%" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100">100%</div>
-                        </div>
-                    </td>
-                    <td>
-                        <button class="btn btn-sm btn-outline-info">View</button>
-                    </td>
-                </tr>
-            `;
-        }
-
-        // Function to load sync metrics
-        function loadSyncMetrics() {
-            const container = document.getElementById('sync-metrics');
-            
-            // For demo purposes, using placeholder values
-            // In a real implementation, this would fetch data from the API
-            container.innerHTML = `
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <div class="d-flex flex-column">
-                            <span class="text-muted">Total Operations</span>
-                            <span class="stat-value">24</span>
-                        </div>
-                    </div>
-                    <div class="col-md-6 mb-3">
-                        <div class="d-flex flex-column">
-                            <span class="text-muted">Success Rate</span>
-                            <span class="stat-value">98.5%</span>
-                        </div>
-                    </div>
-                    <div class="col-md-6 mb-3">
-                        <div class="d-flex flex-column">
-                            <span class="text-muted">Records Processed</span>
-                            <span class="stat-value">256,789</span>
-                        </div>
-                    </div>
-                    <div class="col-md-6 mb-3">
-                        <div class="d-flex flex-column">
-                            <span class="text-muted">Avg Duration</span>
-                            <span class="stat-value">8m 22s</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="mt-2">
-                    <small class="text-muted">Last 7 days</small>
-                </div>
-            `;
-        }
-
-        // Function to load system configuration
-        function loadSystemConfig() {
-            const container = document.getElementById('system-config');
-            
-            // For demo purposes, using placeholder values
-            // In a real implementation, this would fetch data from the API
-            container.innerHTML = `
-                <table class="table table-sm">
-                    <tbody>
-                        <tr>
-                            <th scope="row">Version</th>
-                            <td>1.0.0</td>
-                        </tr>
-                        <tr>
-                            <th scope="row">Environment</th>
-                            <td>Development</td>
-                        </tr>
-                        <tr>
-                            <th scope="row">Active Adapters</th>
-                            <td>PACS, CAMA, GIS, ERP</td>
-                        </tr>
-                        <tr>
-                            <th scope="row">Database Status</th>
-                            <td><span class="badge bg-success">Connected</span></td>
-                        </tr>
-                        <tr>
-                            <th scope="row">API Status</th>
-                            <td><span class="badge bg-success">Online</span></td>
-                        </tr>
-                    </tbody>
-                </table>
-            `;
-        }
-
-        // Function to start a new sync operation
-        function startSync() {
-            const syncPairId = document.getElementById('sync-pair-id').value;
-            const syncType = document.getElementById('sync-type').value;
-            const incrementalHours = document.getElementById('incremental-hours').value;
-            
-            // Get selected entity types
-            const entityTypes = [];
-            document.querySelectorAll('input[type="checkbox"]:checked').forEach(checkbox => {
-                entityTypes.push(checkbox.value);
-            });
-            
-            if (!syncPairId || !syncType || entityTypes.length === 0) {
-                alert('Please fill out all required fields');
-                return;
-            }
-            
-            // For demo purposes, just log the values and close the modal
-            console.log('Starting sync operation:', {
-                syncPairId,
-                syncType,
-                incrementalHours: syncType === 'incremental' ? incrementalHours : null,
-                entityTypes
-            });
-            
-            // In a real implementation, this would make an API call to start the sync
-            
-            // Close the modal
-            const modal = bootstrap.Modal.getInstance(document.getElementById('startSyncModal'));
-            modal.hide();
-            
-            // Show a success message
-            alert('Sync operation started successfully!');
-            
-            // Refresh the operations list
-            loadOperations();
-        }
-    </script>
+            </div>
+        </div>
+    </footer>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

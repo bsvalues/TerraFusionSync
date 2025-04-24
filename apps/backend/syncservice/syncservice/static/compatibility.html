@@ -1,0 +1,1235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Compatibility Matrix - TerraFusion SyncService</title>
+    <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet" integrity="sha384-WB19mBN2C7gRJc3rSiTUzOg+YDQYp2JdLsF5I06K3zfnK+dBHJzJLCz70ELV8eRx" crossorigin="anonymous">
+    <style>
+        :root {
+            --matrix-border-color: var(--bs-gray-700);
+            --matrix-header-bg: var(--bs-dark);
+            --matrix-cell-bg: var(--bs-gray-800);
+            --matrix-cell-highlight: var(--bs-gray-700);
+            --matrix-compatible: var(--bs-success);
+            --matrix-partial: var(--bs-warning);
+            --matrix-incompatible: var(--bs-danger);
+        }
+        
+        body {
+            padding-top: 1rem;
+            padding-bottom: 3rem;
+        }
+        
+        .system-card {
+            height: 100%;
+            transition: all 0.2s ease;
+            cursor: pointer;
+            border: 2px solid transparent;
+        }
+        
+        .system-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        }
+        
+        .system-card.selected {
+            border-color: var(--bs-primary);
+        }
+        
+        .compatibility-matrix {
+            width: 100%;
+            overflow-x: auto;
+            border: 1px solid var(--matrix-border-color);
+            border-radius: 0.25rem;
+        }
+        
+        .matrix-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 2px;
+        }
+        
+        .matrix-table th {
+            background-color: var(--matrix-header-bg);
+            padding: 0.75rem;
+            text-align: center;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        .matrix-table td {
+            background-color: var(--matrix-cell-bg);
+            padding: 0.75rem;
+            text-align: center;
+            vertical-align: middle;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        
+        .matrix-table td:hover {
+            background-color: var(--matrix-cell-highlight);
+        }
+        
+        .compatibility-high {
+            color: var(--matrix-compatible);
+        }
+        
+        .compatibility-medium {
+            color: var(--matrix-partial);
+        }
+        
+        .compatibility-low {
+            color: var(--matrix-incompatible);
+        }
+        
+        .entity-item {
+            cursor: grab;
+            padding: 0.5rem;
+            margin-bottom: 0.5rem;
+            border-radius: 0.25rem;
+            transition: all 0.2s ease;
+        }
+        
+        .entity-item:hover {
+            transform: translateY(-2px);
+        }
+        
+        .entity-item.dragging {
+            opacity: 0.5;
+            cursor: grabbing;
+        }
+        
+        .entity-mapping {
+            border-radius: 0.25rem;
+            padding: 0.5rem;
+            margin-bottom: 0.5rem;
+            position: relative;
+        }
+        
+        .entity-mapping .remove-mapping {
+            position: absolute;
+            top: 0.25rem;
+            right: 0.25rem;
+            cursor: pointer;
+            opacity: 0.7;
+        }
+        
+        .entity-mapping .remove-mapping:hover {
+            opacity: 1;
+        }
+        
+        .drop-zone {
+            min-height: 100px;
+            border: 2px dashed var(--bs-gray-700);
+            border-radius: 0.25rem;
+            padding: 1rem;
+            transition: all 0.2s ease;
+        }
+        
+        .drop-zone.drag-over {
+            border-color: var(--bs-primary);
+            background-color: rgba(13, 110, 253, 0.1);
+        }
+        
+        .entity-properties {
+            font-size: 0.8rem;
+            opacity: 0.8;
+        }
+        
+        #configuration-details {
+            transition: all 0.3s ease;
+        }
+        
+        .loading {
+            position: relative;
+        }
+        
+        .loading:after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .loading:before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 50px;
+            height: 50px;
+            border: 5px solid var(--bs-gray-600);
+            border-top-color: var(--bs-primary);
+            border-radius: 50%;
+            animation: spin 1s infinite linear;
+            z-index: 1001;
+        }
+        
+        @keyframes spin {
+            0% { transform: translate(-50%, -50%) rotate(0deg); }
+            100% { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+    </style>
+</head>
+<body data-bs-theme="dark">
+    <div class="container">
+        <div class="row mb-4">
+            <div class="col">
+                <h1 class="display-5">System Compatibility Matrix</h1>
+                <p class="lead">Configure and manage system synchronization compatibilities</p>
+            </div>
+        </div>
+        
+        <div class="row mb-4">
+            <div class="col-lg-6">
+                <div class="card">
+                    <div class="card-header">
+                        <ul class="nav nav-tabs card-header-tabs" id="system-tabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="source-systems-tab" data-bs-toggle="tab" data-bs-target="#source-systems" type="button" role="tab" aria-controls="source-systems" aria-selected="true">Source Systems</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="target-systems-tab" data-bs-toggle="tab" data-bs-target="#target-systems" type="button" role="tab" aria-controls="target-systems" aria-selected="false">Target Systems</button>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="card-body">
+                        <div class="tab-content" id="system-tabs-content">
+                            <div class="tab-pane fade show active" id="source-systems" role="tabpanel" aria-labelledby="source-systems-tab">
+                                <div class="row" id="source-systems-grid">
+                                    <div class="col-12 text-center py-5">
+                                        <div class="spinner-border" role="status">
+                                            <span class="visually-hidden">Loading...</span>
+                                        </div>
+                                        <p class="mt-2">Loading source systems...</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="tab-pane fade" id="target-systems" role="tabpanel" aria-labelledby="target-systems-tab">
+                                <div class="row" id="target-systems-grid">
+                                    <div class="col-12 text-center py-5">
+                                        <div class="spinner-border" role="status">
+                                            <span class="visually-hidden">Loading...</span>
+                                        </div>
+                                        <p class="mt-2">Loading target systems...</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-6 mt-4 mt-lg-0">
+                <div class="card">
+                    <div class="card-header">
+                        <ul class="nav nav-tabs card-header-tabs" id="config-tabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="templates-tab" data-bs-toggle="tab" data-bs-target="#templates" type="button" role="tab" aria-controls="templates" aria-selected="true">Templates</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="saved-tab" data-bs-toggle="tab" data-bs-target="#saved" type="button" role="tab" aria-controls="saved" aria-selected="false">Saved Configurations</button>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="card-body">
+                        <div class="tab-content" id="config-tabs-content">
+                            <div class="tab-pane fade show active" id="templates" role="tabpanel" aria-labelledby="templates-tab">
+                                <div class="row" id="templates-list">
+                                    <div class="col-12 text-center py-5">
+                                        <div class="spinner-border" role="status">
+                                            <span class="visually-hidden">Loading...</span>
+                                        </div>
+                                        <p class="mt-2">Loading templates...</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="tab-pane fade" id="saved" role="tabpanel" aria-labelledby="saved-tab">
+                                <div class="row" id="configurations-list">
+                                    <div class="col-12 text-center py-5">
+                                        <div class="spinner-border" role="status">
+                                            <span class="visually-hidden">Loading...</span>
+                                        </div>
+                                        <p class="mt-2">Loading saved configurations...</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="configuration-section" class="d-none">
+            <div class="row mb-4">
+                <div class="col">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">Configuration Details</h5>
+                            <div>
+                                <button id="analyze-button" class="btn btn-primary btn-sm me-2">Analyze Compatibility</button>
+                                <button id="save-button" class="btn btn-success btn-sm">Save Configuration</button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div id="configuration-details">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="config-name" class="form-label">Configuration Name</label>
+                                            <input type="text" class="form-control" id="config-name" placeholder="Enter configuration name">
+                                        </div>
+                                        <div class="mb-3">
+                                            <label for="config-desc" class="form-label">Description</label>
+                                            <textarea class="form-control" id="config-desc" rows="2" placeholder="Enter configuration description"></textarea>
+                                        </div>
+                                        <div class="mb-3">
+                                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                                <label class="form-label m-0">Source System</label>
+                                                <span id="source-system-name" class="badge bg-primary">Not selected</span>
+                                            </div>
+                                            <div id="source-system-info" class="small text-secondary">
+                                                Select a source system to continue.
+                                            </div>
+                                        </div>
+                                        <div class="mb-3">
+                                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                                <label class="form-label m-0">Target System</label>
+                                                <span id="target-system-name" class="badge bg-primary">Not selected</span>
+                                            </div>
+                                            <div id="target-system-info" class="small text-secondary">
+                                                Select a target system to continue.
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label class="form-label">Overall Compatibility</label>
+                                            <div class="progress">
+                                                <div id="compatibility-progress" class="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                                            </div>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label">Connection Options</label>
+                                            <div id="connection-options" class="d-flex flex-wrap gap-2">
+                                                <span class="badge bg-secondary">None available</span>
+                                            </div>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label">Status</label>
+                                            <div id="configuration-status" class="alert alert-secondary">
+                                                Select source and target systems to begin.
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row mb-4">
+                <div class="col-md-5">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h5 class="mb-0">Available Entities</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="source-entities-container">
+                                <div class="alert alert-secondary">
+                                    Select a source system to see available entities.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2 d-flex align-items-center justify-content-center my-3 my-md-0">
+                    <div class="text-center">
+                        <div class="mb-2">
+                            <i class="bi bi-arrow-right-circle-fill" style="font-size: 2rem;"></i>
+                        </div>
+                        <p class="small text-muted">Drag entities to create mappings</p>
+                    </div>
+                </div>
+                <div class="col-md-5">
+                    <div class="card h-100">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">Entity Mappings</h5>
+                            <span id="mapping-count" class="badge bg-secondary">0</span>
+                        </div>
+                        <div class="card-body">
+                            <div id="entity-mappings-container" class="drop-zone">
+                                <div id="empty-mapping-message" class="text-center py-3">
+                                    <i class="bi bi-diagram-3" style="font-size: 2rem;"></i>
+                                    <p class="mt-2">Drag entities here to create mappings</p>
+                                </div>
+                                <div id="entity-mappings" class="d-none">
+                                    <!-- Entity mappings will be added here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Save Configuration Modal -->
+    <div class="modal fade" id="saveConfigModal" tabindex="-1" aria-labelledby="saveConfigModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="saveConfigModalLabel">Save Configuration</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="save-config-name" class="form-label">Configuration Name</label>
+                        <input type="text" class="form-control" id="save-config-name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="save-config-desc" class="form-label">Description</label>
+                        <textarea class="form-control" id="save-config-desc" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="confirm-save">Save Configuration</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Delete Confirmation Modal -->
+    <div class="modal fade" id="deleteConfirmModal" tabindex="-1" aria-labelledby="deleteConfirmModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="deleteConfirmModalLabel">Confirm Deletion</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete this configuration?</p>
+                    <p>This action cannot be undone.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="confirm-delete">Delete</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // State variables
+        let systems = [];
+        let templates = [];
+        let configurations = [];
+        let currentSourceSystem = null;
+        let currentTargetSystem = null;
+        let currentEntityMappings = [];
+        let currentAnalysis = null;
+        let currentConfigId = null;
+        
+        // DOM Elements
+        const sourceSystemsGrid = document.getElementById('source-systems-grid');
+        const targetSystemsGrid = document.getElementById('target-systems-grid');
+        const templatesList = document.getElementById('templates-list');
+        const configurationsList = document.getElementById('configurations-list');
+        const configurationSection = document.getElementById('configuration-section');
+        const configName = document.getElementById('config-name');
+        const configDesc = document.getElementById('config-desc');
+        const sourceSystemName = document.getElementById('source-system-name');
+        const sourceSystemInfo = document.getElementById('source-system-info');
+        const targetSystemName = document.getElementById('target-system-name');
+        const targetSystemInfo = document.getElementById('target-system-info');
+        const compatibilityProgress = document.getElementById('compatibility-progress');
+        const connectionOptions = document.getElementById('connection-options');
+        const configurationStatus = document.getElementById('configuration-status');
+        const sourceEntitiesContainer = document.getElementById('source-entities-container');
+        const entityMappingsContainer = document.getElementById('entity-mappings-container');
+        const emptyMappingMessage = document.getElementById('empty-mapping-message');
+        const entityMappings = document.getElementById('entity-mappings');
+        const mappingCount = document.getElementById('mapping-count');
+        const analyzeButton = document.getElementById('analyze-button');
+        const saveButton = document.getElementById('save-button');
+        const saveConfigModal = new bootstrap.Modal(document.getElementById('saveConfigModal'));
+        const saveConfigNameInput = document.getElementById('save-config-name');
+        const saveConfigDescInput = document.getElementById('save-config-desc');
+        const confirmSaveButton = document.getElementById('confirm-save');
+        const deleteConfirmModal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
+        const confirmDeleteButton = document.getElementById('confirm-delete');
+        
+        // Initialization
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchSystems();
+            fetchTemplates();
+            fetchConfigurations();
+            setupEventListeners();
+        });
+        
+        // Setup event listeners
+        function setupEventListeners() {
+            analyzeButton.addEventListener('click', analyzeCompatibility);
+            saveButton.addEventListener('click', openSaveModal);
+            confirmSaveButton.addEventListener('click', saveConfiguration);
+            confirmDeleteButton.addEventListener('click', deleteConfiguration);
+            
+            entityMappingsContainer.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                entityMappingsContainer.classList.add('drag-over');
+            });
+            
+            entityMappingsContainer.addEventListener('dragleave', () => {
+                entityMappingsContainer.classList.remove('drag-over');
+            });
+            
+            entityMappingsContainer.addEventListener('drop', (e) => {
+                e.preventDefault();
+                entityMappingsContainer.classList.remove('drag-over');
+                
+                const entityId = e.dataTransfer.getData('entity-id');
+                if (entityId && currentSourceSystem) {
+                    const entity = currentSourceSystem.capabilities.find(c => c === entityId);
+                    if (entity) {
+                        addEntityMapping(entity);
+                    }
+                }
+            });
+        }
+        
+        // API Functions
+        async function fetchSystems() {
+            try {
+                const response = await fetch('/api/compatibility/systems');
+                const data = await response.json();
+                systems = data.systems;
+                
+                renderSourceSystems();
+                renderTargetSystems();
+            } catch (error) {
+                console.error('Error fetching systems:', error);
+                sourceSystemsGrid.innerHTML = '<div class="col-12"><div class="alert alert-danger">Error loading systems</div></div>';
+                targetSystemsGrid.innerHTML = '<div class="col-12"><div class="alert alert-danger">Error loading systems</div></div>';
+            }
+        }
+        
+        async function fetchTemplates() {
+            try {
+                const response = await fetch('/api/compatibility/templates');
+                const data = await response.json();
+                templates = data.templates;
+                
+                renderTemplates();
+            } catch (error) {
+                console.error('Error fetching templates:', error);
+                templatesList.innerHTML = '<div class="col-12"><div class="alert alert-danger">Error loading templates</div></div>';
+            }
+        }
+        
+        async function fetchConfigurations() {
+            try {
+                const response = await fetch('/api/compatibility/configurations');
+                const data = await response.json();
+                configurations = data.configurations;
+                
+                renderConfigurations();
+            } catch (error) {
+                console.error('Error fetching configurations:', error);
+                configurationsList.innerHTML = '<div class="col-12"><div class="alert alert-danger">Error loading configurations</div></div>';
+            }
+        }
+        
+        async function analyzeCompatibility() {
+            if (!currentSourceSystem || !currentTargetSystem) {
+                alert('Please select both source and target systems first.');
+                return;
+            }
+            
+            configurationSection.classList.add('loading');
+            
+            try {
+                const response = await fetch(`/api/compatibility/analyze?source_system=${currentSourceSystem.id}&target_system=${currentTargetSystem.id}`);
+                const data = await response.json();
+                
+                currentAnalysis = data;
+                updateCompatibilityDisplay(data);
+                
+                // Replace existing mappings with the analyzed ones
+                currentEntityMappings = [...data.entityMappings];
+                renderEntityMappings();
+                
+                configurationStatus.className = 'alert alert-success';
+                configurationStatus.textContent = 'Analysis complete! Compatibility mappings have been updated.';
+            } catch (error) {
+                console.error('Error analyzing compatibility:', error);
+                configurationStatus.className = 'alert alert-danger';
+                configurationStatus.textContent = 'Error analyzing compatibility. Please try again.';
+            } finally {
+                configurationSection.classList.remove('loading');
+            }
+        }
+        
+        async function saveConfiguration() {
+            const name = saveConfigNameInput.value.trim();
+            const description = saveConfigDescInput.value.trim();
+            
+            if (!name) {
+                alert('Please enter a configuration name.');
+                return;
+            }
+            
+            if (!currentSourceSystem || !currentTargetSystem) {
+                alert('Please select both source and target systems.');
+                return;
+            }
+            
+            if (currentEntityMappings.length === 0) {
+                alert('Please add at least one entity mapping.');
+                return;
+            }
+            
+            const configuration = {
+                id: currentConfigId || undefined,
+                name,
+                description,
+                sourceSystem: currentSourceSystem.id,
+                targetSystem: currentTargetSystem.id,
+                entityMappings: currentEntityMappings,
+                overallCompatibility: currentAnalysis ? currentAnalysis.overallCompatibility : calculateOverallCompatibility(),
+                connectionOptions: currentAnalysis ? currentAnalysis.connectionOptions : [],
+                createdAt: new Date().toISOString()
+            };
+            
+            try {
+                const response = await fetch('/api/compatibility/configuration', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(configuration)
+                });
+                
+                if (response.ok) {
+                    const savedConfig = await response.json();
+                    currentConfigId = savedConfig.id;
+                    
+                    // Update local configurations list
+                    const existingIndex = configurations.findIndex(c => c.id === savedConfig.id);
+                    if (existingIndex >= 0) {
+                        configurations[existingIndex] = savedConfig;
+                    } else {
+                        configurations.push(savedConfig);
+                    }
+                    
+                    renderConfigurations();
+                    saveConfigModal.hide();
+                    configName.value = name;
+                    configDesc.value = description;
+                    
+                    configurationStatus.className = 'alert alert-success';
+                    configurationStatus.textContent = 'Configuration saved successfully!';
+                } else {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to save configuration');
+                }
+            } catch (error) {
+                console.error('Error saving configuration:', error);
+                alert(`Error saving configuration: ${error.message}`);
+            }
+        }
+        
+        async function loadConfiguration(configId) {
+            try {
+                const response = await fetch(`/api/compatibility/configuration/${configId}`);
+                const config = await response.json();
+                
+                // Set current configuration
+                currentConfigId = config.id;
+                configName.value = config.name;
+                configDesc.value = config.description;
+                
+                // Set source and target systems
+                const sourceSystem = systems.find(s => s.id === config.sourceSystem);
+                const targetSystem = systems.find(s => s.id === config.targetSystem);
+                
+                if (sourceSystem && targetSystem) {
+                    selectSourceSystem(sourceSystem);
+                    selectTargetSystem(targetSystem);
+                    
+                    // Set entity mappings
+                    currentEntityMappings = [...config.entityMappings];
+                    renderEntityMappings();
+                    
+                    // Update compatibility display
+                    updateCompatibilityDisplay({
+                        overallCompatibility: config.overallCompatibility,
+                        connectionOptions: config.connectionOptions || []
+                    });
+                    
+                    // Show configuration section
+                    configurationSection.classList.remove('d-none');
+                    
+                    configurationStatus.className = 'alert alert-info';
+                    configurationStatus.textContent = 'Configuration loaded successfully.';
+                }
+            } catch (error) {
+                console.error('Error loading configuration:', error);
+                alert('Error loading configuration. Please try again.');
+            }
+        }
+        
+        async function deleteConfiguration() {
+            if (!currentConfigId) {
+                deleteConfirmModal.hide();
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/compatibility/configuration/${currentConfigId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    // Update local configurations list
+                    configurations = configurations.filter(c => c.id !== currentConfigId);
+                    renderConfigurations();
+                    
+                    // Reset current configuration
+                    resetConfiguration();
+                    
+                    deleteConfirmModal.hide();
+                    
+                    alert('Configuration deleted successfully.');
+                } else {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to delete configuration');
+                }
+            } catch (error) {
+                console.error('Error deleting configuration:', error);
+                alert(`Error deleting configuration: ${error.message}`);
+            }
+        }
+        
+        // UI Rendering Functions
+        function renderSourceSystems() {
+            const sourceSystems = systems.filter(s => s.type === 'source' || s.type === 'both');
+            
+            sourceSystemsGrid.innerHTML = '';
+            
+            if (sourceSystems.length === 0) {
+                sourceSystemsGrid.innerHTML = '<div class="col-12"><div class="alert alert-warning">No source systems available</div></div>';
+                return;
+            }
+            
+            sourceSystems.forEach(system => {
+                const systemCard = document.createElement('div');
+                systemCard.className = 'col-md-6 mb-4';
+                systemCard.innerHTML = `
+                    <div class="card system-card" data-system-id="${system.id}">
+                        <div class="card-body">
+                            <h5 class="card-title">
+                                <i class="bi bi-${system.icon || 'database'}"></i> ${system.name}
+                            </h5>
+                            <p class="card-text text-muted small">${system.description}</p>
+                            <div class="d-flex flex-wrap gap-1 mb-2">
+                                ${system.capabilities.map(cap => `<span class="badge bg-secondary">${cap}</span>`).join('')}
+                            </div>
+                        </div>
+                        <div class="card-footer bg-transparent">
+                            <button class="btn btn-sm btn-outline-primary select-source-btn">Select as Source</button>
+                        </div>
+                    </div>
+                `;
+                
+                sourceSystemsGrid.appendChild(systemCard);
+                
+                // Add event listener
+                const selectBtn = systemCard.querySelector('.select-source-btn');
+                selectBtn.addEventListener('click', () => {
+                    selectSourceSystem(system);
+                });
+            });
+        }
+        
+        function renderTargetSystems() {
+            const targetSystems = systems.filter(s => s.type === 'target' || s.type === 'both');
+            
+            targetSystemsGrid.innerHTML = '';
+            
+            if (targetSystems.length === 0) {
+                targetSystemsGrid.innerHTML = '<div class="col-12"><div class="alert alert-warning">No target systems available</div></div>';
+                return;
+            }
+            
+            targetSystems.forEach(system => {
+                const systemCard = document.createElement('div');
+                systemCard.className = 'col-md-6 mb-4';
+                systemCard.innerHTML = `
+                    <div class="card system-card" data-system-id="${system.id}">
+                        <div class="card-body">
+                            <h5 class="card-title">
+                                <i class="bi bi-${system.icon || 'database'}"></i> ${system.name}
+                            </h5>
+                            <p class="card-text text-muted small">${system.description}</p>
+                            <div class="d-flex flex-wrap gap-1 mb-2">
+                                ${system.capabilities.map(cap => `<span class="badge bg-secondary">${cap}</span>`).join('')}
+                            </div>
+                        </div>
+                        <div class="card-footer bg-transparent">
+                            <button class="btn btn-sm btn-outline-primary select-target-btn">Select as Target</button>
+                        </div>
+                    </div>
+                `;
+                
+                targetSystemsGrid.appendChild(systemCard);
+                
+                // Add event listener
+                const selectBtn = systemCard.querySelector('.select-target-btn');
+                selectBtn.addEventListener('click', () => {
+                    selectTargetSystem(system);
+                });
+            });
+        }
+        
+        function renderTemplates() {
+            templatesList.innerHTML = '';
+            
+            if (templates.length === 0) {
+                templatesList.innerHTML = '<div class="col-12"><div class="alert alert-warning">No templates available</div></div>';
+                return;
+            }
+            
+            templates.forEach(template => {
+                const templateCard = document.createElement('div');
+                templateCard.className = 'col-12 mb-3';
+                templateCard.innerHTML = `
+                    <div class="card">
+                        <div class="card-body">
+                            <h5 class="card-title">${template.name}</h5>
+                            <p class="card-text small">${template.description}</p>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="badge bg-primary">${template.sourceSystem}</span>
+                                    <i class="bi bi-arrow-right mx-1"></i>
+                                    <span class="badge bg-success">${template.targetSystem}</span>
+                                </div>
+                                <button class="btn btn-sm btn-outline-primary load-template-btn">Use Template</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                templatesList.appendChild(templateCard);
+                
+                // Add event listener
+                const loadBtn = templateCard.querySelector('.load-template-btn');
+                loadBtn.addEventListener('click', () => {
+                    loadTemplate(template);
+                });
+            });
+        }
+        
+        function renderConfigurations() {
+            configurationsList.innerHTML = '';
+            
+            if (configurations.length === 0) {
+                configurationsList.innerHTML = '<div class="col-12"><div class="alert alert-warning">No saved configurations</div></div>';
+                return;
+            }
+            
+            configurations.forEach(config => {
+                const configCard = document.createElement('div');
+                configCard.className = 'col-12 mb-3';
+                configCard.innerHTML = `
+                    <div class="card">
+                        <div class="card-body">
+                            <h5 class="card-title">${config.name}</h5>
+                            <p class="card-text small">${config.description || 'No description'}</p>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="badge bg-primary">${config.sourceSystem}</span>
+                                    <i class="bi bi-arrow-right mx-1"></i>
+                                    <span class="badge bg-success">${config.targetSystem}</span>
+                                </div>
+                                <div>
+                                    <button class="btn btn-sm btn-outline-danger delete-config-btn me-2">Delete</button>
+                                    <button class="btn btn-sm btn-outline-primary load-config-btn">Load</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                configurationsList.appendChild(configCard);
+                
+                // Add event listeners
+                const loadBtn = configCard.querySelector('.load-config-btn');
+                loadBtn.addEventListener('click', () => {
+                    loadConfiguration(config.id);
+                });
+                
+                const deleteBtn = configCard.querySelector('.delete-config-btn');
+                deleteBtn.addEventListener('click', () => {
+                    currentConfigId = config.id;
+                    deleteConfirmModal.show();
+                });
+            });
+        }
+        
+        function renderSourceEntities() {
+            sourceEntitiesContainer.innerHTML = '';
+            
+            if (!currentSourceSystem) {
+                sourceEntitiesContainer.innerHTML = `
+                    <div class="alert alert-secondary">
+                        Select a source system to see available entities.
+                    </div>
+                `;
+                return;
+            }
+            
+            if (currentSourceSystem.capabilities.length === 0) {
+                sourceEntitiesContainer.innerHTML = `
+                    <div class="alert alert-warning">
+                        No entities available for the selected source system.
+                    </div>
+                `;
+                return;
+            }
+            
+            const entitiesHtml = currentSourceSystem.capabilities.map(entity => {
+                const isAlreadyMapped = currentEntityMappings.some(mapping => mapping.sourceEntity === entity);
+                
+                return `
+                    <div class="entity-item bg-dark ${isAlreadyMapped ? 'opacity-50' : ''}" 
+                         draggable="${!isAlreadyMapped}" 
+                         data-entity-id="${entity}">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span>${entity}</span>
+                            ${isAlreadyMapped ? 
+                                '<span class="badge bg-info">Mapped</span>' : 
+                                '<span class="badge bg-secondary">Drag to map</span>'}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            sourceEntitiesContainer.innerHTML = entitiesHtml;
+            
+            // Add drag event listeners
+            document.querySelectorAll('.entity-item[draggable="true"]').forEach(item => {
+                item.addEventListener('dragstart', (e) => {
+                    e.dataTransfer.setData('entity-id', item.dataset.entityId);
+                    item.classList.add('dragging');
+                });
+                
+                item.addEventListener('dragend', () => {
+                    item.classList.remove('dragging');
+                });
+            });
+        }
+        
+        function renderEntityMappings() {
+            if (currentEntityMappings.length === 0) {
+                entityMappings.classList.add('d-none');
+                emptyMappingMessage.classList.remove('d-none');
+                mappingCount.textContent = '0';
+                return;
+            }
+            
+            entityMappings.classList.remove('d-none');
+            emptyMappingMessage.classList.add('d-none');
+            mappingCount.textContent = currentEntityMappings.length.toString();
+            
+            entityMappings.innerHTML = '';
+            
+            currentEntityMappings.forEach((mapping, index) => {
+                const compatibilityClass = getCompatibilityClass(mapping.compatibility);
+                
+                const mappingElement = document.createElement('div');
+                mappingElement.className = `entity-mapping bg-dark`;
+                mappingElement.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge bg-primary me-2">${mapping.sourceEntity}</span>
+                            <i class="bi bi-arrow-right mx-1"></i>
+                            <span class="badge bg-success">${mapping.targetEntity}</span>
+                        </div>
+                        <div>
+                            <span class="badge ${compatibilityClass} me-2">${Math.round(mapping.compatibility * 100)}%</span>
+                            <span class="badge bg-secondary">${mapping.transformationComplexity}</span>
+                        </div>
+                    </div>
+                    <span class="remove-mapping" data-index="${index}">×</span>
+                `;
+                
+                entityMappings.appendChild(mappingElement);
+                
+                // Add event listener for remove button
+                const removeBtn = mappingElement.querySelector('.remove-mapping');
+                removeBtn.addEventListener('click', () => {
+                    removeEntityMapping(index);
+                });
+            });
+            
+            // Re-render source entities to update what's available
+            renderSourceEntities();
+        }
+        
+        // Action Functions
+        function selectSourceSystem(system) {
+            // Deselect any previously selected system
+            document.querySelectorAll('#source-systems .system-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            
+            // Select the new system
+            const systemCard = document.querySelector(`#source-systems .system-card[data-system-id="${system.id}"]`);
+            if (systemCard) {
+                systemCard.classList.add('selected');
+            }
+            
+            currentSourceSystem = system;
+            sourceSystemName.textContent = system.name;
+            sourceSystemInfo.innerHTML = `
+                <div><strong>Type:</strong> ${system.type}</div>
+                <div><strong>Connections:</strong> ${system.connections.join(', ')}</div>
+                <div><strong>Capabilities:</strong> ${system.capabilities.length}</div>
+            `;
+            
+            // Update UI
+            renderSourceEntities();
+            checkConfigurationReady();
+            configurationSection.classList.remove('d-none');
+        }
+        
+        function selectTargetSystem(system) {
+            // Deselect any previously selected system
+            document.querySelectorAll('#target-systems .system-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            
+            // Select the new system
+            const systemCard = document.querySelector(`#target-systems .system-card[data-system-id="${system.id}"]`);
+            if (systemCard) {
+                systemCard.classList.add('selected');
+            }
+            
+            currentTargetSystem = system;
+            targetSystemName.textContent = system.name;
+            targetSystemInfo.innerHTML = `
+                <div><strong>Type:</strong> ${system.type}</div>
+                <div><strong>Connections:</strong> ${system.connections.join(', ')}</div>
+                <div><strong>Capabilities:</strong> ${system.capabilities.length}</div>
+            `;
+            
+            // Update UI
+            checkConfigurationReady();
+            configurationSection.classList.remove('d-none');
+        }
+        
+        function loadTemplate(template) {
+            // Find source and target systems
+            const sourceSystem = systems.find(s => s.id === template.sourceSystem);
+            const targetSystem = systems.find(s => s.id === template.targetSystem);
+            
+            if (!sourceSystem || !targetSystem) {
+                alert('Could not find required systems for this template.');
+                return;
+            }
+            
+            // Clear current configuration
+            resetConfiguration();
+            
+            // Set systems
+            selectSourceSystem(sourceSystem);
+            selectTargetSystem(targetSystem);
+            
+            // Set name and description
+            configName.value = template.name;
+            configDesc.value = template.description;
+            
+            // Set entity mappings
+            currentEntityMappings = [...template.entityMappings];
+            renderEntityMappings();
+            
+            // Update UI
+            checkConfigurationReady();
+            configurationSection.classList.remove('d-none');
+            
+            // Update status
+            configurationStatus.className = 'alert alert-info';
+            configurationStatus.textContent = 'Template loaded successfully. You can now modify it.';
+        }
+        
+        function addEntityMapping(sourceEntity) {
+            if (!currentTargetSystem) {
+                alert('Please select a target system first.');
+                return;
+            }
+            
+            // Check if entity is already mapped
+            if (currentEntityMappings.some(m => m.sourceEntity === sourceEntity)) {
+                return;
+            }
+            
+            // Find matching target entity (defaults to same name if available)
+            const targetEntity = currentTargetSystem.capabilities.includes(sourceEntity) ? 
+                sourceEntity : 
+                currentTargetSystem.capabilities[0];
+            
+            if (!targetEntity) {
+                alert('No compatible target entity found.');
+                return;
+            }
+            
+            // Add mapping
+            currentEntityMappings.push({
+                sourceEntity,
+                targetEntity,
+                compatibility: 0.7, // Default compatibility
+                transformationComplexity: 'medium' // Default complexity
+            });
+            
+            // Update UI
+            renderEntityMappings();
+            updateCompatibilityProgress();
+            
+            configurationStatus.className = 'alert alert-info';
+            configurationStatus.textContent = 'Entity mapping added. Click Analyze to update compatibility metrics.';
+        }
+        
+        function removeEntityMapping(index) {
+            currentEntityMappings.splice(index, 1);
+            renderEntityMappings();
+            updateCompatibilityProgress();
+        }
+        
+        function openSaveModal() {
+            if (!currentSourceSystem || !currentTargetSystem) {
+                alert('Please select both source and target systems first.');
+                return;
+            }
+            
+            if (currentEntityMappings.length === 0) {
+                alert('Please add at least one entity mapping.');
+                return;
+            }
+            
+            saveConfigNameInput.value = configName.value || '';
+            saveConfigDescInput.value = configDesc.value || '';
+            saveConfigModal.show();
+        }
+        
+        function resetConfiguration() {
+            currentConfigId = null;
+            currentSourceSystem = null;
+            currentTargetSystem = null;
+            currentEntityMappings = [];
+            currentAnalysis = null;
+            
+            configName.value = '';
+            configDesc.value = '';
+            sourceSystemName.textContent = 'Not selected';
+            sourceSystemInfo.textContent = 'Select a source system to continue.';
+            targetSystemName.textContent = 'Not selected';
+            targetSystemInfo.textContent = 'Select a target system to continue.';
+            
+            compatibilityProgress.style.width = '0%';
+            compatibilityProgress.textContent = '0%';
+            connectionOptions.innerHTML = '<span class="badge bg-secondary">None available</span>';
+            
+            configurationStatus.className = 'alert alert-secondary';
+            configurationStatus.textContent = 'Select source and target systems to begin.';
+            
+            // Deselect all systems
+            document.querySelectorAll('.system-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            
+            // Update UI
+            renderSourceEntities();
+            renderEntityMappings();
+            configurationSection.classList.add('d-none');
+        }
+        
+        // Helper Functions
+        function checkConfigurationReady() {
+            if (currentSourceSystem && currentTargetSystem) {
+                analyzeButton.disabled = false;
+                saveButton.disabled = false;
+                
+                configurationStatus.className = 'alert alert-info';
+                configurationStatus.textContent = 'Configuration ready. Click Analyze to check compatibility.';
+            } else {
+                analyzeButton.disabled = true;
+                saveButton.disabled = true;
+            }
+        }
+        
+        function updateCompatibilityDisplay(data) {
+            // Update progress bar
+            const compatibilityPercent = Math.round(data.overallCompatibility * 100);
+            compatibilityProgress.style.width = `${compatibilityPercent}%`;
+            compatibilityProgress.textContent = `${compatibilityPercent}%`;
+            
+            // Set progress bar color
+            compatibilityProgress.className = 'progress-bar';
+            if (data.overallCompatibility >= 0.7) {
+                compatibilityProgress.classList.add('bg-success');
+            } else if (data.overallCompatibility >= 0.4) {
+                compatibilityProgress.classList.add('bg-warning');
+            } else {
+                compatibilityProgress.classList.add('bg-danger');
+            }
+            
+            // Update connection options
+            if (data.connectionOptions && data.connectionOptions.length > 0) {
+                connectionOptions.innerHTML = data.connectionOptions.map(opt => 
+                    `<span class="badge bg-info">${opt}</span>`
+                ).join(' ');
+            } else {
+                connectionOptions.innerHTML = '<span class="badge bg-secondary">None available</span>';
+            }
+        }
+        
+        function updateCompatibilityProgress() {
+            const overallCompatibility = calculateOverallCompatibility();
+            updateCompatibilityDisplay({
+                overallCompatibility,
+                connectionOptions: currentAnalysis ? currentAnalysis.connectionOptions : []
+            });
+        }
+        
+        function calculateOverallCompatibility() {
+            if (currentEntityMappings.length === 0) return 0;
+            
+            const sum = currentEntityMappings.reduce((acc, mapping) => acc + mapping.compatibility, 0);
+            return sum / currentEntityMappings.length;
+        }
+        
+        function getCompatibilityClass(compatibility) {
+            if (compatibility >= 0.7) {
+                return 'bg-success';
+            } else if (compatibility >= 0.4) {
+                return 'bg-warning';
+            } else {
+                return 'bg-danger';
+            }
+        }
+    </script>
+</body>
+</html>

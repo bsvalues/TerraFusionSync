@@ -33,15 +33,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger("syncservice")
 
-# Get API key and port from environment
-API_KEY = os.environ.get("SYNC_SERVICE_API_KEY", "dev-api-key")
 # Always use port 8000 for SyncService to avoid conflicts with main app
 PORT = 8000
 # Override the environment variable to ensure consistency
 os.environ["SYNC_SERVICE_PORT"] = str(PORT)
 
-# Create API key header
-api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+# Import authentication
+from .auth import api_key_header, API_KEY
 
 # Create FastAPI app
 app = FastAPI(
@@ -193,26 +191,8 @@ async def health_status():
     }
 
 
-async def verify_api_key(api_key: str = Depends(api_key_header)):
-    """
-    Verify API key for protected endpoints.
-    
-    Args:
-        api_key: API key from header
-    
-    Returns:
-        True if key is valid
-    
-    Raises:
-        HTTPException: If key is invalid
-    """
-    if api_key != API_KEY:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid API key",
-            headers={"WWW-Authenticate": "ApiKey"}
-        )
-    return True
+# Import verify_api_key from auth module
+from .auth import verify_api_key
 
 
 @app.get("/api/metrics", tags=["Monitoring"])
@@ -391,10 +371,11 @@ async def get_config(api_key: str = Depends(verify_api_key)):
 
 
 # Import and include API routers
-from .api import dashboard, sync
+from .api import dashboard, sync, compatibility
 
 app.include_router(dashboard.router)
 app.include_router(sync.router)
+app.include_router(compatibility.router)
 
 
 if __name__ == "__main__":
