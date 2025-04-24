@@ -84,8 +84,28 @@ def root():
         "service": "TerraFusion SyncService - Gateway",
         "version": "0.1.0",
         "status": "running",
-        "description": "This is a gateway to the SyncService API. Access API endpoints at /api/"
+        "description": "This is a gateway to the SyncService API. Access API endpoints at /api/",
+        "links": {
+            "dashboard": "/dashboard",
+            "api_docs": "/api-docs",
+            "api_status": "/status", 
+            "start_service": "/start-syncservice"
+        }
     })
+
+@app.route('/dashboard')
+def dashboard():
+    """
+    Redirect to the SyncService dashboard UI.
+    """
+    return proxy('dashboard-ui')
+
+@app.route('/api-docs')
+def api_docs():
+    """
+    Redirect to the SyncService API documentation.
+    """
+    return proxy('api-docs')
 
 @app.route('/api', defaults={'path': ''})
 @app.route('/api/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
@@ -113,8 +133,24 @@ def proxy(path):
         else:
             return jsonify({"error": "Method not allowed"}), 405
         
-        # Return the response from the target API
-        return jsonify(resp.json()), resp.status_code
+        # Check if the response has content
+        if resp.status_code == 200:
+            # Handle HTML responses differently (don't try to parse as JSON)
+            content_type = resp.headers.get('Content-Type', '')
+            if 'text/html' in content_type:
+                return Response(resp.content, content_type=content_type)
+            
+            # Try to parse as JSON, but fall back to returning content directly
+            try:
+                return jsonify(resp.json()), resp.status_code
+            except:
+                return Response(resp.content, content_type=content_type)
+        
+        # For non-200 responses, try to parse as JSON but fall back to returning content directly
+        try:
+            return jsonify(resp.json()), resp.status_code
+        except:
+            return Response(resp.content), resp.status_code
     except requests.exceptions.ConnectionError:
         # Try to start the SyncService if it's not running
         if AUTO_START_SYNCSERVICE:

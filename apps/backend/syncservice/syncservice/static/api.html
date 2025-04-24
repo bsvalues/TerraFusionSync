@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TerraFusion SyncService API Documentation</title>
+    <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <style>
+        .endpoint {
+            margin-bottom: 2rem;
+            padding: 1rem;
+            border-radius: 0.5rem;
+        }
+        .method {
+            font-weight: bold;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            display: inline-block;
+            min-width: 60px;
+            text-align: center;
+        }
+        .method-get {
+            background-color: var(--bs-info);
+            color: var(--bs-dark);
+        }
+        .method-post {
+            background-color: var(--bs-success);
+            color: var(--bs-light);
+        }
+        .method-put {
+            background-color: var(--bs-warning);
+            color: var(--bs-dark);
+        }
+        .method-delete {
+            background-color: var(--bs-danger);
+            color: var(--bs-light);
+        }
+        .endpoint-path {
+            font-family: monospace;
+            font-size: 1.1rem;
+            margin-left: 1rem;
+        }
+        .params-label, .response-label {
+            font-weight: bold;
+            margin-top: 1rem;
+        }
+        pre {
+            background-color: var(--bs-dark);
+            padding: 1rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+        }
+        code {
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body data-bs-theme="dark">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">
+                <i class="bi bi-arrow-repeat"></i> TerraFusion SyncService
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/dashboard">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#">API Documentation</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <h1>TerraFusion SyncService API Documentation</h1>
+        <p class="lead">
+            This page provides documentation for the SyncService API endpoints, including request parameters and response formats.
+        </p>
+
+        <div class="alert alert-info">
+            <i class="bi bi-info-circle-fill"></i> Base URL: <code>/api</code>
+        </div>
+
+        <h2 class="mt-5">Service Information</h2>
+
+        <div class="endpoint border">
+            <div>
+                <span class="method method-get">GET</span>
+                <span class="endpoint-path">/</span>
+            </div>
+            <p>Get basic information about the SyncService.</p>
+            <div class="response-label">Response:</div>
+            <pre><code>{
+  "service": "TerraFusion SyncService",
+  "version": "0.1.0",
+  "status": "running"
+}</code></pre>
+        </div>
+
+        <h2 class="mt-5">Health Check Endpoints</h2>
+
+        <div class="endpoint border">
+            <div>
+                <span class="method method-get">GET</span>
+                <span class="endpoint-path">/health/live</span>
+            </div>
+            <p>Check if the service is running (liveness probe).</p>
+            <div class="response-label">Response:</div>
+            <pre><code>{
+  "status": "up",
+  "service": "terrafusion-sync-service",
+  "version": "0.1.0"
+}</code></pre>
+        </div>
+
+        <div class="endpoint border">
+            <div>
+                <span class="method method-get">GET</span>
+                <span class="endpoint-path">/health/ready</span>
+            </div>
+            <p>Check if the service is ready to accept requests (readiness probe).</p>
+            <div class="response-label">Response:</div>
+            <pre><code>{
+  "status": "ready",
+  "service": "terrafusion-sync-service",
+  "version": "0.1.0",
+  "dependencies": {
+    "database": "ok",
+    "event_bus": "ok"
+  }
+}</code></pre>
+        </div>
+
+        <div class="endpoint border">
+            <div>
+                <span class="method method-get">GET</span>
+                <span class="endpoint-path">/health/status</span>
+            </div>
+            <p>Get detailed health status information.</p>
+            <div class="response-label">Response:</div>
+            <pre><code>{
+  "status": "healthy",
+  "service": "terrafusion-sync-service",
+  "version": "0.1.0",
+  "dependencies": {
+    "database": {
+      "status": "connected",
+      "latency": "10ms"
+    },
+    "event_bus": {
+      "status": "connected",
+      "latency": "5ms"
+    }
+  },
+  "performance": {
+    "memory_usage": "120MB",
+    "cpu_usage": "2%"
+  }
+}</code></pre>
+        </div>
+
+        <h2 class="mt-5">System Configuration Endpoints</h2>
+
+        <div class="endpoint border">
+            <div>
+                <span class="method method-get">GET</span>
+                <span class="endpoint-path">/systems/source</span>
+            </div>
+            <p>List all available source systems.</p>
+            <div class="response-label">Response:</div>
+            <pre><code>{
+  "systems": ["pacs", "gis"],
+  "enabled_systems": ["pacs"]
+}</code></pre>
+        </div>
+
+        <div class="endpoint border">
+            <div>
+                <span class="method method-get">GET</span>
+                <span class="endpoint-path">/systems/target</span>
+            </div>
+            <p>List all available target systems.</p>
+            <div class="response-label">Response:</div>
+            <pre><code>{
+  "systems": ["cama", "erp"],
+  "enabled_systems": ["cama"]
+}</code></pre>
+        </div>
+
+        <div class="endpoint border">
+            <div>
+                <span class="method method-get">GET</span>
+                <span class="endpoint-path">/systems/pairs</span>
+            </div>
+            <p>List all configured sync pairs.</p>
+            <div class="response-label">Response:</div>
+            <pre><code>{
+  "pairs": [
+    {
+      "id": "pacs_to_cama",
+      "source": "default_pacs",
+      "target": "default_cama",
+      "description": "Sync data from PACS to CAMA",
+      "enabled": true,
+      "entity_mappings": {
+        "property": "property",
+        "owner": "owner",
+        "assessment": "assessment",
+        "building": "improvement",
+        "land": "land"
+      }
+    },
+    {
+      "id": "gis_to_cama",
+      "source": "default_gis",
+      "target": "default_cama",
+      "description": "Sync GIS data to CAMA",
+      "enabled": false,
+      "entity_mappings": {
+        "parcel": "land",
+        "structure": "improvement",
+        "zone": "zoning"
+      }
+    }
+  ]
+}</code></pre>
+        </div>
+
+        <h2 class="mt-5">Sync Operation Endpoints</h2>
+
+        <div class="endpoint border">
+            <div>
+                <span class="method method-post">POST</span>
+                <span class="endpoint-path">/sync/full</span>
+            </div>
+            <p>Trigger a full sync operation for a specific sync pair.</p>
+            <div class="params-label">Request Parameters:</div>
+            <pre><code>{
+  "sync_pair_id": "pacs_to_cama",
+  "entity_types": ["property", "owner", "assessment"]  // Optional
+}</code></pre>
+            <div class="response-label">Response:</div>
+            <pre><code>{
+  "operation_id": "full-sync-12345",
+  "status": "initiated",
+  "sync_pair_id": "pacs_to_cama",
+  "entity_types": ["property", "owner", "assessment"],
+  "start_time": "2025-04-24T14:30:00Z"
+}</code></pre>
+        </div>
+
+        <div class="endpoint border">
+            <div>
+                <span class="method method-post">POST</span>
+                <span class="endpoint-path">/sync/incremental</span>
+            </div>
+            <p>Trigger an incremental sync operation for changes since a specific time.</p>
+            <div class="params-label">Request Parameters:</div>
+            <pre><code>{
+  "sync_pair_id": "pacs_to_cama",
+  "since": "2025-04-23T00:00:00Z",  // Optional, defaults to last sync time
+  "entity_types": ["property", "owner"]  // Optional
+}</code></pre>
+            <div class="response-label">Response:</div>
+            <pre><code>{
+  "operation_id": "incremental-sync-67890",
+  "status": "initiated",
+  "sync_pair_id": "pacs_to_cama",
+  "entity_types": ["property", "owner"],
+  "since": "2025-04-23T00:00:00Z",
+  "start_time": "2025-04-24T14:35:00Z"
+}</code></pre>
+        </div>
+
+        <div class="endpoint border">
+            <div>
+                <span class="method method-get">GET</span>
+                <span class="endpoint-path">/sync/status/{operation_id}</span>
+            </div>
+            <p>Get the status of a specific sync operation.</p>
+            <div class="params-label">Path Parameters:</div>
+            <ul>
+                <li><code>operation_id</code> - ID of the sync operation</li>
+            </ul>
+            <div class="response-label">Response:</div>
+            <pre><code>{
+  "operation_id": "full-sync-12345",
+  "status": "completed",
+  "sync_pair_id": "pacs_to_cama",
+  "entity_types": ["property", "owner", "assessment"],
+  "start_time": "2025-04-24T14:30:00Z",
+  "end_time": "2025-04-24T14:45:00Z",
+  "details": {
+    "records_processed": 2500,
+    "records_succeeded": 2450,
+    "records_failed": 50,
+    "entities": {
+      "property": {
+        "processed": 1000,
+        "succeeded": 980,
+        "failed": 20
+      },
+      "owner": {
+        "processed": 1000,
+        "succeeded": 990,
+        "failed": 10
+      },
+      "assessment": {
+        "processed": 500,
+        "succeeded": 480,
+        "failed": 20
+      }
+    }
+  }
+}</code></pre>
+        </div>
+
+        <h2 class="mt-5">Dashboard Endpoints</h2>
+
+        <div class="endpoint border">
+            <div>
+                <span class="method method-get">GET</span>
+                <span class="endpoint-path">/dashboard/metrics</span>
+            </div>
+            <p>Get current system metrics.</p>
+            <div class="response-label">Response Sample:</div>
+            <pre><code>{
+  "cpu_percent": {
+    "type": "gauge",
+    "description": "System metric: cpu_percent",
+    "values": {
+      "default": 25.3
+    }
+  },
+  "memory_percent": {
+    "type": "gauge",
+    "description": "System metric: memory_percent",
+    "values": {
+      "default": 45.7
+    }
+  },
+  "disk_percent": {
+    "type": "gauge",
+    "description": "System metric: disk_percent",
+    "values": {
+      "default": 68.2
+    }
+  }
+  // Additional metrics omitted for brevity
+}</code></pre>
+        </div>
+
+        <div class="endpoint border">
+            <div>
+                <span class="method method-get">GET</span>
+                <span class="endpoint-path">/dashboard/syncs</span>
+            </div>
+            <p>Get information about recent sync operations.</p>
+            <div class="response-label">Response Sample:</div>
+            <pre><code>{
+  "operations": [
+    {
+      "id": "full-sync-12345",
+      "sync_type": "full",
+      "sync_pair_id": "pacs_to_cama",
+      "status": "completed",
+      "start_time": "2025-04-24T14:30:00Z",
+      "end_time": "2025-04-24T14:45:00Z",
+      "entity_count": 2500
+    },
+    {
+      "id": "incremental-sync-67890",
+      "sync_type": "incremental",
+      "sync_pair_id": "pacs_to_cama",
+      "status": "in_progress",
+      "start_time": "2025-04-24T14:35:00Z",
+      "end_time": null,
+      "entity_count": 120
+    }
+  ],
+  "summary": {
+    "total": 25,
+    "completed": 20,
+    "in_progress": 1,
+    "failed": 4
+  }
+}</code></pre>
+        </div>
+
+        <div class="endpoint border">
+            <div>
+                <span class="method method-get">GET</span>
+                <span class="endpoint-path">/dashboard/entities</span>
+            </div>
+            <p>Get statistics about entities processed by sync operations.</p>
+            <div class="response-label">Response Sample:</div>
+            <pre><code>{
+  "entities": {
+    "property": {
+      "success": 8560,
+      "failure": 240
+    },
+    "owner": {
+      "success": 9200,
+      "failure": 145
+    },
+    "assessment": {
+      "success": 4750,
+      "failure": 120
+    }
+  },
+  "summary": {
+    "total_success": 22510,
+    "total_failure": 505,
+    "success_rate": 97.8
+  }
+}</code></pre>
+        </div>
+    </div>
+
+    <footer class="bg-dark text-light mt-5 py-3">
+        <div class="container">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <span>TerraFusion SyncService API Documentation</span>
+                    <span class="text-secondary ms-3">v0.1.0</span>
+                </div>
+                <div class="text-secondary">
+                    © 2025 TerraFusion
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

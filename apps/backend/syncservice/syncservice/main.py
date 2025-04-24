@@ -59,6 +59,13 @@ async def dashboard_ui():
     with open(os.path.join(static_dir, "index.html"), "r") as f:
         return f.read()
 
+# API documentation route
+@app.get("/api-docs", response_class=HTMLResponse, tags=["documentation"])
+async def api_documentation():
+    """API documentation endpoint."""
+    with open(os.path.join(static_dir, "api.html"), "r") as f:
+        return f.read()
+
 # Redirect root to dashboard
 @app.get("/ui", response_class=RedirectResponse, tags=["dashboard"])
 async def redirect_to_dashboard():

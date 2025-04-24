@@ -1,206 +1,111 @@
-// Dashboard JavaScript for TerraFusion SyncService
-'use strict';
+/**
+ * TerraFusion SyncService Dashboard JavaScript
+ * 
+ * This file contains all the client-side JavaScript for the SyncService monitoring dashboard,
+ * including data fetching, visualization, and UI interaction.
+ */
 
-// Chart instances
-let cpuChart = null;
-let memoryChart = null;
-let diskChart = null;
-let entitiesChart = null;
-
-// Refresh intervals
-const REFRESH_INTERVAL = 30000; // 30 seconds
-let refreshInterval = null;
-
-// Color schemes
-const CHART_COLORS = {
-    blue: 'rgba(54, 162, 235, 0.7)',
-    lightBlue: 'rgba(54, 162, 235, 0.3)',
-    green: 'rgba(75, 192, 192, 0.7)',
-    lightGreen: 'rgba(75, 192, 192, 0.3)',
-    red: 'rgba(255, 99, 132, 0.7)',
-    lightRed: 'rgba(255, 99, 132, 0.3)',
-    yellow: 'rgba(255, 205, 86, 0.7)',
-    lightYellow: 'rgba(255, 205, 86, 0.3)',
-    purple: 'rgba(153, 102, 255, 0.7)',
-    lightPurple: 'rgba(153, 102, 255, 0.3)',
-    orange: 'rgba(255, 159, 64, 0.7)',
-    lightOrange: 'rgba(255, 159, 64, 0.3)',
-    grey: 'rgba(201, 203, 207, 0.7)',
-    lightGrey: 'rgba(201, 203, 207, 0.3)'
+// Dashboard configuration
+const config = {
+    // API endpoints
+    api: {
+        metrics: '/dashboard/metrics',
+        systemStats: '/dashboard/system',
+        syncOperations: '/dashboard/syncs',
+        entityStats: '/dashboard/entities'
+    },
+    // Refresh interval in milliseconds (default: 10 seconds)
+    refreshInterval: 10000,
+    // Chart colors
+    chartColors: {
+        primary: '#0d6efd',
+        success: '#198754',
+        danger: '#dc3545',
+        warning: '#ffc107',
+        info: '#0dcaf0',
+        secondary: '#6c757d',
+    }
 };
 
-// Format bytes to human-readable format
-function formatBytes(bytes, decimals = 2) {
-    if (bytes === 0) return '0 Bytes';
-    
-    const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-}
+// Global chart objects
+const charts = {
+    cpuMemory: null,
+    diskNetwork: null,
+    syncOperations: null,
+    entitySuccessRate: null
+};
 
-// Format date to human-readable format
-function formatDate(dateString) {
-    const date = new Date(dateString);
-    return date.toLocaleString();
-}
+// Dashboard data
+let dashboardData = {
+    lastUpdated: null,
+    metrics: {},
+    syncOperations: [],
+    entityStats: {}
+};
 
-// Format relative time
-function timeAgo(dateString) {
-    const date = new Date(dateString);
-    const now = new Date();
-    const seconds = Math.floor((now - date) / 1000);
-    
-    if (seconds < 60) {
-        return 'just now';
-    }
-    
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) {
-        return `${minutes}m ago`;
-    }
-    
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) {
-        return `${hours}h ago`;
-    }
-    
-    const days = Math.floor(hours / 24);
-    return `${days}d ago`;
-}
+// Auto-refresh timer
+let refreshTimer = null;
 
-// Show error message
-function showError(message) {
-    const errorAlert = document.getElementById('errorAlert');
-    const errorMessage = document.getElementById('errorMessage');
+/**
+ * Initialize the dashboard when the page loads
+ */
+document.addEventListener('DOMContentLoaded', () => {
+    // Initialize charts
+    initCharts();
     
-    errorMessage.textContent = message;
-    errorAlert.style.display = 'block';
-}
+    // Set up event listeners
+    document.getElementById('refreshBtn').addEventListener('click', refreshDashboard);
+    
+    // Initial data load
+    refreshDashboard();
+    
+    // Set up auto-refresh
+    refreshTimer = setInterval(refreshDashboard, config.refreshInterval);
+    
+    // Handle tab visibility changes (pause refresh when tab is not visible)
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+            if (refreshTimer) {
+                clearInterval(refreshTimer);
+                refreshTimer = null;
+            }
+        } else {
+            if (!refreshTimer) {
+                refreshDashboard();
+                refreshTimer = setInterval(refreshDashboard, config.refreshInterval);
+            }
+        }
+    });
+});
 
-// Initialize charts
+/**
+ * Initialize all dashboard charts
+ */
 function initCharts() {
-    // CPU Chart
-    const cpuCtx = document.getElementById('cpuChart').getContext('2d');
-    cpuChart = new Chart(cpuCtx, {
-        type: 'doughnut',
+    // CPU & Memory chart
+    const cpuMemoryCtx = document.getElementById('cpuMemoryChart').getContext('2d');
+    charts.cpuMemory = new Chart(cpuMemoryCtx, {
+        type: 'line',
         data: {
-            labels: ['User', 'System', 'Idle'],
-            datasets: [{
-                data: [0, 0, 0],
-                backgroundColor: [
-                    CHART_COLORS.blue,
-                    CHART_COLORS.green,
-                    CHART_COLORS.grey
-                ],
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'right'
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return context.label + ': ' + context.formattedValue + '%';
-                        }
-                    }
-                }
-            }
-        }
-    });
-    
-    // Memory Chart
-    const memoryCtx = document.getElementById('memoryChart').getContext('2d');
-    memoryChart = new Chart(memoryCtx, {
-        type: 'doughnut',
-        data: {
-            labels: ['Used', 'Available'],
-            datasets: [{
-                data: [0, 0],
-                backgroundColor: [
-                    CHART_COLORS.red,
-                    CHART_COLORS.green
-                ],
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'right'
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            const value = context.raw;
-                            return context.label + ': ' + formatBytes(value);
-                        }
-                    }
-                }
-            }
-        }
-    });
-    
-    // Disk Chart
-    const diskCtx = document.getElementById('diskChart').getContext('2d');
-    diskChart = new Chart(diskCtx, {
-        type: 'doughnut',
-        data: {
-            labels: ['Used', 'Free'],
-            datasets: [{
-                data: [0, 0],
-                backgroundColor: [
-                    CHART_COLORS.orange,
-                    CHART_COLORS.green
-                ],
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'right'
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            const value = context.raw;
-                            return context.label + ': ' + formatBytes(value);
-                        }
-                    }
-                }
-            }
-        }
-    });
-    
-    // Initialize entities chart (with no data yet)
-    const entitiesCtx = document.getElementById('entitiesChart').getContext('2d');
-    entitiesChart = new Chart(entitiesCtx, {
-        type: 'bar',
-        data: {
-            labels: [],
+            labels: Array(10).fill(''),
             datasets: [
                 {
-                    label: 'Succeeded',
-                    backgroundColor: CHART_COLORS.green,
-                    data: []
+                    label: 'CPU Usage',
+                    borderColor: config.chartColors.primary,
+                    backgroundColor: hexToRgba(config.chartColors.primary, 0.1),
+                    borderWidth: 2,
+                    data: Array(10).fill(0),
+                    tension: 0.3,
+                    fill: true
                 },
                 {
-                    label: 'Failed',
-                    backgroundColor: CHART_COLORS.red,
-                    data: []
+                    label: 'Memory Usage',
+                    borderColor: config.chartColors.warning,
+                    backgroundColor: hexToRgba(config.chartColors.warning, 0.1),
+                    borderWidth: 2,
+                    data: Array(10).fill(0),
+                    tension: 0.3,
+                    fill: true
                 }
             ]
         },
@@ -209,333 +114,494 @@ function initCharts() {
             maintainAspectRatio: false,
             plugins: {
                 legend: {
-                    position: 'top'
+                    position: 'top',
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 100,
+                    title: {
+                        display: true,
+                        text: 'Usage %'
+                    }
+                }
+            }
+        }
+    });
+    
+    // Disk & Network chart
+    const diskNetworkCtx = document.getElementById('diskNetworkChart').getContext('2d');
+    charts.diskNetwork = new Chart(diskNetworkCtx, {
+        type: 'bar',
+        data: {
+            labels: ['Disk', 'Network TX', 'Network RX'],
+            datasets: [
+                {
+                    label: 'Current',
+                    backgroundColor: hexToRgba(config.chartColors.info, 0.7),
+                    borderColor: config.chartColors.info,
+                    borderWidth: 1,
+                    data: [0, 0, 0]
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false,
+                },
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: (value) => formatBytes(value)
+                    }
+                }
+            }
+        }
+    });
+    
+    // Sync Operations chart
+    const syncOpsCtx = document.getElementById('syncOperationsChart').getContext('2d');
+    charts.syncOperations = new Chart(syncOpsCtx, {
+        type: 'pie',
+        data: {
+            labels: ['Success', 'In Progress', 'Failed'],
+            datasets: [
+                {
+                    data: [0, 0, 0],
+                    backgroundColor: [
+                        config.chartColors.success,
+                        config.chartColors.warning,
+                        config.chartColors.danger
+                    ],
+                    borderWidth: 0
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right',
+                }
+            }
+        }
+    });
+    
+    // Entity Success Rate chart
+    const entitySuccessCtx = document.getElementById('entitySuccessChart').getContext('2d');
+    charts.entitySuccessRate = new Chart(entitySuccessCtx, {
+        type: 'bar',
+        data: {
+            labels: ['Properties', 'Owners', 'Assessments'],
+            datasets: [
+                {
+                    label: 'Success Rate %',
+                    backgroundColor: hexToRgba(config.chartColors.success, 0.7),
+                    borderColor: config.chartColors.success,
+                    borderWidth: 1,
+                    data: [0, 0, 0]
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            indexAxis: 'y',
+            plugins: {
+                legend: {
+                    display: false,
                 }
             },
             scales: {
                 x: {
-                    stacked: true
-                },
-                y: {
-                    stacked: true,
-                    beginAtZero: true
+                    beginAtZero: true,
+                    max: 100,
+                    title: {
+                        display: true,
+                        text: 'Success Rate %'
+                    }
                 }
             }
         }
     });
 }
 
-// Fetch dashboard summary data
-async function fetchDashboardSummary() {
+/**
+ * Refresh all dashboard data
+ */
+async function refreshDashboard() {
+    // Show loading state
+    document.body.classList.add('loading');
+    
     try {
-        const response = await fetch('/dashboard/summary');
+        // Fetch dashboard data in parallel
+        const [metrics, syncOperations, entityStats] = await Promise.all([
+            fetchMetrics(),
+            fetchSyncOperations(),
+            fetchEntityStats()
+        ]);
         
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
+        // Update the dashboard data
+        dashboardData = {
+            lastUpdated: new Date(),
+            metrics,
+            syncOperations,
+            entityStats
+        };
         
-        const data = await response.json();
-        return data;
+        // Update the UI
+        updateDashboard();
+        
+        // Hide any previous errors
+        document.getElementById('errorAlert').style.display = 'none';
     } catch (error) {
-        showError(`Failed to fetch dashboard data: ${error.message}`);
-        console.error('Error fetching dashboard data:', error);
-        return null;
+        console.error('Error refreshing dashboard:', error);
+        
+        // Show error message
+        document.getElementById('errorMessage').textContent = `Failed to refresh dashboard: ${error.message}`;
+        document.getElementById('errorAlert').style.display = 'block';
+    } finally {
+        // Remove loading state
+        document.body.classList.remove('loading');
     }
 }
 
-// Update system metrics charts and displays
-function updateSystemMetrics(systemMetrics) {
-    if (!systemMetrics) return;
+/**
+ * Fetch system metrics from the API
+ */
+async function fetchMetrics() {
+    const response = await fetch(config.api.metrics);
+    if (!response.ok) {
+        throw new Error(`Failed to fetch metrics: ${response.status} ${response.statusText}`);
+    }
+    return await response.json();
+}
+
+/**
+ * Fetch sync operations from the API
+ */
+async function fetchSyncOperations() {
+    const response = await fetch(config.api.syncOperations);
+    if (!response.ok) {
+        throw new Error(`Failed to fetch sync operations: ${response.status} ${response.statusText}`);
+    }
+    return await response.json();
+}
+
+/**
+ * Fetch entity statistics from the API
+ */
+async function fetchEntityStats() {
+    const response = await fetch(config.api.entityStats);
+    if (!response.ok) {
+        throw new Error(`Failed to fetch entity stats: ${response.status} ${response.statusText}`);
+    }
+    return await response.json();
+}
+
+/**
+ * Update the dashboard UI with the latest data
+ */
+function updateDashboard() {
+    // Update last updated timestamp
+    const lastUpdated = formatDateTime(dashboardData.lastUpdated);
+    document.getElementById('lastUpdated').textContent = `Last updated: ${lastUpdated}`;
     
-    // CPU metrics
-    const cpuPercent = systemMetrics.cpu.usage_percent || 0;
-    const cpuUser = systemMetrics.cpu.user_percent || 0;
-    const cpuSystem = systemMetrics.cpu.system_percent || 0;
-    const cpuIdle = systemMetrics.cpu.idle_percent || 0;
+    // Update system metrics
+    updateSystemMetrics();
     
-    document.getElementById('cpuMetric').textContent = `${cpuPercent.toFixed(1)}% Used`;
+    // Update sync operations
+    updateSyncOperations();
     
-    // Update CPU chart
-    cpuChart.data.datasets[0].data = [cpuUser, cpuSystem, cpuIdle];
-    cpuChart.update();
+    // Update entity statistics
+    updateEntityStats();
+}
+
+/**
+ * Update the system metrics section of the dashboard
+ */
+function updateSystemMetrics() {
+    const metrics = dashboardData.metrics;
     
-    // Memory metrics
-    const memoryTotal = systemMetrics.memory.total_bytes || 0;
-    const memoryUsed = systemMetrics.memory.used_bytes || 0;
-    const memoryAvailable = systemMetrics.memory.available_bytes || 0;
-    const memoryPercent = systemMetrics.memory.usage_percent || 0;
+    // Update CPU and memory metrics
+    const cpuPercent = getMetricValue(metrics, 'cpu_percent') || 0;
+    const memoryPercent = getMetricValue(metrics, 'memory_percent') || 0;
+    const diskPercent = getMetricValue(metrics, 'disk_percent') || 0;
     
-    document.getElementById('memoryMetric').textContent = 
-        `${formatBytes(memoryUsed)} / ${formatBytes(memoryTotal)} (${memoryPercent.toFixed(1)}%)`;
+    document.getElementById('cpuUsage').textContent = `${cpuPercent.toFixed(1)}%`;
+    document.getElementById('cpuProgress').style.width = `${cpuPercent}%`;
     
-    // Update Memory chart
-    memoryChart.data.datasets[0].data = [memoryUsed, memoryAvailable];
-    memoryChart.update();
+    document.getElementById('memoryUsage').textContent = `${memoryPercent.toFixed(1)}%`;
+    document.getElementById('memoryProgress').style.width = `${memoryPercent}%`;
     
-    // Disk metrics
-    const diskTotal = systemMetrics.disk.total_bytes || 0;
-    const diskUsed = systemMetrics.disk.used_bytes || 0;
-    const diskFree = systemMetrics.disk.free_bytes || 0;
-    const diskPercent = systemMetrics.disk.usage_percent || 0;
+    document.getElementById('diskUsage').textContent = `${diskPercent.toFixed(1)}%`;
+    document.getElementById('diskProgress').style.width = `${diskPercent}%`;
     
-    document.getElementById('diskMetric').textContent = 
-        `${formatBytes(diskUsed)} / ${formatBytes(diskTotal)} (${diskPercent.toFixed(1)}%)`;
+    // Format total and used memory
+    const memoryTotal = getMetricValue(metrics, 'memory_total_bytes') || 0;
+    const memoryUsed = getMetricValue(metrics, 'memory_used_bytes') || 0;
+    document.getElementById('memoryDetails').textContent = 
+        `${formatBytes(memoryUsed)} / ${formatBytes(memoryTotal)}`;
     
-    // Update Disk chart
-    diskChart.data.datasets[0].data = [diskUsed, diskFree];
-    diskChart.update();
+    // Format total and used disk
+    const diskTotal = getMetricValue(metrics, 'disk_total_bytes') || 0;
+    const diskUsed = getMetricValue(metrics, 'disk_used_bytes') || 0;
+    document.getElementById('diskDetails').textContent = 
+        `${formatBytes(diskUsed)} / ${formatBytes(diskTotal)}`;
     
-    // Process metrics
-    const processCpu = systemMetrics.process.cpu_percent || 0;
-    const processMemoryRss = systemMetrics.process.memory_rss_bytes || 0;
-    const processThreads = systemMetrics.process.threads || 0;
-    const processConnections = systemMetrics.process.connections || 0;
+    // Update process metrics
+    const processCpu = getMetricValue(metrics, 'process_cpu_percent') || 0;
+    const processMemory = getMetricValue(metrics, 'process_memory_rss_bytes') || 0;
+    const processThreads = getMetricValue(metrics, 'process_threads') || 0;
     
-    document.getElementById('processCpuUsage').textContent = `${processCpu.toFixed(1)}%`;
-    document.getElementById('processCpuBar').style.width = `${processCpu}%`;
-    
-    document.getElementById('processMemoryRss').textContent = formatBytes(processMemoryRss);
-    // Set memory bar as percentage of total system memory
-    const memoryRssPercent = (processMemoryRss / memoryTotal) * 100;
-    document.getElementById('processMemoryRssBar').style.width = `${memoryRssPercent}%`;
-    
+    document.getElementById('processCpu').textContent = `${processCpu.toFixed(1)}%`;
+    document.getElementById('processMemory').textContent = formatBytes(processMemory);
     document.getElementById('processThreads').textContent = processThreads;
-    document.getElementById('processConnections').textContent = processConnections;
     
-    // Process metrics header
-    document.getElementById('processMetric').textContent = 
-        `CPU: ${processCpu.toFixed(1)}%, Memory: ${formatBytes(processMemoryRss)}`;
+    // Update network metrics
+    const networkSent = getMetricValue(metrics, 'network_bytes_sent') || 0;
+    const networkReceived = getMetricValue(metrics, 'network_bytes_recv') || 0;
+    
+    document.getElementById('networkSent').textContent = formatBytes(networkSent);
+    document.getElementById('networkReceived').textContent = formatBytes(networkReceived);
+    
+    // Update charts with new data
+    updateSystemCharts(cpuPercent, memoryPercent, diskUsed, networkSent, networkReceived);
 }
 
-// Update sync metrics and status
-function updateSyncMetrics(syncMetrics, syncStatus) {
-    if (!syncMetrics || !syncStatus) return;
+/**
+ * Update the system metric charts with new data
+ */
+function updateSystemCharts(cpu, memory, disk, networkTx, networkRx) {
+    // Get current timestamp
+    const timestamp = formatTime(new Date());
     
-    // Overview stats
-    document.getElementById('totalSyncs').textContent = syncStatus.total_syncs || 0;
-    document.getElementById('successRate').textContent = `${syncMetrics.success_rate || 0}%`;
-    document.getElementById('activeJobs').textContent = (syncStatus.active_syncs || []).length;
-    document.getElementById('avgDuration').textContent = syncMetrics.average_duration || 0;
+    // Update CPU & Memory chart
+    const cpuMemoryChart = charts.cpuMemory;
     
-    // Active syncs table
-    const activeSyncTable = document.getElementById('activeSyncTable');
-    const activeSyncs = syncStatus.active_syncs || [];
+    // Add new data points
+    cpuMemoryChart.data.labels.push(timestamp);
+    cpuMemoryChart.data.datasets[0].data.push(cpu);
+    cpuMemoryChart.data.datasets[1].data.push(memory);
     
-    if (activeSyncs.length === 0) {
-        activeSyncTable.innerHTML = `
-            <tr>
-                <td colspan="7" class="text-center">No active sync operations</td>
-            </tr>
-        `;
-    } else {
-        activeSyncTable.innerHTML = '';
-        
-        activeSyncs.forEach(sync => {
-            const row = document.createElement('tr');
-            
-            // Format sync ID as truncated string
-            const syncId = sync.sync_id.substring(0, 8) + '...';
-            
-            // Calculate time since started
-            const startedAt = sync.started_at ? timeAgo(sync.started_at) : 'N/A';
-            
-            row.innerHTML = `
-                <td>${syncId}</td>
-                <td>${sync.sync_type}</td>
-                <td>${sync.source_system} → ${sync.target_system}</td>
-                <td>
-                    <div class="progress">
-                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
-                             role="progressbar" 
-                             style="width: ${sync.progress_percent}%">
-                            ${sync.progress_percent}%
-                        </div>
-                    </div>
-                </td>
-                <td>${sync.processed_records} / ${sync.total_records}</td>
-                <td>${startedAt}</td>
-                <td><span class="badge bg-info badge-status">${sync.status}</span></td>
-            `;
-            
-            activeSyncTable.appendChild(row);
-        });
+    // Remove oldest data points if we have more than 10
+    if (cpuMemoryChart.data.labels.length > 10) {
+        cpuMemoryChart.data.labels.shift();
+        cpuMemoryChart.data.datasets[0].data.shift();
+        cpuMemoryChart.data.datasets[1].data.shift();
     }
     
-    // Completed syncs table
-    const completedSyncTable = document.getElementById('completedSyncTable');
-    const completedSyncs = syncStatus.recently_completed || [];
+    // Update the chart
+    cpuMemoryChart.update();
     
-    if (completedSyncs.length === 0) {
-        completedSyncTable.innerHTML = `
-            <tr>
-                <td colspan="5" class="text-center">No completed sync operations</td>
-            </tr>
-        `;
-    } else {
-        completedSyncTable.innerHTML = '';
-        
-        completedSyncs.forEach(sync => {
-            const row = document.createElement('tr');
-            
-            // Format sync ID as truncated string
-            const syncId = sync.sync_id.substring(0, 8) + '...';
-            
-            // Calculate duration
-            const duration = sync.duration_seconds ? 
-                `${Math.round(sync.duration_seconds)}s` : 'N/A';
-            
-            // Time completed
-            const completedAt = sync.completed_at ? 
-                timeAgo(sync.completed_at) : 'N/A';
-            
-            row.innerHTML = `
-                <td>${syncId}</td>
-                <td>${sync.sync_type}</td>
-                <td>${sync.succeeded_records}/${sync.total_records}</td>
-                <td>${duration}</td>
-                <td>${completedAt}</td>
-            `;
-            
-            completedSyncTable.appendChild(row);
-        });
-    }
+    // Update Disk & Network chart
+    const diskNetworkChart = charts.diskNetwork;
     
-    // Failed syncs table
-    const failedSyncTable = document.getElementById('failedSyncTable');
-    const failedSyncs = syncStatus.recently_failed || [];
+    // Update data
+    diskNetworkChart.data.datasets[0].data = [disk, networkTx, networkRx];
     
-    if (failedSyncs.length === 0) {
-        failedSyncTable.innerHTML = `
-            <tr>
-                <td colspan="4" class="text-center">No failed sync operations</td>
-            </tr>
-        `;
-    } else {
-        failedSyncTable.innerHTML = '';
-        
-        failedSyncs.forEach(sync => {
-            const row = document.createElement('tr');
-            
-            // Format sync ID as truncated string
-            const syncId = sync.sync_id.substring(0, 8) + '...';
-            
-            // Truncate error message
-            const errorMessage = sync.error_message ? 
-                (sync.error_message.length > 50 ? 
-                    sync.error_message.substring(0, 50) + '...' : 
-                    sync.error_message) : 
-                'Unknown error';
-            
-            // Time failed
-            const failedAt = sync.completed_at ? 
-                timeAgo(sync.completed_at) : 'N/A';
-            
-            row.innerHTML = `
-                <td>${syncId}</td>
-                <td>${sync.sync_type}</td>
-                <td>${errorMessage}</td>
-                <td>${failedAt}</td>
-            `;
-            
-            failedSyncTable.appendChild(row);
-        });
-    }
+    // Update the chart
+    diskNetworkChart.update();
 }
 
-// Update entity metrics
-function updateEntityMetrics(syncMetrics) {
-    if (!syncMetrics || !syncMetrics.entity_metrics) return;
+/**
+ * Update the sync operations section of the dashboard
+ */
+function updateSyncOperations() {
+    const syncOps = dashboardData.syncOperations;
     
-    const entityMetrics = syncMetrics.entity_metrics;
-    const entityTypes = Object.keys(entityMetrics);
+    // Count operations by status
+    let success = 0;
+    let inProgress = 0;
+    let failed = 0;
+    let total = 0;
+    
+    // Get the latest 5 operations for the table
+    const latestOps = (syncOps.operations || []).sort((a, b) => {
+        return new Date(b.start_time) - new Date(a.start_time);
+    }).slice(0, 5);
+    
+    // Count operations by status
+    (syncOps.operations || []).forEach(op => {
+        total++;
+        if (op.status === 'completed') {
+            success++;
+        } else if (op.status === 'in_progress') {
+            inProgress++;
+        } else if (op.status === 'failed') {
+            failed++;
+        }
+    });
+    
+    // Update operation counts
+    document.getElementById('totalSyncs').textContent = total;
+    document.getElementById('successfulSyncs').textContent = success;
+    document.getElementById('failedSyncs').textContent = failed;
+    document.getElementById('activeJobs').textContent = inProgress;
+    
+    // Update the sync operations table
+    const tableBody = document.getElementById('syncOpsTable');
+    
+    if (latestOps.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="5" class="text-center">No sync operations available</td></tr>';
+    } else {
+        tableBody.innerHTML = latestOps.map(op => {
+            const startTime = formatDateTime(new Date(op.start_time));
+            let statusClass = '';
+            let statusBadge = '';
+            
+            if (op.status === 'completed') {
+                statusClass = 'bg-success';
+                statusBadge = 'Success';
+            } else if (op.status === 'in_progress') {
+                statusClass = 'bg-warning text-dark';
+                statusBadge = 'In Progress';
+            } else if (op.status === 'failed') {
+                statusClass = 'bg-danger';
+                statusBadge = 'Failed';
+            }
+            
+            return `
+                <tr>
+                    <td>${op.id}</td>
+                    <td>${op.sync_type}</td>
+                    <td>${startTime}</td>
+                    <td>${op.entity_count || 0}</td>
+                    <td><span class="badge ${statusClass} badge-status">${statusBadge}</span></td>
+                </tr>
+            `;
+        }).join('');
+    }
+    
+    // Update the sync operations chart
+    const syncOpsChart = charts.syncOperations;
+    syncOpsChart.data.datasets[0].data = [success, inProgress, failed];
+    syncOpsChart.update();
+}
+
+/**
+ * Update the entity statistics section of the dashboard
+ */
+function updateEntityStats() {
+    const entityStats = dashboardData.entityStats;
+    
+    // Get entity types and their stats
+    const entityTypes = Object.keys(entityStats.entities || {}).sort();
+    
+    // Update the entity table
+    const tableBody = document.getElementById('entityTable');
     
     if (entityTypes.length === 0) {
-        document.getElementById('entityTable').innerHTML = `
-            <tr>
-                <td colspan="5" class="text-center">No entity metrics available</td>
-            </tr>
-        `;
-        return;
+        tableBody.innerHTML = '<tr><td colspan="5" class="text-center">No entity metrics available</td></tr>';
+    } else {
+        tableBody.innerHTML = entityTypes.map(entityType => {
+            const stats = entityStats.entities[entityType];
+            const total = stats.success + stats.failure;
+            const successRate = total > 0 ? (stats.success / total) * 100 : 0;
+            
+            return `
+                <tr>
+                    <td>${entityType}</td>
+                    <td>
+                        <div class="progress">
+                            <div class="progress-bar bg-success" role="progressbar" 
+                                style="width: ${successRate}%" 
+                                aria-valuenow="${successRate}" 
+                                aria-valuemin="0" 
+                                aria-valuemax="100">
+                                ${successRate.toFixed(1)}%
+                            </div>
+                        </div>
+                    </td>
+                    <td>${stats.success}</td>
+                    <td>${stats.failure}</td>
+                    <td>${total}</td>
+                </tr>
+            `;
+        }).join('');
     }
     
-    // Update entity table
-    const entityTable = document.getElementById('entityTable');
-    entityTable.innerHTML = '';
+    // Update the entity success rate chart
+    const entitySuccessChart = charts.entitySuccessRate;
+    const labels = [];
+    const data = [];
     
-    entityTypes.forEach(type => {
-        const metrics = entityMetrics[type];
-        const row = document.createElement('tr');
+    entityTypes.forEach(entityType => {
+        const stats = entityStats.entities[entityType];
+        const total = stats.success + stats.failure;
+        const successRate = total > 0 ? (stats.success / total) * 100 : 0;
         
-        row.innerHTML = `
-            <td>${type}</td>
-            <td>
-                <div class="progress">
-                    <div class="progress-bar bg-success" 
-                         role="progressbar" 
-                         style="width: ${metrics.success_rate}%">
-                        ${metrics.success_rate}%
-                    </div>
-                </div>
-            </td>
-            <td>${metrics.succeeded_records}</td>
-            <td>${metrics.failed_records}</td>
-            <td>${metrics.total_records}</td>
-        `;
-        
-        entityTable.appendChild(row);
+        labels.push(entityType);
+        data.push(successRate);
     });
     
-    // Update entities chart
-    const labels = entityTypes;
-    const succeededData = entityTypes.map(type => entityMetrics[type].succeeded_records);
-    const failedData = entityTypes.map(type => entityMetrics[type].failed_records);
-    
-    entitiesChart.data.labels = labels;
-    entitiesChart.data.datasets[0].data = succeededData;
-    entitiesChart.data.datasets[1].data = failedData;
-    entitiesChart.update();
+    entitySuccessChart.data.labels = labels;
+    entitySuccessChart.data.datasets[0].data = data;
+    entitySuccessChart.update();
 }
 
-// Refresh all dashboard data
-async function refreshDashboard() {
-    // Mark last updated time
-    const now = new Date();
-    document.getElementById('lastUpdated').textContent = 
-        `Last updated: ${now.toLocaleTimeString()}`;
-    
-    // Fetch dashboard summary
-    const data = await fetchDashboardSummary();
-    
-    if (data) {
-        // Update system metrics
-        updateSystemMetrics(data.system_metrics);
-        
-        // Update sync metrics and status
-        updateSyncMetrics(data.sync_metrics, data.sync_status);
-        
-        // Update entity metrics
-        updateEntityMetrics(data.sync_metrics);
+/**
+ * Get a metric value from the metrics object
+ */
+function getMetricValue(metrics, metricName) {
+    if (!metrics || !metrics[metricName]) {
+        return null;
     }
+    
+    return metrics[metricName].values.default;
 }
 
-// Document ready event
-document.addEventListener('DOMContentLoaded', () => {
-    // Initialize charts
-    initCharts();
+/**
+ * Format a timestamp as a date and time string
+ */
+function formatDateTime(date) {
+    if (!date) return 'N/A';
     
-    // Initial data load
-    refreshDashboard();
+    return date.toLocaleString();
+}
+
+/**
+ * Format a timestamp as a time string (HH:MM:SS)
+ */
+function formatTime(date) {
+    if (!date) return '';
     
-    // Set up refresh interval
-    refreshInterval = setInterval(refreshDashboard, REFRESH_INTERVAL);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+/**
+ * Format bytes as a human-readable string
+ */
+function formatBytes(bytes, decimals = 1) {
+    if (bytes === 0) return '0 Bytes';
     
-    // Add event listener for manual refresh
-    document.getElementById('refreshBtn').addEventListener('click', () => {
-        refreshDashboard();
-    });
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
     
-    // Add event listener for sync refresh
-    document.getElementById('refreshSyncBtn').addEventListener('click', () => {
-        refreshDashboard();
-    });
-});
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+/**
+ * Convert a hex color to rgba
+ */
+function hexToRgba(hex, alpha) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
