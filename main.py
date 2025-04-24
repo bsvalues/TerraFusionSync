@@ -43,8 +43,8 @@ import requests
 # Create a simple Flask app
 app = Flask(__name__)
 
-# URL of the SyncService API - always use port 8000
-SYNCSERVICE_URL = "http://localhost:8000"
+# URL of the SyncService API - using port 8080
+SYNCSERVICE_URL = "http://localhost:8080"
 
 # Flag to control automatic startup
 AUTO_START_SYNCSERVICE = True
