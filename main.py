@@ -108,25 +108,170 @@ def root():
     """
     Root endpoint providing information about the API.
     """
-    return jsonify({
-        "service": "TerraFusion SyncService - Gateway",
-        "version": "0.1.0",
-        "status": "running",
-        "description": "This is a gateway to the SyncService API. Access API endpoints at /api/",
-        "links": {
-            "dashboard": "/dashboard",
-            "api_docs": "/api-docs",
-            "api_status": "/status", 
-            "start_service": "/start-syncservice"
-        }
-    })
+    html = """
+    <!DOCTYPE html>
+    <html lang="en" data-bs-theme="dark">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>TerraFusion SyncService</title>
+        <link rel="stylesheet" href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+        <style>
+            .card-feature {
+                transition: all 0.2s ease;
+                height: 100%;
+            }
+            .card-feature:hover {
+                transform: translateY(-5px);
+                box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+            }
+            .feature-icon {
+                font-size: 2rem;
+                margin-bottom: 1rem;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container py-5">
+            <div class="text-center mb-5">
+                <h1 class="display-4 mb-3">TerraFusion SyncService</h1>
+                <p class="lead mb-4">Enterprise-grade data synchronization and migration platform</p>
+                <div class="d-flex justify-content-center">
+                    <span class="badge bg-success me-2">
+                        <i class="bi bi-check-circle-fill"></i> Service Active
+                    </span>
+                    <span class="badge bg-info">
+                        <i class="bi bi-code-slash"></i> Version 1.0.0
+                    </span>
+                </div>
+            </div>
+            
+            <div class="row mb-5">
+                <div class="col-md-4 mb-4">
+                    <div class="card card-feature">
+                        <div class="card-body text-center p-4">
+                            <div class="feature-icon text-primary">
+                                <i class="bi bi-speedometer2"></i>
+                            </div>
+                            <h3>Dashboard</h3>
+                            <p class="text-muted">Monitor sync status and system metrics</p>
+                            <a href="/dashboard.html" class="btn btn-primary mt-2">
+                                Open Dashboard
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-4 mb-4">
+                    <div class="card card-feature">
+                        <div class="card-body text-center p-4">
+                            <div class="feature-icon text-success">
+                                <i class="bi bi-arrow-repeat"></i>
+                            </div>
+                            <h3>Sync Operations</h3>
+                            <p class="text-muted">Manage and monitor sync operations</p>
+                            <a href="/sync.html" class="btn btn-success mt-2">
+                                View Operations
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-4 mb-4">
+                    <div class="card card-feature">
+                        <div class="card-body text-center p-4">
+                            <div class="feature-icon text-info">
+                                <i class="bi bi-diagram-3"></i>
+                            </div>
+                            <h3>Compatibility Matrix</h3>
+                            <p class="text-muted">Configure system compatibility settings</p>
+                            <a href="/compatibility.html" class="btn btn-info mt-2">
+                                Configure
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row mb-4">
+                <div class="col-md-6 mb-4">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h5 class="mb-0">API Documentation</h5>
+                        </div>
+                        <div class="card-body">
+                            <p>Access the API documentation to learn about available endpoints and how to use them.</p>
+                            <a href="/api-docs" class="btn btn-outline-primary">View Documentation</a>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-6 mb-4">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h5 class="mb-0">Service Status</h5>
+                        </div>
+                        <div class="card-body">
+                            <p>Check the current status of the SyncService and view system health information.</p>
+                            <a href="/status" class="btn btn-outline-secondary">Check Status</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <footer class="bg-dark text-light py-3">
+            <div class="container">
+                <div class="row">
+                    <div class="col-md-6">
+                        <p class="mb-0">&copy; 2025 TerraFusion SyncService</p>
+                    </div>
+                    <div class="col-md-6 text-md-end">
+                        <p class="mb-0">Version 1.0.0</p>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </body>
+    </html>
+    """
+    return Response(html, content_type='text/html')
 
 @app.route('/dashboard')
 def dashboard():
     """
     Redirect to the SyncService dashboard UI.
     """
-    return proxy('dashboard-ui')
+    return proxy('dashboard.html')
+
+@app.route('/dashboard.html')
+def dashboard_html():
+    """
+    Display the main dashboard page.
+    """
+    return proxy('dashboard.html')
+
+@app.route('/sync.html')
+def sync_dashboard():
+    """
+    Display the sync operations dashboard.
+    """
+    return proxy('sync.html')
+
+@app.route('/metrics.html')
+def metrics_dashboard():
+    """
+    Display the metrics dashboard.
+    """
+    return proxy('metrics.html')
+
+@app.route('/compatibility.html')
+def compatibility_dashboard():
+    """
+    Display the compatibility matrix dashboard.
+    """
+    return proxy('compatibility.html')
 
 @app.route('/api-docs')
 def api_docs():
@@ -134,6 +279,27 @@ def api_docs():
     Redirect to the SyncService API documentation.
     """
     return proxy('api-docs')
+
+@app.route('/static/<path:path>')
+def serve_static(path):
+    """
+    Serve static files from the SyncService.
+    """
+    return proxy(f"static/{path}")
+
+@app.route('/js/<path:path>')
+def serve_js(path):
+    """
+    Serve JavaScript files from the SyncService.
+    """
+    return proxy(f"static/js/{path}")
+
+@app.route('/css/<path:path>')
+def serve_css(path):
+    """
+    Serve CSS files from the SyncService.
+    """
+    return proxy(f"static/css/{path}")
 
 @app.route('/api', defaults={'path': ''})
 @app.route('/api/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])

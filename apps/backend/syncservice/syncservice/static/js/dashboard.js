@@ -1,110 +1,87 @@
 /**
- * TerraFusion SyncService Dashboard JavaScript
- * 
- * This file contains all the client-side JavaScript for the SyncService monitoring dashboard,
- * including data fetching, visualization, and UI interaction.
+ * TerraFusion SyncService Dashboard
+ * Main dashboard script
  */
 
-// Dashboard configuration
+// Configuration
 const config = {
-    // API endpoints
     api: {
-        metrics: '/dashboard/metrics',
-        systemStats: '/dashboard/system',
-        syncOperations: '/dashboard/syncs',
-        entityStats: '/dashboard/entities'
+        metrics: '/api/metrics',
+        system: '/api/system',
+        syncOperations: '/api/sync/operations',
+        syncActive: '/api/sync/active',
+        syncMetrics: '/api/sync/metrics',
+        entityStats: '/api/sync/entity-stats',
+        compatibility: '/api/compatibility/matrix',
+        health: '/health/status'
     },
-    // Refresh interval in milliseconds (default: 10 seconds)
-    refreshInterval: 10000,
-    // Chart colors
-    chartColors: {
-        primary: '#0d6efd',
-        success: '#198754',
-        danger: '#dc3545',
-        warning: '#ffc107',
-        info: '#0dcaf0',
-        secondary: '#6c757d',
-    }
+    refreshInterval: 30000 // 30 seconds
 };
 
-// Global chart objects
-const charts = {
-    cpuMemory: null,
-    diskNetwork: null,
-    syncOperations: null,
-    entitySuccessRate: null
-};
-
-// Dashboard data
+// Dashboard data store
 let dashboardData = {
     lastUpdated: null,
-    metrics: {},
+    metrics: [],
+    system: {},
     syncOperations: [],
-    entityStats: {}
+    activeOperations: [],
+    syncMetrics: {},
+    entityStats: {},
+    errors: []
 };
 
-// Auto-refresh timer
-let refreshTimer = null;
+// Chart objects
+let performanceChart = null;
+let entityChart = null;
 
-/**
- * Initialize the dashboard when the page loads
- */
+// Initialize the dashboard
 document.addEventListener('DOMContentLoaded', () => {
-    // Initialize charts
-    initCharts();
-    
-    // Set up event listeners
-    document.getElementById('refreshBtn').addEventListener('click', refreshDashboard);
-    
-    // Initial data load
-    refreshDashboard();
-    
-    // Set up auto-refresh
-    refreshTimer = setInterval(refreshDashboard, config.refreshInterval);
-    
-    // Handle tab visibility changes (pause refresh when tab is not visible)
-    document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') {
-            if (refreshTimer) {
-                clearInterval(refreshTimer);
-                refreshTimer = null;
-            }
-        } else {
-            if (!refreshTimer) {
-                refreshDashboard();
-                refreshTimer = setInterval(refreshDashboard, config.refreshInterval);
-            }
-        }
-    });
+    initializeDashboard();
 });
 
 /**
- * Initialize all dashboard charts
+ * Initialize the dashboard components
  */
-function initCharts() {
-    // CPU & Memory chart
-    const cpuMemoryCtx = document.getElementById('cpuMemoryChart').getContext('2d');
-    charts.cpuMemory = new Chart(cpuMemoryCtx, {
+async function initializeDashboard() {
+    // Set up click handlers
+    document.getElementById('refresh-health').addEventListener('click', () => refreshSystemHealth());
+    document.getElementById('view-all-syncs').addEventListener('click', () => window.location.href = '/sync.html');
+    
+    // Initialize charts
+    initializeCharts();
+    
+    // Initial data load
+    await refreshDashboard();
+    
+    // Set up periodic refresh
+    setInterval(refreshDashboard, config.refreshInterval);
+}
+
+/**
+ * Initialize chart objects
+ */
+function initializeCharts() {
+    // Performance chart (success/failure over time)
+    const perfCtx = document.getElementById('performance-chart').getContext('2d');
+    performanceChart = new Chart(perfCtx, {
         type: 'line',
         data: {
-            labels: Array(10).fill(''),
+            labels: [],
             datasets: [
                 {
-                    label: 'CPU Usage',
-                    borderColor: config.chartColors.primary,
-                    backgroundColor: hexToRgba(config.chartColors.primary, 0.1),
-                    borderWidth: 2,
-                    data: Array(10).fill(0),
-                    tension: 0.3,
+                    label: 'Successful Operations',
+                    data: [],
+                    borderColor: '#198754', // Bootstrap success color
+                    backgroundColor: 'rgba(25, 135, 84, 0.1)',
+                    tension: 0.4,
                     fill: true
                 },
                 {
-                    label: 'Memory Usage',
-                    borderColor: config.chartColors.warning,
-                    backgroundColor: hexToRgba(config.chartColors.warning, 0.1),
-                    borderWidth: 2,
-                    data: Array(10).fill(0),
-                    tension: 0.3,
+                    label: 'Failed Operations',
+                    data: [],
+                    borderColor: '#dc3545', // Bootstrap danger color
+                    backgroundColor: 'rgba(220, 53, 69, 0.1)',
+                    tension: 0.4,
                     fill: true
                 }
             ]
@@ -118,74 +95,42 @@ function initCharts() {
                 },
                 tooltip: {
                     mode: 'index',
-                    intersect: false,
+                    intersect: false
                 }
             },
             scales: {
-                y: {
-                    beginAtZero: true,
-                    max: 100,
+                x: {
                     title: {
                         display: true,
-                        text: 'Usage %'
+                        text: 'Time'
                     }
-                }
-            }
-        }
-    });
-    
-    // Disk & Network chart
-    const diskNetworkCtx = document.getElementById('diskNetworkChart').getContext('2d');
-    charts.diskNetwork = new Chart(diskNetworkCtx, {
-        type: 'bar',
-        data: {
-            labels: ['Disk', 'Network TX', 'Network RX'],
-            datasets: [
-                {
-                    label: 'Current',
-                    backgroundColor: hexToRgba(config.chartColors.info, 0.7),
-                    borderColor: config.chartColors.info,
-                    borderWidth: 1,
-                    data: [0, 0, 0]
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: false,
                 },
-            },
-            scales: {
                 y: {
                     beginAtZero: true,
-                    ticks: {
-                        callback: (value) => formatBytes(value)
+                    title: {
+                        display: true,
+                        text: 'Operations Count'
                     }
                 }
             }
         }
     });
     
-    // Sync Operations chart
-    const syncOpsCtx = document.getElementById('syncOperationsChart').getContext('2d');
-    charts.syncOperations = new Chart(syncOpsCtx, {
+    // Entity distribution chart
+    const entityCtx = document.getElementById('entity-chart').getContext('2d');
+    entityChart = new Chart(entityCtx, {
         type: 'pie',
         data: {
-            labels: ['Success', 'In Progress', 'Failed'],
-            datasets: [
-                {
-                    data: [0, 0, 0],
-                    backgroundColor: [
-                        config.chartColors.success,
-                        config.chartColors.warning,
-                        config.chartColors.danger
-                    ],
-                    borderWidth: 0
-                }
-            ]
+            labels: ['Property', 'Owner', 'Assessment'],
+            datasets: [{
+                data: [0, 0, 0],
+                backgroundColor: [
+                    '#198754', // Bootstrap success
+                    '#0d6efd', // Bootstrap primary
+                    '#ffc107'  // Bootstrap warning
+                ],
+                hoverOffset: 4
+            }]
         },
         options: {
             responsive: true,
@@ -193,44 +138,6 @@ function initCharts() {
             plugins: {
                 legend: {
                     position: 'right',
-                }
-            }
-        }
-    });
-    
-    // Entity Success Rate chart
-    const entitySuccessCtx = document.getElementById('entitySuccessChart').getContext('2d');
-    charts.entitySuccessRate = new Chart(entitySuccessCtx, {
-        type: 'bar',
-        data: {
-            labels: ['Properties', 'Owners', 'Assessments'],
-            datasets: [
-                {
-                    label: 'Success Rate %',
-                    backgroundColor: hexToRgba(config.chartColors.success, 0.7),
-                    borderColor: config.chartColors.success,
-                    borderWidth: 1,
-                    data: [0, 0, 0]
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            indexAxis: 'y',
-            plugins: {
-                legend: {
-                    display: false,
-                }
-            },
-            scales: {
-                x: {
-                    beginAtZero: true,
-                    max: 100,
-                    title: {
-                        display: true,
-                        text: 'Success Rate %'
-                    }
                 }
             }
         }
@@ -246,31 +153,36 @@ async function refreshDashboard() {
     
     try {
         // Fetch dashboard data in parallel
-        const [metrics, syncOperations, entityStats] = await Promise.all([
-            fetchMetrics(),
+        const [system, syncOperations, activeOperations, syncMetrics, entityStats] = await Promise.all([
+            fetchSystemHealth(),
             fetchSyncOperations(),
+            fetchActiveSyncOperations(),
+            fetchSyncMetrics(),
             fetchEntityStats()
         ]);
         
         // Update the dashboard data
         dashboardData = {
             lastUpdated: new Date(),
-            metrics,
+            system,
             syncOperations,
-            entityStats
+            activeOperations,
+            syncMetrics,
+            entityStats,
+            errors: [] // Reset errors
         };
         
         // Update the UI
         updateDashboard();
         
         // Hide any previous errors
-        document.getElementById('errorAlert').style.display = 'none';
+        document.getElementById('errorAlert').classList.add('d-none');
     } catch (error) {
         console.error('Error refreshing dashboard:', error);
         
         // Show error message
         document.getElementById('errorMessage').textContent = `Failed to refresh dashboard: ${error.message}`;
-        document.getElementById('errorAlert').style.display = 'block';
+        document.getElementById('errorAlert').classList.remove('d-none');
     } finally {
         // Remove loading state
         document.body.classList.remove('loading');
@@ -278,12 +190,12 @@ async function refreshDashboard() {
 }
 
 /**
- * Fetch system metrics from the API
+ * Fetch system health status from the API
  */
-async function fetchMetrics() {
-    const response = await fetch(config.api.metrics);
+async function fetchSystemHealth() {
+    const response = await fetch(config.api.system);
     if (!response.ok) {
-        throw new Error(`Failed to fetch metrics: ${response.status} ${response.statusText}`);
+        throw new Error(`Failed to fetch system health: ${response.status} ${response.statusText}`);
     }
     return await response.json();
 }
@@ -292,9 +204,31 @@ async function fetchMetrics() {
  * Fetch sync operations from the API
  */
 async function fetchSyncOperations() {
-    const response = await fetch(config.api.syncOperations);
+    const response = await fetch(`${config.api.syncOperations}?limit=5`);
     if (!response.ok) {
         throw new Error(`Failed to fetch sync operations: ${response.status} ${response.statusText}`);
+    }
+    return await response.json();
+}
+
+/**
+ * Fetch active sync operations from the API
+ */
+async function fetchActiveSyncOperations() {
+    const response = await fetch(config.api.syncActive);
+    if (!response.ok) {
+        throw new Error(`Failed to fetch active operations: ${response.status} ${response.statusText}`);
+    }
+    return await response.json();
+}
+
+/**
+ * Fetch sync metrics from the API
+ */
+async function fetchSyncMetrics() {
+    const response = await fetch(`${config.api.syncMetrics}?days=7`);
+    if (!response.ok) {
+        throw new Error(`Failed to fetch sync metrics: ${response.status} ${response.statusText}`);
     }
     return await response.json();
 }
@@ -303,11 +237,79 @@ async function fetchSyncOperations() {
  * Fetch entity statistics from the API
  */
 async function fetchEntityStats() {
-    const response = await fetch(config.api.entityStats);
-    if (!response.ok) {
-        throw new Error(`Failed to fetch entity stats: ${response.status} ${response.statusText}`);
+    // This endpoint may not exist yet, so handle the 404 gracefully
+    try {
+        const response = await fetch(config.api.entityStats);
+        if (response.ok) {
+            return await response.json();
+        }
+        return { entities: {} };
+    } catch (error) {
+        console.warn('Entity stats endpoint not implemented yet:', error);
+        return { entities: {} };
     }
-    return await response.json();
+}
+
+/**
+ * Format date/time for display
+ */
+function formatDateTime(dateString) {
+    if (!dateString) return 'N/A';
+    
+    const date = new Date(dateString);
+    return date.toLocaleString();
+}
+
+/**
+ * Format duration in seconds to human-readable format
+ */
+function formatDuration(seconds) {
+    if (seconds === null || seconds === undefined) return 'N/A';
+    
+    if (seconds < 60) {
+        return `${seconds.toFixed(1)}s`;
+    } else if (seconds < 3600) {
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = Math.round(seconds % 60);
+        return `${minutes}m ${remainingSeconds}s`;
+    } else {
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        return `${hours}h ${minutes}m`;
+    }
+}
+
+/**
+ * Generate status badge HTML
+ */
+function getStatusBadge(status) {
+    let badgeClass = 'bg-secondary';
+    let icon = 'question-circle';
+    
+    switch (status.toLowerCase()) {
+        case 'pending':
+            badgeClass = 'bg-info';
+            icon = 'hourglass-split';
+            break;
+        case 'running':
+            badgeClass = 'bg-primary';
+            icon = 'arrow-repeat';
+            break;
+        case 'completed':
+            badgeClass = 'bg-success';
+            icon = 'check-circle';
+            break;
+        case 'failed':
+            badgeClass = 'bg-danger';
+            icon = 'x-circle';
+            break;
+        case 'cancelled':
+            badgeClass = 'bg-warning';
+            icon = 'slash-circle';
+            break;
+    }
+    
+    return `<span class="badge ${badgeClass}"><i class="bi bi-${icon}"></i> ${status}</span>`;
 }
 
 /**
@@ -315,293 +317,270 @@ async function fetchEntityStats() {
  */
 function updateDashboard() {
     // Update last updated timestamp
-    const lastUpdated = formatDateTime(dashboardData.lastUpdated);
-    document.getElementById('lastUpdated').textContent = `Last updated: ${lastUpdated}`;
+    document.getElementById('last-updated').textContent = formatDateTime(dashboardData.lastUpdated);
     
-    // Update system metrics
-    updateSystemMetrics();
+    // Update system health section
+    updateSystemHealth();
     
-    // Update sync operations
-    updateSyncOperations();
+    // Update stats cards
+    updateStatsCards();
     
-    // Update entity statistics
-    updateEntityStats();
+    // Update recent syncs table
+    updateRecentSyncs();
+    
+    // Update charts
+    updateCharts();
+    
+    // Update error list
+    updateErrorList();
 }
 
 /**
- * Update the system metrics section of the dashboard
+ * Update system health display
  */
-function updateSystemMetrics() {
-    const metrics = dashboardData.metrics;
+function updateSystemHealth() {
+    const system = dashboardData.system;
     
-    // Update CPU and memory metrics
-    const cpuPercent = getMetricValue(metrics, 'cpu_percent') || 0;
-    const memoryPercent = getMetricValue(metrics, 'memory_percent') || 0;
-    const diskPercent = getMetricValue(metrics, 'disk_percent') || 0;
-    
-    document.getElementById('cpuUsage').textContent = `${cpuPercent.toFixed(1)}%`;
-    document.getElementById('cpuProgress').style.width = `${cpuPercent}%`;
-    
-    document.getElementById('memoryUsage').textContent = `${memoryPercent.toFixed(1)}%`;
-    document.getElementById('memoryProgress').style.width = `${memoryPercent}%`;
-    
-    document.getElementById('diskUsage').textContent = `${diskPercent.toFixed(1)}%`;
-    document.getElementById('diskProgress').style.width = `${diskPercent}%`;
-    
-    // Format total and used memory
-    const memoryTotal = getMetricValue(metrics, 'memory_total_bytes') || 0;
-    const memoryUsed = getMetricValue(metrics, 'memory_used_bytes') || 0;
-    document.getElementById('memoryDetails').textContent = 
-        `${formatBytes(memoryUsed)} / ${formatBytes(memoryTotal)}`;
-    
-    // Format total and used disk
-    const diskTotal = getMetricValue(metrics, 'disk_total_bytes') || 0;
-    const diskUsed = getMetricValue(metrics, 'disk_used_bytes') || 0;
-    document.getElementById('diskDetails').textContent = 
-        `${formatBytes(diskUsed)} / ${formatBytes(diskTotal)}`;
-    
-    // Update process metrics
-    const processCpu = getMetricValue(metrics, 'process_cpu_percent') || 0;
-    const processMemory = getMetricValue(metrics, 'process_memory_rss_bytes') || 0;
-    const processThreads = getMetricValue(metrics, 'process_threads') || 0;
-    
-    document.getElementById('processCpu').textContent = `${processCpu.toFixed(1)}%`;
-    document.getElementById('processMemory').textContent = formatBytes(processMemory);
-    document.getElementById('processThreads').textContent = processThreads;
-    
-    // Update network metrics
-    const networkSent = getMetricValue(metrics, 'network_bytes_sent') || 0;
-    const networkReceived = getMetricValue(metrics, 'network_bytes_recv') || 0;
-    
-    document.getElementById('networkSent').textContent = formatBytes(networkSent);
-    document.getElementById('networkReceived').textContent = formatBytes(networkReceived);
-    
-    // Update charts with new data
-    updateSystemCharts(cpuPercent, memoryPercent, diskUsed, networkSent, networkReceived);
-}
-
-/**
- * Update the system metric charts with new data
- */
-function updateSystemCharts(cpu, memory, disk, networkTx, networkRx) {
-    // Get current timestamp
-    const timestamp = formatTime(new Date());
-    
-    // Update CPU & Memory chart
-    const cpuMemoryChart = charts.cpuMemory;
-    
-    // Add new data points
-    cpuMemoryChart.data.labels.push(timestamp);
-    cpuMemoryChart.data.datasets[0].data.push(cpu);
-    cpuMemoryChart.data.datasets[1].data.push(memory);
-    
-    // Remove oldest data points if we have more than 10
-    if (cpuMemoryChart.data.labels.length > 10) {
-        cpuMemoryChart.data.labels.shift();
-        cpuMemoryChart.data.datasets[0].data.shift();
-        cpuMemoryChart.data.datasets[1].data.shift();
+    if (!system || !system.cpu_percent) {
+        return; // No system data available
     }
     
-    // Update the chart
-    cpuMemoryChart.update();
+    // Update CPU usage
+    const cpuPercent = document.getElementById('cpu-percent');
+    const cpuProgress = document.getElementById('cpu-progress');
+    cpuPercent.textContent = `${system.cpu_percent.toFixed(1)}%`;
+    cpuProgress.style.width = `${system.cpu_percent}%`;
     
-    // Update Disk & Network chart
-    const diskNetworkChart = charts.diskNetwork;
+    // Update memory usage
+    const memoryPercent = document.getElementById('memory-percent');
+    const memoryProgress = document.getElementById('memory-progress');
+    memoryPercent.textContent = `${system.memory_percent.toFixed(1)}%`;
+    memoryProgress.style.width = `${system.memory_percent}%`;
     
-    // Update data
-    diskNetworkChart.data.datasets[0].data = [disk, networkTx, networkRx];
+    // Update disk usage
+    const diskPercent = document.getElementById('disk-percent');
+    const diskProgress = document.getElementById('disk-progress');
+    diskPercent.textContent = `${system.disk_percent.toFixed(1)}%`;
+    diskProgress.style.width = `${system.disk_percent}%`;
     
-    // Update the chart
-    diskNetworkChart.update();
+    // Update system status
+    const systemStatus = document.getElementById('system-status');
+    const isHealthy = system.cpu_percent < 90 && system.memory_percent < 90 && system.disk_percent < 90;
+    systemStatus.textContent = isHealthy ? 'Healthy' : 'Warning';
+    systemStatus.className = isHealthy ? 'badge bg-success' : 'badge bg-warning';
+    
+    // Update uptime if available
+    if (system.uptime_seconds) {
+        document.getElementById('service-uptime').textContent = formatDuration(system.uptime_seconds);
+    }
+    
+    // Update last checked timestamp
+    document.getElementById('system-last-updated').textContent = `Last checked: ${formatDateTime(system.timestamp)}`;
 }
 
 /**
- * Update the sync operations section of the dashboard
+ * Update stats cards with metrics data
  */
-function updateSyncOperations() {
-    const syncOps = dashboardData.syncOperations;
+function updateStatsCards() {
+    const metrics = dashboardData.syncMetrics;
+    const activeOps = dashboardData.activeOperations || [];
     
-    // Count operations by status
-    let success = 0;
-    let inProgress = 0;
-    let failed = 0;
-    let total = 0;
+    // If we don't have metrics data yet, use default values
+    const successfulSyncs = metrics.total_completed || 0;
+    const failedOperations = metrics.total_failed || 0;
+    const totalRecords = metrics.total_records_processed || 0;
     
-    // Get the latest 5 operations for the table
-    const latestOps = (syncOps.operations || []).sort((a, b) => {
-        return new Date(b.start_time) - new Date(a.start_time);
-    }).slice(0, 5);
+    // Update successful syncs card
+    document.getElementById('successful-syncs').textContent = successfulSyncs;
+    const successRate = metrics.success_rate ? metrics.success_rate.toFixed(1) : '0';
+    document.getElementById('success-rate').textContent = `${successRate}%`;
     
-    // Count operations by status
-    (syncOps.operations || []).forEach(op => {
-        total++;
-        if (op.status === 'completed') {
-            success++;
-        } else if (op.status === 'in_progress') {
-            inProgress++;
-        } else if (op.status === 'failed') {
-            failed++;
+    // Update active operations card
+    document.getElementById('active-operations').textContent = activeOps.length;
+    const avgDuration = metrics.average_duration_seconds 
+        ? formatDuration(metrics.average_duration_seconds)
+        : 'N/A';
+    document.getElementById('avg-duration').textContent = avgDuration;
+    
+    // Update failed operations card
+    document.getElementById('failed-operations').textContent = failedOperations;
+    const failureRate = metrics.failure_rate ? metrics.failure_rate.toFixed(1) : '0';
+    document.getElementById('failure-rate').textContent = `${failureRate}%`;
+    
+    // Update total records card
+    document.getElementById('total-records').textContent = totalRecords.toLocaleString();
+    const recordsPerMinute = metrics.records_per_minute ? metrics.records_per_minute.toFixed(1) : '0';
+    document.getElementById('records-per-minute').textContent = `${recordsPerMinute}/min`;
+}
+
+/**
+ * Update recent syncs table
+ */
+function updateRecentSyncs() {
+    const recentSyncsTable = document.getElementById('recent-syncs');
+    const operations = dashboardData.syncOperations || [];
+    
+    if (operations.length === 0) {
+        recentSyncsTable.innerHTML = '<tr><td colspan="6" class="text-center">No sync operations found</td></tr>';
+        return;
+    }
+    
+    // Build the HTML for the table rows
+    const rowsHTML = operations.map(op => {
+        // Calculate duration
+        let duration = 'N/A';
+        if (op.end_time && op.start_time) {
+            const startTime = new Date(op.start_time);
+            const endTime = new Date(op.end_time);
+            const durationSeconds = (endTime - startTime) / 1000;
+            duration = formatDuration(durationSeconds);
+        } else if (op.start_time) {
+            const startTime = new Date(op.start_time);
+            const now = new Date();
+            const durationSeconds = (now - startTime) / 1000;
+            duration = formatDuration(durationSeconds) + ' (running)';
         }
+        
+        // Format the records count
+        const records = op.entity_count ? op.entity_count.toLocaleString() : 'N/A';
+        
+        return `
+            <tr>
+                <td><a href="#" class="operation-link" data-id="${op.id}">${op.id}</a></td>
+                <td>${op.sync_type}</td>
+                <td>${op.sync_pair_id}</td>
+                <td>${getStatusBadge(op.status)}</td>
+                <td>${duration}</td>
+                <td>${records}</td>
+            </tr>
+        `;
+    }).join('');
+    
+    recentSyncsTable.innerHTML = rowsHTML;
+    
+    // Add event listeners to the operation links
+    document.querySelectorAll('.operation-link').forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.location.href = `/sync.html?operation=${link.dataset.id}`;
+        });
+    });
+}
+
+/**
+ * Update chart displays
+ */
+function updateCharts() {
+    updatePerformanceChart();
+    updateEntityChart();
+}
+
+/**
+ * Update the performance chart with time series data
+ */
+function updatePerformanceChart() {
+    const metrics = dashboardData.syncMetrics;
+    
+    if (!metrics || !metrics.time_series) {
+        return; // No time series data available
+    }
+    
+    // Extract time series data
+    const timePoints = metrics.time_series.map(point => {
+        const date = new Date(point.timestamp);
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     });
     
-    // Update operation counts
-    document.getElementById('totalSyncs').textContent = total;
-    document.getElementById('successfulSyncs').textContent = success;
-    document.getElementById('failedSyncs').textContent = failed;
-    document.getElementById('activeJobs').textContent = inProgress;
+    const successData = metrics.time_series.map(point => point.success_count || 0);
+    const failureData = metrics.time_series.map(point => point.failure_count || 0);
     
-    // Update the sync operations table
-    const tableBody = document.getElementById('syncOpsTable');
-    
-    if (latestOps.length === 0) {
-        tableBody.innerHTML = '<tr><td colspan="5" class="text-center">No sync operations available</td></tr>';
-    } else {
-        tableBody.innerHTML = latestOps.map(op => {
-            const startTime = formatDateTime(new Date(op.start_time));
-            let statusClass = '';
-            let statusBadge = '';
-            
-            if (op.status === 'completed') {
-                statusClass = 'bg-success';
-                statusBadge = 'Success';
-            } else if (op.status === 'in_progress') {
-                statusClass = 'bg-warning text-dark';
-                statusBadge = 'In Progress';
-            } else if (op.status === 'failed') {
-                statusClass = 'bg-danger';
-                statusBadge = 'Failed';
-            }
-            
-            return `
-                <tr>
-                    <td>${op.id}</td>
-                    <td>${op.sync_type}</td>
-                    <td>${startTime}</td>
-                    <td>${op.entity_count || 0}</td>
-                    <td><span class="badge ${statusClass} badge-status">${statusBadge}</span></td>
-                </tr>
-            `;
-        }).join('');
-    }
-    
-    // Update the sync operations chart
-    const syncOpsChart = charts.syncOperations;
-    syncOpsChart.data.datasets[0].data = [success, inProgress, failed];
-    syncOpsChart.update();
+    // Update chart data
+    performanceChart.data.labels = timePoints;
+    performanceChart.data.datasets[0].data = successData;
+    performanceChart.data.datasets[1].data = failureData;
+    performanceChart.update();
 }
 
 /**
- * Update the entity statistics section of the dashboard
+ * Update the entity distribution chart
  */
-function updateEntityStats() {
+function updateEntityChart() {
     const entityStats = dashboardData.entityStats;
     
-    // Get entity types and their stats
-    const entityTypes = Object.keys(entityStats.entities || {}).sort();
+    if (!entityStats || !entityStats.entities) {
+        return; // No entity data available
+    }
     
-    // Update the entity table
-    const tableBody = document.getElementById('entityTable');
+    // Extract entity data
+    const propertyCount = (entityStats.entities.property?.success || 0);
+    const ownerCount = (entityStats.entities.owner?.success || 0);
+    const assessmentCount = (entityStats.entities.assessment?.success || 0);
     
-    if (entityTypes.length === 0) {
-        tableBody.innerHTML = '<tr><td colspan="5" class="text-center">No entity metrics available</td></tr>';
-    } else {
-        tableBody.innerHTML = entityTypes.map(entityType => {
-            const stats = entityStats.entities[entityType];
-            const total = stats.success + stats.failure;
-            const successRate = total > 0 ? (stats.success / total) * 100 : 0;
+    // Update chart data
+    entityChart.data.datasets[0].data = [propertyCount, ownerCount, assessmentCount];
+    entityChart.update();
+}
+
+/**
+ * Update the error list
+ */
+function updateErrorList() {
+    const errorList = document.getElementById('error-list');
+    const errors = dashboardData.errors || [];
+    
+    if (errors.length === 0) {
+        errorList.innerHTML = '<div class="list-group-item text-center text-muted py-4">No errors found.</div>';
+        document.getElementById('error-count').textContent = '0';
+        return;
+    }
+    
+    // Update error count badge
+    document.getElementById('error-count').textContent = errors.length.toString();
+    
+    // Build the HTML for the errors
+    const errorsHTML = errors.map(error => `
+        <div class="list-group-item">
+            <div class="d-flex justify-content-between align-items-center">
+                <h6 class="mb-1">${error.message || 'Unknown error'}</h6>
+                <small class="text-muted">${formatDateTime(error.timestamp)}</small>
+            </div>
+            <p class="mb-1">${error.details || ''}</p>
+            <small>
+                <span class="badge bg-secondary">${error.operation_id || 'N/A'}</span>
+                <span class="badge bg-secondary">${error.sync_pair_id || 'N/A'}</span>
+            </small>
+        </div>
+    `).join('');
+    
+    errorList.innerHTML = errorsHTML;
+}
+
+/**
+ * Manually refresh system health
+ */
+function refreshSystemHealth() {
+    // Add loading state to the button
+    const button = document.getElementById('refresh-health');
+    button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+    button.disabled = true;
+    
+    // Fetch the latest system health
+    fetchSystemHealth()
+        .then(systemData => {
+            // Update system health section
+            dashboardData.system = systemData;
+            updateSystemHealth();
+        })
+        .catch(error => {
+            console.error('Error refreshing system health:', error);
             
-            return `
-                <tr>
-                    <td>${entityType}</td>
-                    <td>
-                        <div class="progress">
-                            <div class="progress-bar bg-success" role="progressbar" 
-                                style="width: ${successRate}%" 
-                                aria-valuenow="${successRate}" 
-                                aria-valuemin="0" 
-                                aria-valuemax="100">
-                                ${successRate.toFixed(1)}%
-                            </div>
-                        </div>
-                    </td>
-                    <td>${stats.success}</td>
-                    <td>${stats.failure}</td>
-                    <td>${total}</td>
-                </tr>
-            `;
-        }).join('');
-    }
-    
-    // Update the entity success rate chart
-    const entitySuccessChart = charts.entitySuccessRate;
-    const labels = [];
-    const data = [];
-    
-    entityTypes.forEach(entityType => {
-        const stats = entityStats.entities[entityType];
-        const total = stats.success + stats.failure;
-        const successRate = total > 0 ? (stats.success / total) * 100 : 0;
-        
-        labels.push(entityType);
-        data.push(successRate);
-    });
-    
-    entitySuccessChart.data.labels = labels;
-    entitySuccessChart.data.datasets[0].data = data;
-    entitySuccessChart.update();
-}
-
-/**
- * Get a metric value from the metrics object
- */
-function getMetricValue(metrics, metricName) {
-    if (!metrics || !metrics[metricName]) {
-        return null;
-    }
-    
-    return metrics[metricName].values.default;
-}
-
-/**
- * Format a timestamp as a date and time string
- */
-function formatDateTime(date) {
-    if (!date) return 'N/A';
-    
-    return date.toLocaleString();
-}
-
-/**
- * Format a timestamp as a time string (HH:MM:SS)
- */
-function formatTime(date) {
-    if (!date) return '';
-    
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-}
-
-/**
- * Format bytes as a human-readable string
- */
-function formatBytes(bytes, decimals = 1) {
-    if (bytes === 0) return '0 Bytes';
-    
-    const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
-    
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-}
-
-/**
- * Convert a hex color to rgba
- */
-function hexToRgba(hex, alpha) {
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+            // Show error message
+            document.getElementById('errorMessage').textContent = `Failed to refresh system health: ${error.message}`;
+            document.getElementById('errorAlert').classList.remove('d-none');
+        })
+        .finally(() => {
+            // Restore button state
+            button.innerHTML = '<i class="bi bi-arrow-clockwise"></i>';
+            button.disabled = false;
+        });
 }
