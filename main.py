@@ -96,11 +96,20 @@ def check_syncservice_status():
     """
     try:
         print(f"Checking SyncService status at {SYNCSERVICE_URL}...")
-        resp = requests.get(f"{SYNCSERVICE_URL}/health", timeout=5)
-        print(f"SyncService response: {resp.status_code}")
-        if resp.status_code == 200:
-            print(f"SyncService health check successful: {resp.text}")
+        # Try the root endpoint first
+        resp = requests.get(f"{SYNCSERVICE_URL}/", timeout=5)
+        print(f"SyncService root endpoint response: {resp.status_code}")
+        if resp.status_code in [200, 404]:  # 404 is ok too, it means the service is running
+            print("SyncService is running (/ endpoint accessible)")
             return True
+            
+        # Try the /api/health endpoint as fallback
+        resp = requests.get(f"{SYNCSERVICE_URL}/api/health", timeout=5)
+        print(f"SyncService /api/health response: {resp.status_code}")
+        if resp.status_code in [200, 404]:  # 404 is ok too, it means the service is running
+            print("SyncService is running (/api/health endpoint accessible)")
+            return True
+            
         return False
     except requests.exceptions.RequestException as e:
         print(f"SyncService connection error: {str(e)}")
@@ -369,16 +378,12 @@ def status():
     """
     Status endpoint providing information about the API gateway.
     """
-    # Check if the SyncService API is running
-    try:
-        resp = requests.get(f"{SYNCSERVICE_URL}/", timeout=2)
-        syncservice_status = "running" if resp.status_code == 200 else "error"
-    except requests.exceptions.RequestException:
-        syncservice_status = "not running"
-        
-        # Try to start the SyncService if it's not running
-        if AUTO_START_SYNCSERVICE and syncservice_status == "not running":
-            threading.Thread(target=ensure_syncservice_running).start()
+    # Check if the SyncService API is running using the same method as check_syncservice_status
+    syncservice_status = "running" if check_syncservice_status() else "not running"
+    
+    # Try to start the SyncService if it's not running
+    if AUTO_START_SYNCSERVICE and syncservice_status == "not running":
+        threading.Thread(target=ensure_syncservice_running).start()
     
     return jsonify({
         "gateway": {
