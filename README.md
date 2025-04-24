@@ -93,9 +93,23 @@ The system is designed to start automatically on initialization:
 2. The Gateway automatically starts the SyncService on port 8000
 3. The Gateway monitors the SyncService and restarts it if needed
 
-Alternatively, you can manually restart the SyncService:
+### Important Note About Workflows
+
+The system uses two different approaches to start and manage the SyncService:
+
+1. **Primary Method (Recommended)**: The main application on port 5000 automatically starts, monitors, and manages the SyncService on port 8000. This happens through the `ensure_syncservice_running()` function in main.py.
+
+2. **Secondary Method (Standalone)**: The "syncservice" workflow in .replit is configured to start the SyncService independently, but this method is currently facing port conflict issues and is not recommended.
+
+For normal operation, you should only need to start the "Start application" workflow, as it will handle the SyncService automatically.
+
+### Manual Control
+
+You can manually restart or manage the SyncService:
 - Using the API: `GET /start-syncservice`
 - Using the command line: `python run_syncservice_direct.py`
+
+The system will automatically handle port configurations to ensure the SyncService runs on port 8000.
 
 ## Additional Information
 
