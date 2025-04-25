@@ -69,6 +69,10 @@ db.init_app(app)
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+# Create database tables if they don't exist
+with app.app_context():
+    db.create_all()
+
 # Create a monitoring instance if available
 if SAFE_MONITOR_AVAILABLE:
     api_gateway_monitor = SafeSystemMonitor()
