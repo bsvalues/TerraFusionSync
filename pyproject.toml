@@ -16,25 +16,25 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
-
-[project.dependencies]
-flask = "^2.3.0"
-flask-sqlalchemy = "^3.1.1"
-gunicorn = "^21.2.0"
-fastapi = "^0.104.1"
-uvicorn = "^0.23.2"
-psutil = "^5.9.6"
-sqlalchemy = "^2.0.21"
-httpx = "^0.25.0"
-pydantic = "^2.4.2"
-asyncio = "^3.4.3"
-aiohttp = "^3.8.6"
-requests = "^2.31.0"
-python-dotenv = "^1.0.0"
-tomli = "^2.0.1"
-tomli-w = "^1.0.0"
-pyjwt = "^2.8.0"
-prometheus-client = "^0.19.0"
+dependencies = [
+    "flask>=2.3.0",
+    "flask-sqlalchemy>=3.1.1",
+    "gunicorn>=21.2.0",
+    "fastapi>=0.104.1",
+    "uvicorn>=0.23.2",
+    "psutil>=5.9.6",
+    "sqlalchemy>=2.0.21",
+    "httpx>=0.25.0",
+    "pydantic>=2.4.2",
+    "asyncio>=3.4.3",
+    "aiohttp>=3.8.6",
+    "requests>=2.31.0",
+    "python-dotenv>=1.0.0",
+    "tomli>=2.0.1",
+    "tomli-w>=1.0.0",
+    "pyjwt>=2.8.0",
+    "prometheus-client>=0.19.0",
+]
 
 [tool.pytest]
 testpaths = ["tests"]
