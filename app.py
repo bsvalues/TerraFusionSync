@@ -8,8 +8,9 @@ import os
 import json
 import logging
 import requests
+import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 from urllib.parse import urljoin
 
@@ -94,7 +95,6 @@ def before_request_middleware():
     # If it's been more than METRICS_COLLECTION_INTERVAL seconds since the last collection
     if current_time - last_metrics_collection_time > METRICS_COLLECTION_INTERVAL:
         # Run this in a separate thread to avoid blocking the request
-        import threading
         thread = threading.Thread(target=lambda: collect_metrics_safely())
         thread.daemon = True
         thread.start()
@@ -438,9 +438,9 @@ def liveness_check():
 @app.route('/metrics')
 def get_metrics():
     """
-    Prometheus metrics endpoint.
+    Metrics endpoint.
     
-    This endpoint exposes metrics in Prometheus format for scraping.
+    This endpoint exposes metrics in plaintext format for monitoring systems.
     
     Since we've disabled the Prometheus metrics for stability,
     we're returning a simple plaintext representation of the most 
@@ -702,6 +702,95 @@ def get_system_metrics():
             logger.error(f"Failed to collect new metrics: {str(e)}")
     
     return jsonify([metric.to_dict() for metric in system_metrics])
+
+@app.route('/api/metrics/refresh', methods=['POST'])
+@requires_auth
+def refresh_metrics():
+    """Manually trigger metrics collection from SyncService."""
+    user = get_current_user()
+    
+    if not check_syncservice_status():
+        return jsonify({
+            "status": "error",
+            "message": "SyncService is not available",
+            "timestamp": datetime.utcnow().isoformat()
+        }), 503
+    
+    # Create a thread to collect metrics in the background
+    thread = threading.Thread(target=lambda: collect_metrics_safely())
+    thread.daemon = True
+    thread.start()
+    
+    # Create audit log for manual refresh
+    create_audit_log(
+        event_type="metrics_refresh_requested",
+        resource_type="system_metrics",
+        description="Manual metrics collection initiated by user",
+        severity="info",
+        user_id=user.get('id') if user else None,
+        username=user.get('username') if user else None
+    )
+    
+    return jsonify({
+        "status": "success",
+        "message": "Metrics collection initiated",
+        "timestamp": datetime.utcnow().isoformat()
+    })
+
+@app.route('/api/metrics/status')
+@requires_auth
+def get_metrics_status():
+    """Get status information about metrics collection."""
+    # Get the most recent metrics
+    most_recent = SystemMetrics.query.order_by(
+        SystemMetrics.timestamp.desc()).first()
+    
+    # Get timestamp of most recent collection
+    now = datetime.utcnow()
+    last_collection_time = most_recent.timestamp if most_recent else None
+    time_since_last = (now - last_collection_time).total_seconds() if last_collection_time else None
+    
+    # Get metrics collection failure audit logs
+    recent_failures = AuditEntry.query.filter(
+        AuditEntry.event_type.in_(['metrics_collection_failed', 'metrics_collection_error'])
+    ).order_by(AuditEntry.timestamp.desc()).limit(5).all()
+    
+    # Get metrics collection retry success logs
+    recent_retries = AuditEntry.query.filter_by(
+        event_type='metrics_collection_retry_success'
+    ).order_by(AuditEntry.timestamp.desc()).limit(5).all()
+    
+    # Get count of metrics in the last 24 hours
+    day_ago = now - timedelta(days=1)
+    count_24h = SystemMetrics.query.filter(
+        SystemMetrics.timestamp >= day_ago
+    ).count()
+    
+    # Determine health status
+    health_status = "healthy"
+    health_message = "Metrics collection operating normally"
+    
+    if not most_recent:
+        health_status = "critical"
+        health_message = "No metrics have been collected"
+    elif time_since_last and time_since_last > 300:  # 5 minutes
+        health_status = "warning"
+        health_message = f"No metrics collected in the last {int(time_since_last/60)} minutes"
+    elif recent_failures and len(recent_failures) > 2:
+        health_status = "warning"
+        health_message = f"Multiple collection failures detected ({len(recent_failures)} recent failures)"
+    
+    return jsonify({
+        "status": health_status,
+        "message": health_message,
+        "last_collection": last_collection_time.isoformat() if last_collection_time else None,
+        "time_since_last_collection_seconds": time_since_last,
+        "collections_last_24h": count_24h,
+        "recent_failures": [failure.to_dict() for failure in recent_failures],
+        "recent_retries": [retry.to_dict() for retry in recent_retries],
+        "syncservice_available": check_syncservice_status(),
+        "timestamp": now.isoformat()
+    })
 
 
 @app.route('/api/audit', methods=['GET'])
