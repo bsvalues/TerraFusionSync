@@ -1,5 +1,9 @@
 """
 API package for the TerraFusion SyncService platform.
 
-This package contains API modules and blueprints for the Flask application.
+This package provides API endpoints for interacting with the platform,
+including sync operations, system management, and monitoring.
 """
+
+# Import blueprints for easy access
+from .sync_operations import sync_bp

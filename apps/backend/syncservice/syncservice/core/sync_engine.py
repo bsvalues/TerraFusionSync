@@ -7,15 +7,11 @@ components to detect changes, transform, validate, and sync data between systems
 
 import logging
 import time
-import uuid
-from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, Set, Tuple, Union
+from typing import Dict, Any, Optional, List
+from datetime import datetime
 
-from ..models.base import (
-    SyncType, SyncStatus, SyncOperation, SyncOperationDetails, 
-    SourceRecord, TargetRecord, TransformedRecord, ValidationResult, EntityStats
-)
-from .self_healing import SelfHealingOrchestrator
+# Import self-healing components
+from .self_healing import RetryStrategy, CircuitBreaker, SelfHealingOrchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -33,16 +29,23 @@ class SyncEngine:
     
     def __init__(self):
         """Initialize the sync engine with its dependencies."""
-        # Create a self-healing orchestrator with callbacks
-        self.self_healing = SelfHealingOrchestrator(
-            on_retry_callback=self._on_retry_attempt,
-            on_circuit_break_callback=self._on_circuit_break
+        # Create self-healing orchestrator with default settings
+        self.orchestrator = SelfHealingOrchestrator(
+            retry_strategy=RetryStrategy(
+                max_attempts=3,
+                initial_delay=2.0,
+                backoff_factor=2.0,
+                max_delay=30.0
+            ),
+            circuit_breaker=CircuitBreaker(
+                failure_threshold=5,
+                recovery_timeout=300.0  # 5 minutes
+            )
         )
         
-        # Track active operations
-        self.active_operations = {}
+        logger.info("SyncEngine initialized with self-healing capabilities")
     
-    def start_sync_operation(self, operation: SyncOperation) -> bool:
+    def start_sync_operation(self, operation: Dict[str, Any]) -> bool:
         """
         Start a synchronization operation with self-healing capabilities.
         
@@ -52,36 +55,43 @@ class SyncEngine:
         Returns:
             True if the operation was started successfully, False otherwise
         """
+        operation_id = operation.get('id', 'unknown')
+        operation_type = operation.get('operation_type', 'unknown')
+        sync_pair_id = operation.get('sync_pair_id', 'unknown')
+        
+        logger.info(f"Starting {operation_type} sync operation {operation_id} for pair {sync_pair_id}")
+        
+        # Create a function to execute the sync operation
+        def execute_sync() -> Dict[str, Any]:
+            result = self._execute_sync_operation(operation)
+            return result
+        
+        # Create a function to handle errors
+        def handle_error(e: Exception) -> None:
+            logger.error(f"Sync operation {operation_id} failed: {str(e)}")
+            self._handle_operation_failure(operation, e)
+        
+        # Execute the operation with self-healing capabilities
         try:
-            # Record operation start
-            operation.status = SyncStatus.RUNNING
-            operation.started_at = datetime.now()
-            
-            # Store in active operations
-            self.active_operations[str(operation.id)] = operation
-            
-            # Use self-healing orchestrator to execute the sync
-            def execute_sync():
-                return self._execute_sync_operation(operation)
-            
-            def handle_error(e):
-                self._handle_operation_failure(operation, e)
-            
-            # Execute with self-healing capabilities
-            result = self.self_healing.execute_with_self_healing(
-                operation=operation,
-                execution_func=execute_sync,
-                error_handler=handle_error
+            result = self.orchestrator.execute(
+                operation=execute_sync,
+                error_handler=handle_error,
+                retry_callback=lambda attempt: self._on_retry_attempt(attempt, operation),
+                circuit_breaker_callback=lambda: self._on_circuit_break(operation)
             )
             
-            return result is not None
-            
+            if result:
+                logger.info(f"Sync operation {operation_id} completed successfully")
+                return True
+            else:
+                logger.error(f"Sync operation {operation_id} failed after all retry attempts")
+                return False
+                
         except Exception as e:
-            logger.error(f"Error starting sync operation {operation.id}: {str(e)}")
-            self._handle_operation_failure(operation, e)
+            logger.error(f"Unexpected error in sync operation {operation_id}: {str(e)}")
             return False
     
-    def _execute_sync_operation(self, operation: SyncOperation) -> Dict[str, Any]:
+    def _execute_sync_operation(self, operation: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute a sync operation from start to finish.
         
@@ -93,92 +103,54 @@ class SyncEngine:
         Returns:
             Dictionary with operation results
         """
-        # In a real implementation, this would:
-        # 1. Connect to source system and get records
-        # 2. Apply transformations to the records
-        # 3. Validate the transformed records
-        # 4. Apply records to the target system
-        # 5. Handle any errors and track progress
+        operation_id = operation.get('id', 'unknown')
+        operation_type = operation.get('operation_type', 'unknown')
+        start_time = time.time()
         
-        # Simulated implementation for the structure
-        logger.info(f"Executing sync operation {operation.id} of type {operation.operation_type}")
+        logger.info(f"Executing {operation_type} sync operation {operation_id}")
         
-        # Simulated processing with progress updates
-        records_to_process = 1000  # Example
+        # In a real implementation, we would:
+        # 1. Connect to source system
+        # 2. Connect to target system
+        # 3. Based on operation_type (full, incremental, delta), perform the appropriate sync logic
+        # 4. Track progress and update operation status
+        # 5. Handle specific errors through the self-healing orchestrator
         
-        # Create operation details if not present
-        if not operation.details:
-            operation.details = SyncOperationDetails(
-                start_time=datetime.now(),
-                entity_stats={},
-                error_details=[]
-            )
-        
-        # Track entity statistics
-        entity_types = ["property", "owner", "valuation"]
-        for entity_type in entity_types:
-            operation.details.entity_stats[entity_type] = EntityStats(entity_type=entity_type)
-        
-        # Simulate processing records
-        for i in range(records_to_process):
-            # In a real implementation, this would process actual records
-            # For now, we just simulate progress
+        # Simulated operation execution
+        try:
+            # Simulated work
+            logger.info(f"Performing data extraction for operation {operation_id}")
+            # Extract data from source...
             
-            # Update operation progress for monitoring
-            operation.details.records_processed += 1
+            logger.info(f"Performing data transformation for operation {operation_id}")
+            # Transform data...
             
-            # Simulate some failures
-            if i % 100 == 99:  # 1% failure rate for example
-                operation.details.records_failed += 1
-                entity_type = entity_types[i % len(entity_types)]
-                operation.details.entity_stats[entity_type].error_count += 1
-                
-                # Track error details
-                operation.details.error_details.append({
-                    "record_id": f"rec-{i}",
-                    "entity_type": entity_type,
-                    "error": "Simulated error for testing self-healing",
-                    "timestamp": datetime.now().isoformat()
-                })
-            else:
-                operation.details.records_succeeded += 1
-                entity_type = entity_types[i % len(entity_types)]
-                operation.details.entity_stats[entity_type].success_count += 1
+            logger.info(f"Performing data validation for operation {operation_id}")
+            # Validate data...
             
-            # Simulate some processing delay
-            time.sleep(0.001)  # Just a tiny delay to avoid blocking
-        
-        # Complete the operation
-        operation.status = SyncStatus.COMPLETED
-        operation.completed_at = datetime.now()
-        operation.details.end_time = datetime.now()
-        operation.details.duration_seconds = (
-            operation.details.end_time - operation.details.start_time
-        ).total_seconds()
-        
-        # Log completion
-        logger.info(
-            f"Completed sync operation {operation.id}: "
-            f"processed={operation.details.records_processed}, "
-            f"succeeded={operation.details.records_succeeded}, "
-            f"failed={operation.details.records_failed}"
-        )
-        
-        # Remove from active operations
-        if str(operation.id) in self.active_operations:
-            del self.active_operations[str(operation.id)]
-        
-        # Return operation results
-        return {
-            "operation_id": operation.id,
-            "status": operation.status.value,
-            "records_processed": operation.details.records_processed,
-            "records_succeeded": operation.details.records_succeeded,
-            "records_failed": operation.details.records_failed,
-            "duration_seconds": operation.details.duration_seconds
-        }
+            logger.info(f"Performing data loading for operation {operation_id}")
+            # Load data to target...
+            
+            duration = time.time() - start_time
+            
+            # Construct result
+            result = {
+                'operation_id': operation_id,
+                'status': 'completed',
+                'duration_seconds': duration,
+                'records_processed': 1000,  # Example metrics
+                'records_succeeded': 998,
+                'records_failed': 2,
+                'completed_at': datetime.utcnow().isoformat()
+            }
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error executing sync operation {operation_id}: {str(e)}")
+            raise
     
-    def _handle_operation_failure(self, operation: SyncOperation, error: Exception) -> None:
+    def _handle_operation_failure(self, operation: Dict[str, Any], error: Exception) -> None:
         """
         Handle a failed operation.
         
@@ -186,36 +158,27 @@ class SyncEngine:
             operation: The failed operation
             error: The exception that caused the failure
         """
-        logger.error(f"Sync operation {operation.id} failed: {str(error)}")
+        operation_id = operation.get('id', 'unknown')
         
-        # Update operation status
-        operation.status = SyncStatus.FAILED
-        operation.completed_at = datetime.now()
+        # In a production implementation, we would:
+        # 1. Update operation status in the database
+        # 2. Create detailed error logs
+        # 3. Categorize the error for better retry strategies
+        # 4. Potentially notify administrators
         
-        # Record error details
-        operation.last_error = str(error)
+        logger.error(f"Handling failure for operation {operation_id}: {str(error)}")
         
-        if operation.details:
-            operation.details.end_time = datetime.now()
-            operation.details.duration_seconds = (
-                operation.details.end_time - operation.details.start_time
-            ).total_seconds()
-            
-            # Add to error details
-            operation.details.error_details.append({
-                "error": str(error),
-                "timestamp": datetime.now().isoformat(),
-                "details": {
-                    "type": error.__class__.__name__,
-                    "traceback": str(error.__traceback__)
-                }
-            })
-        
-        # Remove from active operations
-        if str(operation.id) in self.active_operations:
-            del self.active_operations[str(operation.id)]
+        # Example error categorization
+        if "connection refused" in str(error).lower():
+            logger.warning(f"Connection issue detected for operation {operation_id}, marked for retry")
+        elif "timeout" in str(error).lower():
+            logger.warning(f"Timeout issue detected for operation {operation_id}, marked for retry")
+        elif "permission denied" in str(error).lower():
+            logger.error(f"Permission issue detected for operation {operation_id}, may require manual intervention")
+        else:
+            logger.error(f"Unknown error for operation {operation_id}, attempting retry")
     
-    def _on_retry_attempt(self, attempt: int, operation: SyncOperation) -> None:
+    def _on_retry_attempt(self, attempt: int, operation: Dict[str, Any]) -> None:
         """
         Callback when a retry is attempted.
         
@@ -223,30 +186,29 @@ class SyncEngine:
             attempt: The retry attempt number
             operation: The operation being retried
         """
-        logger.info(f"Retry #{attempt} for sync operation {operation.id}")
+        operation_id = operation.get('id', 'unknown')
         
-        # Update operation data
-        operation.retry_count = attempt
+        logger.info(f"Retry attempt {attempt} for operation {operation_id}")
         
-        # In a real implementation, this would:
-        # 1. Record the retry in the audit log
-        # 2. Update the operation status in the database
-        # 3. Send notifications if needed
+        # In a production implementation, we would:
+        # 1. Update operation status in the database
+        # 2. Create an audit log entry for the retry
+        # 3. Check system health before retrying
+        # 4. Potentially apply different strategies based on retry count
     
-    def _on_circuit_break(self, operation: SyncOperation) -> None:
+    def _on_circuit_break(self, operation: Dict[str, Any]) -> None:
         """
         Callback when a circuit breaker is activated.
         
         Args:
             operation: The operation that triggered the circuit breaker
         """
-        logger.warning(
-            f"Circuit breaker activated for sync pair {operation.sync_pair_id} "
-            f"({operation.source_system} → {operation.target_system})"
-        )
+        operation_id = operation.get('id', 'unknown')
         
-        # In a real implementation, this would:
-        # 1. Record the circuit break in the audit log
-        # 2. Update the operation status in the database
-        # 3. Send alerts to administrators
-        # 4. Update the status dashboard
+        logger.warning(f"Circuit breaker activated for operation {operation_id}")
+        
+        # In a production implementation, we would:
+        # 1. Update operation status in the database
+        # 2. Create an audit log entry for the circuit break
+        # 3. Notify administrators of a potential system-wide issue
+        # 4. Potentially trigger a system health check

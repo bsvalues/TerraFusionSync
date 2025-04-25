@@ -1,651 +1,809 @@
 """
-Sync Operations API module.
+API blueprint for sync operations.
 
-This module provides API endpoints for managing sync operations with self-healing
-capabilities. It acts as a bridge between the API Gateway and the SyncService,
-forwarding requests while adding monitoring and recovery functionality.
+This module provides API endpoints for managing sync operations,
+including creating, updating, and monitoring sync jobs.
 """
 
 import logging
-import requests
-import time
-from typing import Dict, Any, List, Optional
+import json
 from datetime import datetime
+from typing import Dict, List, Any, Optional
 
-from flask import Blueprint, jsonify, request, current_app
+from flask import Blueprint, request, jsonify, current_app
 from sqlalchemy.exc import SQLAlchemyError
 
-# Import local modules when available
-try:
-    from ..models import SyncOperation, SyncPair, AuditEntry, db
-    from ..auth import requires_auth, get_current_user
-except ImportError:
-    from models import SyncOperation, SyncPair, AuditEntry, db
-    from app import requires_auth, get_current_user
+# Import models
+from ..models import SyncOperation, SyncPair, AuditEntry, db
 
+# Import authentication
+from ..auth import requires_auth
 
 logger = logging.getLogger(__name__)
 
-# Create Blueprint
-sync_bp = Blueprint('sync', __name__, url_prefix='/api/sync')
-
-# Settings
-SYNCSERVICE_BASE_URL = "http://0.0.0.0:8080"
+# Create blueprint
+sync_bp = Blueprint('sync_operations', __name__, url_prefix='/api/sync')
 
 
-def create_audit_log(
+# Helper functions
+def create_audit_entry(
     event_type: str,
     resource_type: str,
     description: str,
-    severity: str = "info",
     resource_id: Optional[str] = None,
     operation_id: Optional[int] = None,
     previous_state: Optional[Dict[str, Any]] = None,
     new_state: Optional[Dict[str, Any]] = None,
-    user_id: Optional[str] = None,
-    username: Optional[str] = None
-) -> AuditEntry:
+    severity: str = 'info',
+    user=None,
+    correlation_id: Optional[str] = None
+):
+    """Create an audit log entry for sync operations."""
+    try:
+        # Get the current authenticated user if available
+        user_id = None
+        username = None
+        if user:
+            user_id = user.get('id')
+            username = user.get('username')
+        
+        # Create the audit entry
+        audit_entry = AuditEntry(
+            event_type=event_type,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            operation_id=operation_id,
+            description=description,
+            previous_state=previous_state,
+            new_state=new_state,
+            severity=severity,
+            user_id=user_id,
+            username=username,
+            correlation_id=correlation_id,
+            timestamp=datetime.utcnow()
+        )
+        
+        # Save to database
+        db.session.add(audit_entry)
+        db.session.commit()
+        
+        return audit_entry
+    except Exception as e:
+        logger.error(f"Failed to create audit entry: {str(e)}")
+        db.session.rollback()
+        return None
+
+
+# API Routes
+
+@sync_bp.route('/pairs', methods=['GET'])
+@requires_auth
+def get_sync_pairs():
     """
-    Create and save an audit log entry.
+    Get all configured sync pairs.
     
-    Args:
-        event_type: Type of event (e.g., 'sync_started', 'sync_completed')
-        resource_type: Type of resource (e.g., 'sync_pair', 'operation')
-        description: Human-readable description of the event
-        severity: Event severity ('info', 'warning', 'error', 'critical')
-        resource_id: ID of the resource (if applicable)
-        operation_id: ID of the sync operation (if applicable)
-        previous_state: JSON representation of previous state for tracking changes
-        new_state: JSON representation of new state for tracking changes
-        user_id: ID of the user who performed the action (if available)
-        username: Username of the user who performed the action (if available)
+    Returns a list of all configured sync pairs with their configuration.
     
     Returns:
-        The created AuditEntry instance
+        JSON response with sync pairs data
     """
-    entry = AuditEntry(
-        event_type=event_type,
-        resource_type=resource_type,
-        resource_id=str(resource_id) if resource_id else None,
-        operation_id=operation_id,
-        description=description,
-        timestamp=datetime.utcnow(),
-        severity=severity,
-        previous_state=previous_state if previous_state else {},
-        new_state=new_state if new_state else {},
-        user_id=user_id or 'system',
-        username=username or 'system'
-    )
-    
-    db.session.add(entry)
-    db.session.commit()
-    return entry
-
-
-@sync_bp.route('/operations', methods=['GET'])
-@requires_auth
-def get_operations():
-    """
-    Get all sync operations with optional filtering.
-    
-    Query parameters:
-        - pair_id: Filter by sync pair ID
-        - status: Filter by operation status
-        - limit: Maximum number of operations to return (default: 100)
-        - offset: Number of operations to skip (default: 0)
-    """
-    # Get query parameters
-    pair_id = request.args.get('pair_id')
-    status = request.args.get('status')
-    limit = min(int(request.args.get('limit', 100)), 1000)
-    offset = int(request.args.get('offset', 0))
-    
     try:
-        # First query the local database for operations
-        query = SyncOperation.query.order_by(SyncOperation.started_at.desc())
+        # Get query parameters
+        active_only = request.args.get('active_only', 'false').lower() == 'true'
         
-        if pair_id:
-            query = query.filter(SyncOperation.sync_pair_id == pair_id)
-        
-        if status:
-            query = query.filter(SyncOperation.status == status)
-        
-        # Get operations with pagination
-        operations = query.offset(offset).limit(limit).all()
-        
-        # Then get the latest operations from SyncService to ensure we have up-to-date data
-        try:
-            params = {
-                'limit': limit,
-                'offset': offset
-            }
+        # Query sync pairs
+        query = SyncPair.query
+        if active_only:
+            query = query.filter_by(active=True)
             
-            if pair_id:
-                params['pair_id'] = pair_id
-            
-            if status:
-                params['status'] = status
-                
-            # Query the SyncService for the latest operations
-            response = requests.get(
-                f"{SYNCSERVICE_BASE_URL}/sync-operations", 
-                params=params,
-                timeout=5
-            )
-            
-            if response.status_code == 200:
-                syncservice_operations = response.json()
-                
-                # Merge with local operations or update local database
-                # This would be implemented in a production system
-                pass
-                
-        except requests.RequestException as e:
-            # Log the error, but continue with local data
-            logger.warning(f"Could not fetch latest operations from SyncService: {str(e)}")
+        sync_pairs = query.all()
         
-        # Convert to dictionaries for the API response
-        result = []
-        for op in operations:
-            result.append({
-                "id": op.id,
-                "sync_pair_id": op.sync_pair_id,
-                "operation_type": op.operation_type,
-                "status": op.status,
-                "started_at": op.started_at.isoformat() if op.started_at else None,
-                "completed_at": op.completed_at.isoformat() if op.completed_at else None,
-                "records_processed": op.details.records_processed if op.details else 0,
-                "records_succeeded": op.details.records_succeeded if op.details else 0,
-                "records_failed": op.details.records_failed if op.details else 0,
-                "duration_seconds": op.details.duration_seconds if op.details else 0,
-                "retry_count": op.retry_count or 0
-            })
+        # Convert to dictionary format
+        result = [pair.to_dict() for pair in sync_pairs]
         
-        return jsonify(result)
+        return jsonify({
+            'success': True,
+            'data': result,
+            'count': len(result)
+        }), 200
         
-    except SQLAlchemyError as e:
-        logger.error(f"Database error while fetching operations: {str(e)}")
-        return jsonify({"error": "Database error occurred"}), 500
     except Exception as e:
-        logger.error(f"Unexpected error in get_operations: {str(e)}")
-        return jsonify({"error": "Server error occurred"}), 500
+        logger.error(f"Error fetching sync pairs: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to fetch sync pairs',
+            'message': str(e)
+        }), 500
 
 
-@sync_bp.route('/operations/<int:operation_id>', methods=['GET'])
+@sync_bp.route('/pairs/<pair_id>', methods=['GET', 'PUT'])
 @requires_auth
-def get_operation(operation_id):
+def get_sync_pair(pair_id):
     """
-    Get details for a specific sync operation.
+    Get or update a specific sync pair by ID.
     
     Args:
-        operation_id: ID of the operation to retrieve
+        pair_id: ID of the sync pair
+        
+    Returns:
+        JSON response with sync pair data
     """
     try:
-        # First check local database
-        operation = SyncOperation.query.get(operation_id)
-        
-        if not operation:
-            # If not found locally, check with SyncService
-            try:
-                response = requests.get(
-                    f"{SYNCSERVICE_BASE_URL}/sync-operations/{operation_id}",
-                    timeout=5
-                )
-                
-                if response.status_code == 200:
-                    # Return the data from SyncService
-                    return jsonify(response.json())
-                elif response.status_code == 404:
-                    return jsonify({"error": "Operation not found"}), 404
-                else:
-                    logger.warning(f"SyncService returned status {response.status_code} for operation {operation_id}")
-            except requests.RequestException as e:
-                logger.warning(f"Could not fetch operation {operation_id} from SyncService: {str(e)}")
-            
-            return jsonify({"error": "Operation not found"}), 404
-        
-        # Convert to dictionary for the API response
-        result = {
-            "id": operation.id,
-            "sync_pair_id": operation.sync_pair_id,
-            "operation_type": operation.operation_type,
-            "status": operation.status,
-            "started_at": operation.started_at.isoformat() if operation.started_at else None,
-            "completed_at": operation.completed_at.isoformat() if operation.completed_at else None,
-            "retry_count": operation.retry_count or 0,
-            "last_error": operation.last_error,
-            "details": {}
-        }
-        
-        if operation.details:
-            result["details"] = {
-                "records_processed": operation.details.records_processed,
-                "records_succeeded": operation.details.records_succeeded,
-                "records_failed": operation.details.records_failed,
-                "records_skipped": operation.details.records_skipped,
-                "duration_seconds": operation.details.duration_seconds,
-                "entity_stats": operation.details.entity_stats,
-                "error_details": operation.details.error_details
-            }
-        
-        return jsonify(result)
-        
-    except SQLAlchemyError as e:
-        logger.error(f"Database error while fetching operation {operation_id}: {str(e)}")
-        return jsonify({"error": "Database error occurred"}), 500
-    except Exception as e:
-        logger.error(f"Unexpected error in get_operation: {str(e)}")
-        return jsonify({"error": "Server error occurred"}), 500
-
-
-@sync_bp.route('/operations', methods=['POST'])
-@requires_auth
-def start_operation():
-    """
-    Start a new sync operation.
-    
-    Request body:
-        - sync_pair_id: ID of the sync pair to use
-        - operation_type: Type of operation ('full', 'incremental')
-        - parameters: Additional parameters for the operation (optional)
-    """
-    user = get_current_user()
-    data = request.json
-    
-    if not data:
-        return jsonify({"error": "Missing request body"}), 400
-    
-    sync_pair_id = data.get('sync_pair_id')
-    operation_type = data.get('operation_type')
-    parameters = data.get('parameters', {})
-    
-    if not sync_pair_id:
-        return jsonify({"error": "Missing sync_pair_id parameter"}), 400
-    
-    if not operation_type or operation_type not in ['full', 'incremental', 'delta']:
-        return jsonify({"error": "Invalid or missing operation_type parameter"}), 400
-    
-    try:
-        # First check if the sync pair exists
-        sync_pair = SyncPair.query.get(sync_pair_id)
+        # Get the sync pair
+        sync_pair = SyncPair.query.get(pair_id)
         
         if not sync_pair:
-            return jsonify({"error": "Sync pair not found"}), 404
+            return jsonify({
+                'success': False,
+                'error': 'Sync pair not found',
+                'message': f'No sync pair found with ID {pair_id}'
+            }), 404
         
-        # Create audit log for operation start
-        create_audit_log(
-            event_type="sync_operation_requested",
-            resource_type="sync_operation",
-            description=f"{operation_type.capitalize()} sync operation requested for pair {sync_pair.name}",
-            severity="info",
-            resource_id=str(sync_pair_id),
-            user_id=str(user.id) if hasattr(user, 'id') else None,
-            username=user.username if hasattr(user, 'username') else None,
-            new_state={
-                "sync_pair_id": sync_pair_id,
-                "operation_type": operation_type,
-                "parameters": parameters
-            }
-        )
+        # Handle GET request
+        if request.method == 'GET':
+            return jsonify({
+                'success': True,
+                'data': sync_pair.to_dict()
+            }), 200
         
-        # Forward the request to SyncService with self-healing integration
-        try:
-            response = requests.post(
-                f"{SYNCSERVICE_BASE_URL}/sync-operations",
-                json={
-                    "sync_pair_id": sync_pair_id,
-                    "operation_type": operation_type,
-                    "parameters": parameters,
-                    "source_system": sync_pair.source_system,
-                    "target_system": sync_pair.target_system,
-                    "enable_self_healing": True,
-                    "retry_strategy": {
-                        "max_attempts": 3,
-                        "backoff_factor": 2
-                    }
-                },
-                timeout=10
-            )
+        # Handle PUT request (update)
+        if request.method == 'PUT':
+            data = request.json
             
-            if response.status_code == 200 or response.status_code == 201:
-                operation_data = response.json()
-                
-                # Create local record for the operation
-                operation = SyncOperation(
-                    id=operation_data.get('id'),
-                    sync_pair_id=sync_pair_id,
-                    operation_type=operation_type,
-                    status="queued",
-                    created_at=datetime.utcnow(),
-                    source_system=sync_pair.source_system,
-                    target_system=sync_pair.target_system
-                )
-                
-                db.session.add(operation)
-                db.session.commit()
-                
-                # Create audit log for successful start
-                create_audit_log(
-                    event_type="sync_operation_started",
-                    resource_type="sync_operation",
-                    description=f"{operation_type.capitalize()} sync operation started for pair {sync_pair.name}",
-                    severity="info",
-                    resource_id=str(sync_pair_id),
-                    operation_id=operation.id,
-                    user_id=str(user.id) if hasattr(user, 'id') else None,
-                    username=user.username if hasattr(user, 'username') else None
-                )
-                
-                return jsonify({
-                    "success": True,
-                    "operation_id": operation.id,
-                    "status": "queued",
-                    "message": f"{operation_type.capitalize()} sync operation started for pair {sync_pair.name}"
-                })
-            else:
-                # Log the error
-                error_data = response.json() if response.text else {"error": "Unknown error"}
-                
-                create_audit_log(
-                    event_type="sync_operation_failed",
-                    resource_type="sync_operation",
-                    description=f"Failed to start {operation_type} sync operation for pair {sync_pair.name}",
-                    severity="error",
-                    resource_id=str(sync_pair_id),
-                    user_id=str(user.id) if hasattr(user, 'id') else None,
-                    username=user.username if hasattr(user, 'username') else None,
-                    new_state=error_data
-                )
-                
-                return jsonify({
-                    "success": False,
-                    "error": f"SyncService returned status {response.status_code}",
-                    "details": error_data
-                }), response.status_code
-                
-        except requests.RequestException as e:
-            logger.error(f"Error starting operation with SyncService: {str(e)}")
+            # Get current state for audit log
+            previous_state = sync_pair.to_dict()
             
-            create_audit_log(
-                event_type="sync_operation_failed",
-                resource_type="sync_operation",
-                description=f"Error communicating with SyncService to start {operation_type} operation",
-                severity="error",
-                resource_id=str(sync_pair_id),
-                user_id=str(user.id) if hasattr(user, 'id') else None,
-                username=user.username if hasattr(user, 'username') else None,
-                new_state={"error": str(e)}
+            # Update fields
+            if 'name' in data:
+                sync_pair.name = data['name']
+            if 'source_system' in data:
+                sync_pair.source_system = data['source_system']
+            if 'target_system' in data:
+                sync_pair.target_system = data['target_system']
+            if 'entities' in data:
+                sync_pair.entities = data['entities']
+            if 'mappings' in data:
+                sync_pair.mappings = data['mappings']
+            if 'active' in data:
+                sync_pair.active = data['active']
+            
+            # Save changes
+            db.session.commit()
+            
+            # Create audit log
+            user = current_app.get_current_user()
+            create_audit_entry(
+                event_type='sync_pair_updated',
+                resource_type='sync_pair',
+                resource_id=pair_id,
+                description=f'Sync pair {sync_pair.name} was updated',
+                previous_state=previous_state,
+                new_state=sync_pair.to_dict(),
+                user=user
             )
             
             return jsonify({
-                "success": False,
-                "error": "Could not communicate with SyncService",
-                "details": str(e)
-            }), 503
+                'success': True,
+                'data': sync_pair.to_dict(),
+                'message': 'Sync pair updated successfully'
+            }), 200
+            
+    except Exception as e:
+        logger.error(f"Error processing sync pair {pair_id}: {str(e)}")
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': 'Failed to process sync pair',
+            'message': str(e)
+        }), 500
+
+
+@sync_bp.route('/pairs', methods=['POST'])
+@requires_auth
+def create_sync_pair():
+    """
+    Create a new sync pair.
+    
+    Returns:
+        JSON response with created sync pair data
+    """
+    try:
+        data = request.json
+        
+        # Validate required fields
+        required_fields = ['id', 'name', 'source_system', 'target_system']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    'success': False,
+                    'error': 'Missing required field',
+                    'message': f'Field {field} is required'
+                }), 400
+        
+        # Check if a sync pair with the ID already exists
+        existing_pair = SyncPair.query.get(data['id'])
+        if existing_pair:
+            return jsonify({
+                'success': False,
+                'error': 'Duplicate ID',
+                'message': f'A sync pair with ID {data["id"]} already exists'
+            }), 409
+        
+        # Create new sync pair
+        sync_pair = SyncPair(
+            id=data['id'],
+            name=data['name']
+        )
+        
+        # Set additional properties
+        sync_pair.source_system = data['source_system']
+        sync_pair.target_system = data['target_system']
+        sync_pair.entities = data.get('entities', [])
+        sync_pair.mappings = data.get('mappings', [])
+        sync_pair.active = data.get('active', True)
+        
+        # Save to database
+        db.session.add(sync_pair)
+        db.session.commit()
+        
+        # Create audit log
+        user = current_app.get_current_user()
+        create_audit_entry(
+            event_type='sync_pair_created',
+            resource_type='sync_pair',
+            resource_id=sync_pair.id,
+            description=f'Sync pair {sync_pair.name} was created',
+            new_state=sync_pair.to_dict(),
+            user=user
+        )
+        
+        return jsonify({
+            'success': True,
+            'data': sync_pair.to_dict(),
+            'message': 'Sync pair created successfully'
+        }), 201
         
     except SQLAlchemyError as e:
-        logger.error(f"Database error while starting operation: {str(e)}")
-        return jsonify({"error": "Database error occurred"}), 500
+        logger.error(f"Database error creating sync pair: {str(e)}")
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': 'Database error',
+            'message': str(e)
+        }), 500
+        
     except Exception as e:
-        logger.error(f"Unexpected error in start_operation: {str(e)}")
-        return jsonify({"error": "Server error occurred"}), 500
+        logger.error(f"Error creating sync pair: {str(e)}")
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': 'Failed to create sync pair',
+            'message': str(e)
+        }), 500
 
 
-@sync_bp.route('/operations/<int:operation_id>/cancel', methods=['POST'])
+@sync_bp.route('/pairs/<pair_id>', methods=['DELETE'])
 @requires_auth
-def cancel_operation(operation_id):
+def delete_sync_pair(pair_id):
     """
-    Cancel a running sync operation.
+    Delete a sync pair by ID.
     
     Args:
-        operation_id: ID of the operation to cancel
+        pair_id: ID of the sync pair to delete
+        
+    Returns:
+        JSON response with result of the operation
     """
-    user = get_current_user()
-    
     try:
-        # First check if the operation exists locally
+        # Get the sync pair
+        sync_pair = SyncPair.query.get(pair_id)
+        
+        if not sync_pair:
+            return jsonify({
+                'success': False,
+                'error': 'Sync pair not found',
+                'message': f'No sync pair found with ID {pair_id}'
+            }), 404
+        
+        # Check if there are active operations using this pair
+        active_operations = SyncOperation.query.filter_by(
+            sync_pair_id=pair_id
+        ).filter(
+            SyncOperation.status.in_(['pending', 'scheduled', 'running'])
+        ).count()
+        
+        if active_operations > 0:
+            return jsonify({
+                'success': False,
+                'error': 'Active operations exist',
+                'message': f'Cannot delete sync pair with {active_operations} active operations'
+            }), 409
+        
+        # Store state for audit log
+        previous_state = sync_pair.to_dict()
+        
+        # Delete the sync pair
+        db.session.delete(sync_pair)
+        db.session.commit()
+        
+        # Create audit log
+        user = current_app.get_current_user()
+        create_audit_entry(
+            event_type='sync_pair_deleted',
+            resource_type='sync_pair',
+            resource_id=pair_id,
+            description=f'Sync pair {sync_pair.name} was deleted',
+            previous_state=previous_state,
+            user=user
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': 'Sync pair deleted successfully'
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error deleting sync pair {pair_id}: {str(e)}")
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': 'Failed to delete sync pair',
+            'message': str(e)
+        }), 500
+
+
+@sync_bp.route('/operations', methods=['GET', 'POST'])
+@requires_auth
+def get_sync_operations():
+    """
+    Get all sync operations, with optional filtering or start a new operation.
+    
+    For GET requests, returns a list of sync operations with their status.
+    For POST requests, creates a new sync operation.
+    
+    Returns:
+        JSON response with sync operations data
+    """
+    # Handle GET request
+    if request.method == 'GET':
+        try:
+            # Get query parameters
+            sync_pair_id = request.args.get('sync_pair_id')
+            status = request.args.get('status')
+            operation_type = request.args.get('operation_type')
+            limit = request.args.get('limit', 100, type=int)
+            offset = request.args.get('offset', 0, type=int)
+            
+            # Build query
+            query = SyncOperation.query
+            
+            if sync_pair_id:
+                query = query.filter_by(sync_pair_id=sync_pair_id)
+            if status:
+                query = query.filter_by(status=status)
+            if operation_type:
+                query = query.filter_by(operation_type=operation_type)
+                
+            # Order by creation time, newest first
+            query = query.order_by(SyncOperation.created_at.desc())
+            
+            # Apply pagination
+            query = query.limit(limit).offset(offset)
+            
+            # Execute query
+            operations = query.all()
+            
+            # Get total count
+            total_count = SyncOperation.query.count()
+            
+            # Convert to dictionary format
+            result = [op.to_dict() for op in operations]
+            
+            return jsonify({
+                'success': True,
+                'data': result,
+                'count': len(result),
+                'total': total_count,
+                'limit': limit,
+                'offset': offset
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Error fetching sync operations: {str(e)}")
+            return jsonify({
+                'success': False,
+                'error': 'Failed to fetch sync operations',
+                'message': str(e)
+            }), 500
+    
+    # Handle POST request (create new operation)
+    elif request.method == 'POST':
+        try:
+            data = request.json
+            
+            # Validate required fields
+            required_fields = ['sync_pair_id', 'operation_type']
+            for field in required_fields:
+                if field not in data:
+                    return jsonify({
+                        'success': False,
+                        'error': 'Missing required field',
+                        'message': f'Field {field} is required'
+                    }), 400
+            
+            # Check if the sync pair exists
+            sync_pair = SyncPair.query.get(data['sync_pair_id'])
+            if not sync_pair:
+                return jsonify({
+                    'success': False,
+                    'error': 'Sync pair not found',
+                    'message': f'No sync pair found with ID {data["sync_pair_id"]}'
+                }), 404
+            
+            # Check if the sync pair is active
+            if not sync_pair.active:
+                return jsonify({
+                    'success': False,
+                    'error': 'Sync pair inactive',
+                    'message': f'Sync pair {data["sync_pair_id"]} is not active'
+                }), 409
+            
+            # Create new operation
+            operation = SyncOperation(
+                sync_pair_id=data['sync_pair_id']
+            )
+            
+            # Set additional properties
+            operation.operation_type = data['operation_type']
+            operation.status = data.get('status', 'pending')
+            operation.priority = data.get('priority', 0)
+            operation.created_at = datetime.utcnow()
+            
+            # Get scheduled time if provided
+            if 'scheduled_at' in data:
+                scheduled_at = datetime.fromisoformat(data['scheduled_at'])
+                operation.scheduled_at = scheduled_at
+            
+            # Get user information
+            user = current_app.get_current_user()
+            if user:
+                operation.user_id = user.get('id')
+                operation.username = user.get('username')
+            
+            # Save to database
+            db.session.add(operation)
+            db.session.commit()
+            
+            # Create audit log
+            create_audit_entry(
+                event_type='sync_operation_created',
+                resource_type='sync_operation',
+                resource_id=str(operation.id),
+                operation_id=operation.id,
+                description=f'{operation.operation_type} sync operation created for pair {operation.sync_pair_id}',
+                new_state=operation.to_dict(),
+                user=user
+            )
+            
+            return jsonify({
+                'success': True,
+                'data': operation.to_dict(),
+                'message': 'Sync operation created successfully'
+            }), 201
+            
+        except Exception as e:
+            logger.error(f"Error creating sync operation: {str(e)}")
+            db.session.rollback()
+            return jsonify({
+                'success': False,
+                'error': 'Failed to create sync operation',
+                'message': str(e)
+            }), 500
+
+
+@sync_bp.route('/operations/<operation_id>', methods=['GET', 'PUT'])
+@requires_auth
+def get_sync_operation(operation_id):
+    """
+    Get or update a sync operation by ID.
+    
+    Args:
+        operation_id: ID of the sync operation
+        
+    Returns:
+        JSON response with sync operation data
+    """
+    try:
+        # Get the sync operation
         operation = SyncOperation.query.get(operation_id)
         
         if not operation:
-            return jsonify({"error": "Operation not found"}), 404
+            return jsonify({
+                'success': False,
+                'error': 'Sync operation not found',
+                'message': f'No sync operation found with ID {operation_id}'
+            }), 404
         
-        if operation.status not in ['queued', 'running']:
-            return jsonify({"error": "Operation cannot be cancelled (not running or queued)"}), 400
+        # Handle GET request
+        if request.method == 'GET':
+            return jsonify({
+                'success': True,
+                'data': operation.to_dict()
+            }), 200
         
-        # Create audit log for cancel attempt
-        create_audit_log(
-            event_type="sync_operation_cancel_requested",
-            resource_type="sync_operation",
-            description=f"Cancel requested for operation {operation_id}",
-            severity="info",
-            resource_id=str(operation.sync_pair_id),
-            operation_id=operation.id,
-            user_id=str(user.id) if hasattr(user, 'id') else None,
-            username=user.username if hasattr(user, 'username') else None
-        )
-        
-        # Forward the cancel request to SyncService
-        try:
-            response = requests.post(
-                f"{SYNCSERVICE_BASE_URL}/sync-operations/{operation_id}/cancel",
-                timeout=10
-            )
+        # Handle PUT request (update)
+        if request.method == 'PUT':
+            data = request.json
             
-            if response.status_code == 200:
-                # Update local record
-                operation.status = "cancelled"
-                operation.completed_at = datetime.utcnow()
-                db.session.commit()
-                
-                # Create audit log for successful cancel
-                create_audit_log(
-                    event_type="sync_operation_cancelled",
-                    resource_type="sync_operation",
-                    description=f"Operation {operation_id} was successfully cancelled",
-                    severity="info",
-                    resource_id=str(operation.sync_pair_id),
-                    operation_id=operation.id,
-                    user_id=str(user.id) if hasattr(user, 'id') else None,
-                    username=user.username if hasattr(user, 'username') else None
-                )
-                
-                return jsonify({
-                    "success": True,
-                    "operation_id": operation.id,
-                    "status": "cancelled",
-                    "message": f"Operation {operation_id} was successfully cancelled"
-                })
-            else:
-                # Log the error
-                error_data = response.json() if response.text else {"error": "Unknown error"}
-                
-                create_audit_log(
-                    event_type="sync_operation_cancel_failed",
-                    resource_type="sync_operation",
-                    description=f"Failed to cancel operation {operation_id}",
-                    severity="warning",
-                    resource_id=str(operation.sync_pair_id),
-                    operation_id=operation.id,
-                    user_id=str(user.id) if hasattr(user, 'id') else None,
-                    username=user.username if hasattr(user, 'username') else None,
-                    new_state=error_data
-                )
-                
-                return jsonify({
-                    "success": False,
-                    "error": f"SyncService returned status {response.status_code}",
-                    "details": error_data
-                }), response.status_code
-                
-        except requests.RequestException as e:
-            logger.error(f"Error cancelling operation with SyncService: {str(e)}")
+            # Get current state for audit log
+            previous_state = operation.to_dict()
             
-            create_audit_log(
-                event_type="sync_operation_cancel_failed",
-                resource_type="sync_operation",
-                description=f"Error communicating with SyncService to cancel operation {operation_id}",
-                severity="error",
-                resource_id=str(operation.sync_pair_id),
+            # Update fields
+            if 'status' in data:
+                operation.status = data['status']
+            if 'priority' in data:
+                operation.priority = data['priority']
+            if 'scheduled_at' in data:
+                operation.scheduled_at = datetime.fromisoformat(data['scheduled_at'])
+            
+            # Save changes
+            db.session.commit()
+            
+            # Create audit log
+            user = current_app.get_current_user()
+            create_audit_entry(
+                event_type='sync_operation_updated',
+                resource_type='sync_operation',
+                resource_id=str(operation.id),
                 operation_id=operation.id,
-                user_id=str(user.id) if hasattr(user, 'id') else None,
-                username=user.username if hasattr(user, 'username') else None,
-                new_state={"error": str(e)}
+                description=f'Sync operation {operation.id} was updated',
+                previous_state=previous_state,
+                new_state=operation.to_dict(),
+                user=user
             )
             
             return jsonify({
-                "success": False,
-                "error": "Could not communicate with SyncService",
-                "details": str(e)
-            }), 503
-        
-    except SQLAlchemyError as e:
-        logger.error(f"Database error while cancelling operation: {str(e)}")
-        return jsonify({"error": "Database error occurred"}), 500
+                'success': True,
+                'data': operation.to_dict(),
+                'message': 'Sync operation updated successfully'
+            }), 200
+            
     except Exception as e:
-        logger.error(f"Unexpected error in cancel_operation: {str(e)}")
-        return jsonify({"error": "Server error occurred"}), 500
+        logger.error(f"Error processing sync operation {operation_id}: {str(e)}")
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': 'Failed to process sync operation',
+            'message': str(e)
+        }), 500
 
 
-@sync_bp.route('/operations/<int:operation_id>/retry', methods=['POST'])
+@sync_bp.route('/operations/<operation_id>/cancel', methods=['POST'])
 @requires_auth
-def retry_operation(operation_id):
+def cancel_sync_operation(operation_id):
+    """
+    Cancel a pending or running sync operation.
+    
+    Args:
+        operation_id: ID of the sync operation to cancel
+        
+    Returns:
+        JSON response with result of the operation
+    """
+    try:
+        # Get the sync operation
+        operation = SyncOperation.query.get(operation_id)
+        
+        if not operation:
+            return jsonify({
+                'success': False,
+                'error': 'Sync operation not found',
+                'message': f'No sync operation found with ID {operation_id}'
+            }), 404
+        
+        # Check if the operation can be cancelled
+        if operation.status not in ['pending', 'scheduled', 'running']:
+            return jsonify({
+                'success': False,
+                'error': 'Cannot cancel operation',
+                'message': f'Operation with status {operation.status} cannot be cancelled'
+            }), 409
+        
+        # Get current state for audit log
+        previous_state = operation.to_dict()
+        
+        # Update status
+        operation.status = 'cancelled'
+        operation.completed_at = datetime.utcnow()
+        
+        # Save changes
+        db.session.commit()
+        
+        # Create audit log
+        user = current_app.get_current_user()
+        create_audit_entry(
+            event_type='sync_operation_cancelled',
+            resource_type='sync_operation',
+            resource_id=str(operation.id),
+            operation_id=operation.id,
+            description=f'Sync operation {operation.id} was cancelled',
+            previous_state=previous_state,
+            new_state=operation.to_dict(),
+            user=user
+        )
+        
+        return jsonify({
+            'success': True,
+            'data': operation.to_dict(),
+            'message': 'Sync operation cancelled successfully'
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error cancelling sync operation {operation_id}: {str(e)}")
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': 'Failed to cancel sync operation',
+            'message': str(e)
+        }), 500
+
+
+@sync_bp.route('/operations/<operation_id>/retry', methods=['POST'])
+@requires_auth
+def retry_sync_operation(operation_id):
     """
     Retry a failed sync operation.
     
     Args:
-        operation_id: ID of the operation to retry
+        operation_id: ID of the sync operation to retry
+        
+    Returns:
+        JSON response with new operation data
     """
-    user = get_current_user()
-    
     try:
-        # First check if the operation exists locally
-        operation = SyncOperation.query.get(operation_id)
+        # Get the original sync operation
+        original_operation = SyncOperation.query.get(operation_id)
         
-        if not operation:
-            return jsonify({"error": "Operation not found"}), 404
+        if not original_operation:
+            return jsonify({
+                'success': False,
+                'error': 'Sync operation not found',
+                'message': f'No sync operation found with ID {operation_id}'
+            }), 404
         
-        if operation.status != 'failed':
-            return jsonify({"error": "Only failed operations can be retried"}), 400
+        # Check if the operation can be retried
+        if original_operation.status != 'failed':
+            return jsonify({
+                'success': False,
+                'error': 'Cannot retry operation',
+                'message': f'Only failed operations can be retried, current status: {original_operation.status}'
+            }), 409
         
-        # Create audit log for retry attempt
-        create_audit_log(
-            event_type="sync_operation_retry_requested",
-            resource_type="sync_operation",
-            description=f"Retry requested for operation {operation_id}",
-            severity="info",
-            resource_id=str(operation.sync_pair_id),
-            operation_id=operation.id,
-            user_id=str(user.id) if hasattr(user, 'id') else None,
-            username=user.username if hasattr(user, 'username') else None
+        # Create new operation based on the original
+        new_operation = SyncOperation(
+            sync_pair_id=original_operation.sync_pair_id
         )
         
-        # Forward the retry request to SyncService
-        try:
-            response = requests.post(
-                f"{SYNCSERVICE_BASE_URL}/sync-operations/{operation_id}/retry",
-                json={
-                    "enable_self_healing": True,
-                    "retry_strategy": {
-                        "max_attempts": 3,
-                        "backoff_factor": 2
-                    }
-                },
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                # Get the new operation data (which may be a new operation ID)
-                operation_data = response.json()
-                new_operation_id = operation_data.get('operation_id', operation_id)
-                
-                # Update local record or create a new one
-                if new_operation_id == operation_id:
-                    # Update existing operation
-                    operation.status = "queued"
-                    operation.retry_count = (operation.retry_count or 0) + 1
-                    operation.completed_at = None
-                    operation.last_error = None
-                    db.session.commit()
-                else:
-                    # Create a new operation record
-                    new_operation = SyncOperation(
-                        id=new_operation_id,
-                        sync_pair_id=operation.sync_pair_id,
-                        operation_type=operation.operation_type,
-                        status="queued",
-                        created_at=datetime.utcnow(),
-                        source_system=operation.source_system,
-                        target_system=operation.target_system,
-                        retry_count=1
-                    )
-                    db.session.add(new_operation)
-                    db.session.commit()
-                
-                # Create audit log for successful retry
-                create_audit_log(
-                    event_type="sync_operation_retried",
-                    resource_type="sync_operation",
-                    description=f"Operation {operation_id} was successfully retried (new ID: {new_operation_id})",
-                    severity="info",
-                    resource_id=str(operation.sync_pair_id),
-                    operation_id=new_operation_id,
-                    user_id=str(user.id) if hasattr(user, 'id') else None,
-                    username=user.username if hasattr(user, 'username') else None
-                )
-                
-                return jsonify({
-                    "success": True,
-                    "original_operation_id": operation_id,
-                    "operation_id": new_operation_id,
-                    "status": "queued",
-                    "message": f"Operation {operation_id} was successfully retried"
-                })
-            else:
-                # Log the error
-                error_data = response.json() if response.text else {"error": "Unknown error"}
-                
-                create_audit_log(
-                    event_type="sync_operation_retry_failed",
-                    resource_type="sync_operation",
-                    description=f"Failed to retry operation {operation_id}",
-                    severity="warning",
-                    resource_id=str(operation.sync_pair_id),
-                    operation_id=operation.id,
-                    user_id=str(user.id) if hasattr(user, 'id') else None,
-                    username=user.username if hasattr(user, 'username') else None,
-                    new_state=error_data
-                )
-                
-                return jsonify({
-                    "success": False,
-                    "error": f"SyncService returned status {response.status_code}",
-                    "details": error_data
-                }), response.status_code
-                
-        except requests.RequestException as e:
-            logger.error(f"Error retrying operation with SyncService: {str(e)}")
-            
-            create_audit_log(
-                event_type="sync_operation_retry_failed",
-                resource_type="sync_operation",
-                description=f"Error communicating with SyncService to retry operation {operation_id}",
-                severity="error",
-                resource_id=str(operation.sync_pair_id),
-                operation_id=operation.id,
-                user_id=str(user.id) if hasattr(user, 'id') else None,
-                username=user.username if hasattr(user, 'username') else None,
-                new_state={"error": str(e)}
-            )
-            
-            return jsonify({
-                "success": False,
-                "error": "Could not communicate with SyncService",
-                "details": str(e)
-            }), 503
+        # Copy properties
+        new_operation.operation_type = original_operation.operation_type
+        new_operation.status = 'pending'
+        new_operation.priority = original_operation.priority
+        new_operation.created_at = datetime.utcnow()
         
-    except SQLAlchemyError as e:
-        logger.error(f"Database error while retrying operation: {str(e)}")
-        return jsonify({"error": "Database error occurred"}), 500
+        # Track retry information
+        retry_count = 1
+        if original_operation.retry_count:
+            try:
+                retry_count = int(original_operation.retry_count) + 1
+            except (ValueError, TypeError):
+                retry_count = 1
+        new_operation.retry_count = str(retry_count)
+        
+        # Get user information
+        user = current_app.get_current_user()
+        if user:
+            new_operation.user_id = user.get('id')
+            new_operation.username = user.get('username')
+        
+        # Save to database
+        db.session.add(new_operation)
+        db.session.commit()
+        
+        # Create audit log
+        create_audit_entry(
+            event_type='sync_operation_retried',
+            resource_type='sync_operation',
+            resource_id=str(new_operation.id),
+            operation_id=new_operation.id,
+            description=f'Retry of failed operation {original_operation.id}',
+            new_state=new_operation.to_dict(),
+            user=user
+        )
+        
+        return jsonify({
+            'success': True,
+            'data': new_operation.to_dict(),
+            'original_operation_id': original_operation.id,
+            'message': 'Sync operation retry created successfully'
+        }), 201
+        
     except Exception as e:
-        logger.error(f"Unexpected error in retry_operation: {str(e)}")
-        return jsonify({"error": "Server error occurred"}), 500
+        logger.error(f"Error retrying sync operation {operation_id}: {str(e)}")
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': 'Failed to retry sync operation',
+            'message': str(e)
+        }), 500
+
+
+@sync_bp.route('/stats', methods=['GET'])
+@requires_auth
+def get_sync_stats():
+    """
+    Get statistics about sync operations.
+    
+    Returns:
+        JSON response with statistics data
+    """
+    try:
+        # Calculate basic statistics
+        total_operations = SyncOperation.query.count()
+        completed_operations = SyncOperation.query.filter_by(status='completed').count()
+        failed_operations = SyncOperation.query.filter_by(status='failed').count()
+        success_rate = 0
+        if total_operations > 0:
+            success_rate = (completed_operations / total_operations) * 100
+        
+        # Get counts by operation type
+        operation_types = {}
+        for op_type in ['full', 'incremental', 'delta', 'validation', 'repair']:
+            count = SyncOperation.query.filter_by(operation_type=op_type).count()
+            operation_types[op_type] = count
+        
+        # Get counts by status
+        status_counts = {}
+        for status in ['pending', 'scheduled', 'running', 'completed', 'failed', 'cancelled']:
+            count = SyncOperation.query.filter_by(status=status).count()
+            status_counts[status] = count
+        
+        # Calculate statistics by sync pair
+        sync_pair_stats = []
+        sync_pairs = SyncPair.query.all()
+        for pair in sync_pairs:
+            pair_operations = SyncOperation.query.filter_by(sync_pair_id=pair.id).count()
+            pair_completed = SyncOperation.query.filter_by(sync_pair_id=pair.id, status='completed').count()
+            pair_failed = SyncOperation.query.filter_by(sync_pair_id=pair.id, status='failed').count()
+            pair_success_rate = 0
+            if pair_operations > 0:
+                pair_success_rate = (pair_completed / pair_operations) * 100
+            
+            sync_pair_stats.append({
+                'sync_pair_id': pair.id,
+                'name': pair.name,
+                'total_operations': pair_operations,
+                'completed_operations': pair_completed,
+                'failed_operations': pair_failed,
+                'success_rate': pair_success_rate
+            })
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'total_operations': total_operations,
+                'completed_operations': completed_operations,
+                'failed_operations': failed_operations,
+                'success_rate': success_rate,
+                'by_operation_type': operation_types,
+                'by_status': status_counts,
+                'by_sync_pair': sync_pair_stats
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error calculating sync statistics: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to calculate sync statistics',
+            'message': str(e)
+        }), 500

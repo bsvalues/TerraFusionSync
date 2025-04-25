@@ -1,17 +1,9 @@
 """
 Models package for the SyncService.
 
-This package contains all the data models used throughout the SyncService.
+This package contains data models for the SyncService, including models for
+sync operations, system state, and configuration.
 """
 
-from .base import (
-    SyncType, SyncStatus, SyncOperation, SyncOperationDetails,
-    SourceRecord, TargetRecord, TransformedRecord, ValidationResult,
-    EntityStats, RetryStrategy
-)
-
-__all__ = [
-    'SyncType', 'SyncStatus', 'SyncOperation', 'SyncOperationDetails',
-    'SourceRecord', 'TargetRecord', 'TransformedRecord', 'ValidationResult',
-    'EntityStats', 'RetryStrategy'
-]
+# Import models for easy access
+from .base import SyncPair, SyncOperation, SyncOperationDetails

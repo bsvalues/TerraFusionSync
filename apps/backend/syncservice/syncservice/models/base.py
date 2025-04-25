@@ -1,122 +1,130 @@
 """
 Base models for the SyncService.
 
-This module defines the core data models used throughout the SyncService.
+This module provides data models for representing sync operations, system state,
+and configuration.
 """
 
-from enum import Enum
-from typing import Dict, List, Any, Optional, Union
+from typing import Dict, Any, List, Optional
 from datetime import datetime
-from dataclasses import dataclass
+from enum import Enum, auto
 
 
-class SyncType(str, Enum):
-    """Type of synchronization operation."""
-    FULL = "full"
-    INCREMENTAL = "incremental"
-    DELTA = "delta"
-
-
-class SyncStatus(str, Enum):
-    """Status of a sync operation."""
-    QUEUED = "queued"
+class SyncStatus(Enum):
+    """Enumeration of possible sync operation statuses."""
+    PENDING = "pending"
+    SCHEDULED = "scheduled"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
-    PARTIALLY_COMPLETED = "partially_completed"
     CANCELLED = "cancelled"
     PAUSED = "paused"
 
 
-@dataclass
-class RetryStrategy:
-    """Strategy for retrying failed operations."""
-    should_retry: bool
-    delay_seconds: int
-    max_attempts: int
-    retry_subset: bool = False
-    batch_size_reduction: float = 1.0
+class OperationType(Enum):
+    """Enumeration of possible sync operation types."""
+    FULL = "full"           # Complete sync of all data
+    INCREMENTAL = "incremental"  # Sync only changes since last sync
+    DELTA = "delta"         # Sync only specific changes
+    VALIDATION = "validation"    # Validate data without syncing
+    REPAIR = "repair"       # Fix inconsistencies
 
 
-@dataclass
-class ValidationResult:
-    """Result of a validation operation."""
-    is_valid: bool
-    errors: List[Dict[str, Any]] = None
-    warnings: List[Dict[str, Any]] = None
-
-
-@dataclass
-class SourceRecord:
-    """Record from a source system."""
-    id: str
-    entity_type: str
-    data: Dict[str, Any]
-    metadata: Dict[str, Any] = None
-    last_modified: datetime = None
-
-
-@dataclass
-class TransformedRecord:
-    """Record after transformation."""
-    source_id: str
-    entity_type: str
-    data: Dict[str, Any]
-    metadata: Dict[str, Any] = None
-    validation_result: ValidationResult = None
-
-
-@dataclass
-class TargetRecord:
-    """Record in the target system."""
-    id: str
-    source_id: str
-    entity_type: str
-    data: Dict[str, Any]
-    metadata: Dict[str, Any] = None
-    last_modified: datetime = None
-
-
-@dataclass
 class EntityStats:
-    """Statistics about entity processing."""
-    entity_type: str
-    total_count: int = 0
-    processed_count: int = 0
-    success_count: int = 0
-    error_count: int = 0
-    skipped_count: int = 0
-
-
-@dataclass
-class SyncOperationDetails:
-    """Detailed information about a sync operation."""
-    records_processed: int = 0
-    records_succeeded: int = 0
-    records_failed: int = 0
-    records_skipped: int = 0
-    entity_stats: Dict[str, EntityStats] = None
-    error_details: List[Dict[str, Any]] = None
-    start_time: datetime = None
-    end_time: datetime = None
-    duration_seconds: float = 0
-    metadata: Dict[str, Any] = None
-
-
-@dataclass
-class SyncOperation:
-    """A synchronization operation."""
-    id: Union[int, str]
-    sync_pair_id: Union[int, str]
-    operation_type: SyncType
-    status: SyncStatus = SyncStatus.QUEUED
-    details: SyncOperationDetails = None
-    created_at: datetime = None
-    started_at: datetime = None
-    completed_at: datetime = None
+    """Statistics for a single entity type in a sync operation."""
     
-    # For self-healing orchestrator
-    source_system: str = None
-    target_system: str = None
-    retry_count: int = 0
-    last_error: str = None
+    def __init__(self):
+        self.total = 0
+        self.created = 0
+        self.updated = 0
+        self.deleted = 0
+        self.skipped = 0
+        self.failed = 0
+
+
+class ValidationResult:
+    """Result of a data validation operation."""
+    
+    def __init__(self):
+        self.valid = True
+        self.errors = []
+        self.warnings = []
+
+
+class SyncPair:
+    """
+    Configuration for a sync pair, defining source and target systems.
+    """
+    
+    def __init__(self, id: str, name: str):
+        self.id = id
+        self.name = name
+        self.source_system = None  # Type: Dict[str, Any]
+        self.target_system = None  # Type: Dict[str, Any]
+        self.entities = None  # Type: List[Dict[str, Any]]
+        self.mappings = None  # Type: List[Dict[str, Any]]
+        self.active = True
+        
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary representation."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "source_system": self.source_system,
+            "target_system": self.target_system,
+            "entities": self.entities,
+            "mappings": self.mappings,
+            "active": self.active
+        }
+
+
+class SyncOperationDetails:
+    """
+    Detailed information about a sync operation execution.
+    """
+    
+    def __init__(self):
+        self.start_time = None  # Type: datetime
+        self.end_time = None  # Type: datetime
+        self.entity_stats = None  # Type: Dict[str, EntityStats]
+        self.logs = None  # Type: List[Dict[str, Any]]
+        self.last_checkpoint = None  # Type: datetime
+        self.next_checkpoint = None  # Type: datetime
+        self.error = None
+        self.metrics = None  # Type: Dict[str, Any]
+
+
+class SyncOperation:
+    """
+    Representation of a sync operation, including configuration and results.
+    """
+    
+    def __init__(self, id: int, sync_pair_id: str):
+        self.id = id
+        self.sync_pair_id = sync_pair_id
+        self.details = None  # Type: SyncOperationDetails
+        self.created_at = None  # Type: datetime
+        self.scheduled_at = None  # Type: datetime
+        self.completed_at = None  # Type: datetime
+        self.status = SyncStatus.PENDING
+        self.operation_type = OperationType.FULL
+        self.user_id = None  # Type: str
+        self.username = None  # Type: str
+        self.priority = 0
+        self.retry_count = None  # Type: str
+        
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary representation."""
+        return {
+            "id": self.id,
+            "sync_pair_id": self.sync_pair_id,
+            "status": self.status.value if self.status else None,
+            "operation_type": self.operation_type.value if self.operation_type else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "scheduled_at": self.scheduled_at.isoformat() if self.scheduled_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "user_id": self.user_id,
+            "username": self.username,
+            "priority": self.priority,
+            "retry_count": self.retry_count
+        }
