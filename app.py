@@ -53,6 +53,12 @@ except ImportError:
         """Fallback current user function."""
         return None
 
+# Import API blueprints
+try:
+    from apps.backend.api.sync_operations import sync_bp
+except ImportError:
+    logging.warning("Sync operations API module not available")
+
 # Create and configure the Flask application
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "terraFusionSyncServiceSecret")
@@ -70,6 +76,13 @@ db.init_app(app)
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+
+# Register API blueprints
+try:
+    app.register_blueprint(sync_bp)
+    logger.info("Registered sync operations API blueprint")
+except NameError:
+    logger.warning("Sync operations API blueprint not available")
 
 # Create database tables if they don't exist
 with app.app_context():
