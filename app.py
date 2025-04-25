@@ -18,9 +18,19 @@ from sqlalchemy.orm import DeclarativeBase
 
 from models import db, SyncPair, SyncOperation, SystemMetrics, AuditEntry
 
-# Metrics functionality is disabled to avoid recursion errors
-# We'll use a simple implementation that doesn't cause errors
-METRICS_AVAILABLE = False
+# Import system monitor utility if available
+try:
+    from manual_fix_system_monitoring import SafeSystemMonitor, get_safe_system_info
+    SAFE_MONITOR_AVAILABLE = True
+    logger = logging.getLogger(__name__)
+    logger.info("Using SafeSystemMonitor for API Gateway monitoring")
+except ImportError:
+    SAFE_MONITOR_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.warning("SafeSystemMonitor not available for API Gateway, using simple metrics")
+
+# Metrics functionality uses a simplified implementation to avoid recursion errors
+METRICS_AVAILABLE = True
 # Import authentication module
 try:
     from apps.backend.api.auth import requires_auth, init_auth_routes, get_current_user
@@ -58,8 +68,69 @@ db.init_app(app)
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# Metrics implementation will be simplified for now
-# We've disabled metrics to stabilize the application
+# Create a monitoring instance if available
+if SAFE_MONITOR_AVAILABLE:
+    api_gateway_monitor = SafeSystemMonitor()
+    logger.info("Created SafeSystemMonitor instance for API Gateway")
+else:
+    api_gateway_monitor = None
+    logger.warning("No monitoring instance available for API Gateway")
+
+# Function to collect metrics from syncservice
+def collect_syncservice_metrics():
+    """
+    Collect metrics from SyncService and store them in the database.
+    This function is designed to be called periodically.
+    
+    Returns:
+        Dictionary with collected metrics or None if collection failed
+    """
+    if not check_syncservice_status():
+        logger.warning("SyncService is not available for metrics collection")
+        return None
+    
+    try:
+        # Fetch metrics from the SyncService's metrics endpoint
+        response = requests.get(f"{SYNCSERVICE_BASE_URL}/metrics", timeout=5)
+        
+        if response.status_code != 200:
+            logger.error(f"Failed to get metrics from SyncService: HTTP {response.status_code}")
+            return None
+        
+        metrics_data = response.json()
+        
+        # Get timestamp from the metrics or use current time
+        timestamp = datetime.fromisoformat(
+            metrics_data.get("timestamp", datetime.utcnow().isoformat())
+        )
+        
+        # Extract system metrics
+        system_data = metrics_data.get("system", {})
+        
+        # Create a new SystemMetrics record
+        metrics = SystemMetrics(
+            timestamp=timestamp,
+            cpu_usage=system_data.get("cpu_usage_percent", 0.0),
+            memory_usage=system_data.get("memory_usage_percent", 0.0),
+            disk_usage=system_data.get("disk_usage_percent", 0.0),
+            active_connections=system_data.get("active_connections", 0),
+            response_time=metrics_data.get("performance", {}).get("response_time_avg_ms", 0.0) / 1000,
+            error_count=metrics_data.get("performance", {}).get("error_count", 0),
+            sync_operations_count=metrics_data.get("performance", {}).get("sync_operations_count", 0)
+        )
+        
+        # Save to database
+        with app.app_context():
+            db.session.add(metrics)
+            db.session.commit()
+            logger.info(f"Stored SyncService metrics at {timestamp}")
+        
+        return metrics_data
+    except Exception as e:
+        logger.error(f"Error collecting SyncService metrics: {str(e)}")
+        return None
+
+# Metrics implementation using database storage
 
 # SyncService connection settings
 SYNCSERVICE_BASE_URL = "http://0.0.0.0:8080"
@@ -961,8 +1032,54 @@ def seed_initial_data():
             logger.info("Database seeded with initial sample data")
 
 
+# Function to collect metrics on a periodic basis
+def start_metrics_collection(interval_seconds=60):
+    """
+    Start collecting metrics from SyncService on a periodic basis.
+    
+    Args:
+        interval_seconds: Interval between metrics collections in seconds
+    """
+    import threading
+    
+    def metrics_collector_thread():
+        while True:
+            try:
+                # Only collect metrics if SyncService is running
+                if check_syncservice_status():
+                    logger.info("Collecting metrics from SyncService")
+                    metrics = collect_syncservice_metrics()
+                    if metrics:
+                        logger.info("Successfully collected metrics")
+                    else:
+                        logger.warning("Failed to collect metrics")
+                else:
+                    logger.warning("SyncService not available, skipping metrics collection")
+                
+                # Sleep for the specified interval
+                time.sleep(interval_seconds)
+            except Exception as e:
+                logger.error(f"Error in metrics collector thread: {str(e)}")
+                # Sleep for a short interval and try again
+                time.sleep(5)
+    
+    # Start the metrics collector thread as a daemon
+    thread = threading.Thread(target=metrics_collector_thread, daemon=True)
+    thread.start()
+    logger.info(f"Started metrics collection thread with interval of {interval_seconds}s")
+    return thread
+
+
 if __name__ == '__main__':
     # Seed the database with initial data if it's empty
     seed_initial_data()
+    
+    # Try to collect metrics immediately if SyncService is available
+    if check_syncservice_status():
+        collect_syncservice_metrics()
+    
+    # Start periodic metrics collection in the background
+    start_metrics_collection(interval_seconds=60)
+    
     # Run the Flask development server
     app.run(host='0.0.0.0', port=5000, debug=True)
