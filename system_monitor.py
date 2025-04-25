@@ -136,6 +136,20 @@ class SystemMonitor:
             Dictionary containing system metrics
         """
         try:
+            if not PSUTIL_AVAILABLE:
+                # Fallback to dummy values if psutil is not available
+                metrics = {
+                    "cpu_usage": 0.0,
+                    "memory_usage": 0.0,
+                    "disk_usage": 0.0,
+                    "active_connections": 0,
+                    "response_time": self.latest_metrics.get("response_time", 0.0),
+                    "error_count": self.error_count,
+                    "sync_operations_count": self.operation_count,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                return metrics
+            
             # Get CPU usage
             cpu_usage = psutil.cpu_percent(interval=1)
             
@@ -149,7 +163,12 @@ class SystemMonitor:
             
             # Get active connections (approximate)
             # This uses the number of established connections as a proxy
-            connections = len(psutil.net_connections(kind='inet'))
+            try:
+                connections = len(psutil.net_connections(kind='inet'))
+            except (psutil.AccessDenied, PermissionError):
+                # Fallback if we don't have permission to get network connections
+                connections = 0
+                logger.warning("Permission denied when getting network connections")
             
             # Add the metrics to a dictionary
             metrics = {
@@ -157,7 +176,7 @@ class SystemMonitor:
                 "memory_usage": memory_usage,
                 "disk_usage": disk_usage,
                 "active_connections": connections,
-                "response_time": 0.0,  # This will be updated by the application
+                "response_time": self.latest_metrics.get("response_time", 0.0),
                 "error_count": self.error_count,
                 "sync_operations_count": self.operation_count,
                 "timestamp": datetime.utcnow().isoformat()
@@ -255,16 +274,33 @@ def get_system_info() -> Dict[str, str]:
         Dictionary with system information
     """
     try:
+        # Base system info that doesn't require psutil
         info = {
             "platform": platform.platform(),
             "python_version": platform.python_version(),
             "processor": platform.processor(),
             "hostname": platform.node(),
-            "cpu_count": str(psutil.cpu_count(logical=True)),
-            "physical_cpu_count": str(psutil.cpu_count(logical=False) or 1),
-            "total_memory": f"{psutil.virtual_memory().total / (1024**3):.2f} GB",
             "start_time": datetime.utcnow().isoformat()
         }
+        
+        # Add psutil-dependent metrics if available
+        if PSUTIL_AVAILABLE:
+            try:
+                info["cpu_count"] = str(psutil.cpu_count(logical=True))
+                info["physical_cpu_count"] = str(psutil.cpu_count(logical=False) or 1)
+                info["total_memory"] = f"{psutil.virtual_memory().total / (1024**3):.2f} GB"
+            except Exception as e:
+                logger.warning(f"Error getting psutil system info: {str(e)}")
+                # Provide fallback values
+                info["cpu_count"] = "N/A"
+                info["physical_cpu_count"] = "N/A"
+                info["total_memory"] = "N/A"
+        else:
+            # Fallback values when psutil is not available
+            info["cpu_count"] = "N/A"
+            info["physical_cpu_count"] = "N/A"
+            info["total_memory"] = "N/A"
+        
         return info
     except Exception as e:
         logger.error(f"Error getting system info: {str(e)}")
@@ -278,19 +314,27 @@ def get_process_info() -> Dict[str, Any]:
     Returns:
         Dictionary with process information
     """
-    try:
-        process = psutil.Process(os.getpid())
-        info = {
-            "pid": process.pid,
-            "memory_info": dict(process.memory_info()._asdict()),
-            "cpu_percent": process.cpu_percent(interval=1.0),
-            "num_threads": process.num_threads(),
-            "start_time": datetime.fromtimestamp(process.create_time()).isoformat()
-        }
-        return info
-    except Exception as e:
-        logger.error(f"Error getting process info: {str(e)}")
-        return {"error": str(e)}
+    # Base process info
+    info = {
+        "pid": os.getpid(),
+        "cwd": os.getcwd(),
+        "start_time": datetime.utcnow().isoformat()
+    }
+    
+    # Add psutil-dependent metrics if available
+    if PSUTIL_AVAILABLE:
+        try:
+            process = psutil.Process(os.getpid())
+            info.update({
+                "memory_info": dict(process.memory_info()._asdict()),
+                "cpu_percent": process.cpu_percent(interval=1.0),
+                "num_threads": process.num_threads(),
+                "start_time": datetime.fromtimestamp(process.create_time()).isoformat()
+            })
+        except Exception as e:
+            logger.warning(f"Error getting psutil process info: {str(e)}")
+    
+    return info
 
 
 if __name__ == "__main__":

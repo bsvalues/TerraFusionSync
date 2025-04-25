@@ -9,7 +9,6 @@ import sys
 import json
 import time
 import logging
-import psutil
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
@@ -19,9 +18,18 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader, HTTPBearer, HTTPAuthorizationCredentials
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Import the safe system monitoring component
+try:
+    from manual_fix_system_monitoring import safe_monitor, get_safe_system_info
+    SAFE_MONITOR_AVAILABLE = True
+    logger = logging.getLogger(__name__)
+    logger.info("Using SafeSystemMonitor for system monitoring")
+except ImportError:
+    SAFE_MONITOR_AVAILABLE = False
+    # Configure logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    logger.warning("SafeSystemMonitor not available, using basic monitoring")
 
 # Create FastAPI application
 app = FastAPI(
@@ -41,10 +49,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# System monitoring
-class SystemMonitor:
+# System monitoring (fallback implementation if SafeSystemMonitor is not available)
+class BasicSystemMonitor:
     """
-    Monitor system resources and provide health metrics.
+    Simplified system monitoring with robust error handling.
+    This is a fallback when the full implementation is not available.
     """
     def __init__(self):
         """Initialize the system monitor."""
@@ -52,24 +61,21 @@ class SystemMonitor:
     
     def get_system_health(self) -> Dict[str, Any]:
         """
-        Get current system health.
+        Get current system health with minimal dependencies.
         
         Returns:
-            Dictionary with system health metrics
+            Dictionary with basic system health metrics
         """
         try:
-            cpu_percent = psutil.cpu_percent(interval=0.1)
-            memory = psutil.virtual_memory()
-            disk = psutil.disk_usage('/')
-            
             uptime = (datetime.utcnow() - self.start_time).total_seconds()
             
+            # Minimal health data that doesn't require external libraries
             return {
                 "status": "healthy",
                 "uptime_seconds": uptime,
-                "cpu_usage_percent": cpu_percent,
-                "memory_usage_percent": memory.percent,
-                "disk_usage_percent": disk.percent,
+                "cpu_usage_percent": 0.0,  # Placeholder
+                "memory_usage_percent": 0.0,  # Placeholder
+                "disk_usage_percent": 0.0,  # Placeholder
                 "timestamp": datetime.utcnow().isoformat()
             }
         except Exception as e:
@@ -80,8 +86,11 @@ class SystemMonitor:
                 "timestamp": datetime.utcnow().isoformat()
             }
 
-# Initialize system monitor
-system_monitor = SystemMonitor()
+# Initialize system monitor based on availability
+if SAFE_MONITOR_AVAILABLE:
+    system_monitor = safe_monitor
+else:
+    system_monitor = BasicSystemMonitor()
 
 @app.get("/")
 async def root():
@@ -296,6 +305,59 @@ async def get_operations(active_only: bool = False):
             "failed_records": 0
         }
     ]
+
+@app.get("/metrics")
+async def get_metrics():
+    """
+    Get system and operation metrics in a format suitable for monitoring systems.
+    This endpoint provides detailed metrics about the syncservice performance.
+    """
+    # Get current health metrics
+    health_data = system_monitor.get_system_health()
+    
+    # Get system information
+    system_info = {}
+    if SAFE_MONITOR_AVAILABLE:
+        try:
+            system_info = get_safe_system_info()
+        except Exception as e:
+            logger.error(f"Error getting system info: {str(e)}")
+    
+    # Sample operation metrics (in a real implementation, these would come from a database)
+    operation_metrics = {
+        "total_operations": 150,
+        "successful_operations": 145,
+        "failed_operations": 5,
+        "active_operations": 2,
+        "average_duration_seconds": 450,
+        "records_processed_last_24h": 2500,
+        "success_rate_percent": 96.7
+    }
+    
+    # Build the complete metrics response
+    metrics = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "service": "TerraFusion SyncService",
+        "version": "0.1.0",
+        "system": {
+            "status": health_data.get("status", "unknown"),
+            "uptime_seconds": health_data.get("uptime_seconds", 0),
+            "cpu_usage_percent": health_data.get("cpu_usage", 0),
+            "memory_usage_percent": health_data.get("memory_usage", 0),
+            "disk_usage_percent": health_data.get("disk_usage", 0),
+            "active_connections": health_data.get("active_connections", 0),
+            "platform": system_info.get("platform", "unknown"),
+            "python_version": system_info.get("python_version", "unknown")
+        },
+        "operations": operation_metrics,
+        "performance": {
+            "response_time_avg_ms": health_data.get("response_time", 0) * 1000,
+            "error_count": health_data.get("error_count", 0),
+            "sync_operations_count": health_data.get("sync_operations_count", 0)
+        }
+    }
+    
+    return metrics
 
 if __name__ == "__main__":
     import uvicorn

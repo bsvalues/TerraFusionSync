@@ -6,19 +6,22 @@ with proper defensive programming to avoid NoneType errors.
 """
 
 import os
-import sys
 import time
-import json
 import logging
-from datetime import datetime, timedelta
+import platform
+from datetime import datetime
 from typing import Dict, Any, Optional
 
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    logging.warning("psutil module not available, using fallback metrics")
+
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 class SafeSystemMonitor:
     """
@@ -28,8 +31,18 @@ class SafeSystemMonitor:
     
     def __init__(self):
         """Initialize the safe system monitor."""
-        self.last_metrics = {}
-        self.last_update_time = None
+        self.last_update = datetime.utcnow()
+        self.health_metrics = {
+            "cpu_usage": 0.0,
+            "memory_usage": 0.0,
+            "disk_usage": 0.0,
+            "active_connections": 0,
+            "response_time": 0.0,
+            "error_count": 0,
+            "sync_operations_count": 0,
+            "status": "healthy",
+            "last_check": self.last_update.isoformat()
+        }
     
     def get_system_health(self) -> Dict[str, Any]:
         """
@@ -38,91 +51,70 @@ class SafeSystemMonitor:
         Returns:
             Dictionary with system health metrics or safe fallback values
         """
+        metrics = self.health_metrics.copy()
+        
         try:
-            # Basic metrics with timestamp
-            metrics = {
-                "timestamp": datetime.utcnow().isoformat(),
-                "status": "OK"
-            }
+            # Update timestamp
+            self.last_update = datetime.utcnow()
+            metrics["last_check"] = self.last_update.isoformat()
             
-            # Safe CPU metrics
+            # Skip actual metrics collection if psutil is not available
+            if not PSUTIL_AVAILABLE:
+                metrics["status"] = "limited"
+                metrics["status_message"] = "psutil module not available, using fallback metrics"
+                return metrics
+            
+            # Get CPU usage with defensive check
             try:
-                import psutil
-                cpu_percent = psutil.cpu_percent(interval=0.5)
-                metrics["cpu_count"] = psutil.cpu_count() or 0
-                metrics["cpu_percent"] = cpu_percent
+                metrics["cpu_usage"] = psutil.cpu_percent(interval=0.1)
             except Exception as e:
-                logger.warning(f"Error getting CPU metrics: {str(e)}")
-                metrics["cpu_percent"] = 0
-                metrics["cpu_count"] = 0
-                metrics["cpu_error"] = str(e)
+                logger.warning(f"Error getting CPU usage: {str(e)}")
+                metrics["cpu_usage"] = self.health_metrics.get("cpu_usage", 0.0)
             
-            # Safe Memory metrics
+            # Get memory usage with defensive check
             try:
-                import psutil
-                mem = psutil.virtual_memory()
-                metrics["memory_total"] = getattr(mem, 'total', 0)
-                metrics["memory_available"] = getattr(mem, 'available', 0)
-                metrics["memory_used"] = getattr(mem, 'used', 0)
-                metrics["memory_percent"] = getattr(mem, 'percent', 0)
+                memory = psutil.virtual_memory()
+                metrics["memory_usage"] = memory.percent
             except Exception as e:
-                logger.warning(f"Error getting memory metrics: {str(e)}")
-                metrics["memory_percent"] = 0
-                metrics["memory_error"] = str(e)
+                logger.warning(f"Error getting memory usage: {str(e)}")
+                metrics["memory_usage"] = self.health_metrics.get("memory_usage", 0.0)
             
-            # Safe Disk metrics
+            # Get disk usage with defensive check
             try:
-                import psutil
                 disk = psutil.disk_usage('/')
-                metrics["disk_total"] = getattr(disk, 'total', 0)
-                metrics["disk_used"] = getattr(disk, 'used', 0)
-                metrics["disk_free"] = getattr(disk, 'free', 0)
-                metrics["disk_percent"] = getattr(disk, 'percent', 0)
+                metrics["disk_usage"] = disk.percent
             except Exception as e:
-                logger.warning(f"Error getting disk metrics: {str(e)}")
-                metrics["disk_percent"] = 0
-                metrics["disk_error"] = str(e)
+                logger.warning(f"Error getting disk usage: {str(e)}")
+                metrics["disk_usage"] = self.health_metrics.get("disk_usage", 0.0)
             
-            # Process info (safely)
+            # Get active connections with defensive check
             try:
-                import psutil
-                import os
-                process = psutil.Process(os.getpid())
-                process_mem = process.memory_info()
-                metrics["process_memory_rss"] = getattr(process_mem, 'rss', 0)
-                metrics["process_memory_vms"] = getattr(process_mem, 'vms', 0)
-                metrics["process_cpu_percent"] = process.cpu_percent(interval=None)
-                metrics["process_threads"] = len(process.threads())
-                metrics["process_connections"] = len(process.connections(kind='all'))
+                metrics["active_connections"] = len(psutil.net_connections(kind='inet'))
+            except (psutil.AccessDenied, PermissionError):
+                # This is normal in some environments
+                logger.info("Permission denied when getting network connections")
+                metrics["active_connections"] = 0
             except Exception as e:
-                logger.warning(f"Error getting process metrics: {str(e)}")
-                metrics["process_error"] = str(e)
+                logger.warning(f"Error getting active connections: {str(e)}")
+                metrics["active_connections"] = self.health_metrics.get("active_connections", 0)
             
-            # System boot time (safely)
-            try:
-                import psutil
-                metrics["boot_time"] = datetime.fromtimestamp(psutil.boot_time()).isoformat()
-            except Exception as e:
-                logger.warning(f"Error getting boot time: {str(e)}")
-                metrics["boot_time_error"] = str(e)
+            # Determine system status based on metrics
+            metrics["status"] = "healthy"
+            if metrics["cpu_usage"] > 90 or metrics["memory_usage"] > 90 or metrics["disk_usage"] > 90:
+                metrics["status"] = "warning"
+                metrics["status_message"] = "System resources under high load"
             
-            # Save metrics for reference
-            self.last_metrics = metrics
-            self.last_update_time = datetime.utcnow()
+            # Update the cached metrics
+            self.health_metrics = metrics.copy()
             
             return metrics
-            
         except Exception as e:
-            logger.error(f"Unexpected error in get_system_health: {str(e)}", exc_info=True)
-            # Return minimal system health info on error
-            return {
-                "timestamp": datetime.utcnow().isoformat(),
-                "error": str(e),
-                "status": "ERROR",
-                "cpu_percent": 0,
-                "memory_percent": 0,
-                "disk_percent": 0
-            }
+            logger.error(f"Unexpected error in get_system_health: {str(e)}")
+            # Return at least the timestamp and error info
+            metrics["status"] = "error"
+            metrics["status_message"] = f"Error collecting metrics: {str(e)}"
+            metrics["last_check"] = datetime.utcnow().isoformat()
+            return metrics
     
     def get_as_json(self) -> str:
         """
@@ -131,16 +123,78 @@ class SafeSystemMonitor:
         Returns:
             JSON string representation of system health
         """
+        import json
         try:
-            metrics = self.get_system_health()
-            return json.dumps(metrics, indent=2)
+            return json.dumps(self.get_system_health())
         except Exception as e:
             logger.error(f"Error converting metrics to JSON: {str(e)}")
-            return json.dumps({
-                "timestamp": datetime.utcnow().isoformat(),
-                "error": str(e),
-                "status": "ERROR"
-            }, indent=2)
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+# Create a singleton instance for easy import
+safe_monitor = SafeSystemMonitor()
+
+
+def get_safe_system_info() -> Dict[str, str]:
+    """
+    Get basic system information with robust error handling.
+    
+    Returns:
+        Dictionary with basic system information or safe fallback values
+    """
+    info = {
+        "platform": "unknown",
+        "python_version": "unknown",
+        "processor": "unknown",
+        "hostname": "unknown",
+        "start_time": datetime.utcnow().isoformat()
+    }
+    
+    # Get basic platform information with defensive checks
+    try:
+        info["platform"] = platform.platform()
+    except Exception:
+        pass
+    
+    try:
+        info["python_version"] = platform.python_version()
+    except Exception:
+        pass
+    
+    try:
+        info["processor"] = platform.processor() or "unknown"
+    except Exception:
+        pass
+    
+    try:
+        info["hostname"] = platform.node() or "unknown"
+    except Exception:
+        pass
+    
+    # Get psutil-dependent information
+    if PSUTIL_AVAILABLE:
+        try:
+            info["cpu_count"] = str(psutil.cpu_count(logical=True) or "N/A")
+        except Exception:
+            info["cpu_count"] = "N/A"
+        
+        try:
+            info["physical_cpu_count"] = str(psutil.cpu_count(logical=False) or "N/A")
+        except Exception:
+            info["physical_cpu_count"] = "N/A"
+        
+        try:
+            memory = psutil.virtual_memory()
+            info["total_memory"] = f"{memory.total / (1024**3):.2f} GB"
+        except Exception:
+            info["total_memory"] = "N/A"
+    else:
+        info["cpu_count"] = "N/A"
+        info["physical_cpu_count"] = "N/A"
+        info["total_memory"] = "N/A"
+    
+    return info
+
 
 def main():
     """
@@ -148,21 +202,22 @@ def main():
     """
     monitor = SafeSystemMonitor()
     
-    # Get and display system health
-    print("System Health:")
+    print("\nSafe System Monitor Test\n" + "="*25)
+    print("\nSystem information:")
+    system_info = get_safe_system_info()
+    for key, value in system_info.items():
+        print(f"  {key}: {value}")
+    
+    print("\nHealth metrics:")
     metrics = monitor.get_system_health()
+    for key, value in metrics.items():
+        print(f"  {key}: {value}")
+    
+    print("\nJSON representation:")
     print(monitor.get_as_json())
     
-    # Log key metrics
-    cpu = metrics.get('cpu_percent', 0)
-    memory = metrics.get('memory_percent', 0)
-    disk = metrics.get('disk_percent', 0)
-    print(f"\nKey Metrics: CPU {cpu}%, Memory {memory}%, Disk {disk}%")
+    print("\nTest complete. All operations completed safely.")
 
-    # Save metrics to a file
-    with open('system_health.json', 'w') as f:
-        f.write(monitor.get_as_json())
-    print("\nSystem health saved to system_health.json")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
