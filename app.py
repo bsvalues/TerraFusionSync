@@ -105,8 +105,12 @@ def before_request_middleware():
         
     # If it's been more than SERVICE_HEALTH_CHECK_INTERVAL seconds since the last health check
     if current_time - last_service_health_check_time > SERVICE_HEALTH_CHECK_INTERVAL:
-        # Run the service health check in a separate thread
-        thread = threading.Thread(target=lambda: check_and_ensure_service_health())
+        # Run the service health check in a separate thread with app context
+        def run_health_check_with_context():
+            with app.app_context():
+                check_and_ensure_service_health()
+                
+        thread = threading.Thread(target=run_health_check_with_context)
         thread.daemon = True
         thread.start()
         last_service_health_check_time = current_time
@@ -276,12 +280,13 @@ def ensure_syncservice_running() -> bool:
     logger.warning("SyncService not running, attempting to restart it...")
     
     # Create audit log for restart attempt
-    create_audit_log(
-        event_type="service_restart_attempt",
-        resource_type="system",
-        description="Automatic SyncService restart triggered due to detected outage",
-        severity="warning"
-    )
+    with app.app_context():
+        create_audit_log(
+            event_type="service_restart_attempt",
+            resource_type="system",
+            description="Automatic SyncService restart triggered due to detected outage",
+            severity="warning"
+        )
     
     # Maximum number of restart attempts
     max_attempts = 3
@@ -316,12 +321,13 @@ def ensure_syncservice_running() -> bool:
                     logger.info("SyncService successfully restarted!")
                     
                     # Create success audit log
-                    create_audit_log(
-                        event_type="service_restart_success",
-                        resource_type="system",
-                        description=f"SyncService was successfully restarted after {attempt} attempt(s)",
-                        severity="info"
-                    )
+                    with app.app_context():
+                        create_audit_log(
+                            event_type="service_restart_success",
+                            resource_type="system",
+                            description=f"SyncService was successfully restarted after {attempt} attempt(s)",
+                            severity="info"
+                        )
                     return True
             
             # If we got here, the service didn't start even after waiting
@@ -338,12 +344,13 @@ def ensure_syncservice_running() -> bool:
     logger.error(f"Failed to restart SyncService after {max_attempts} attempts")
     
     # Create failure audit log
-    create_audit_log(
-        event_type="service_restart_failure",
-        resource_type="system",
-        description=f"Failed to restart SyncService after {max_attempts} attempts",
-        severity="error"
-    )
+    with app.app_context():
+        create_audit_log(
+            event_type="service_restart_failure",
+            resource_type="system",
+            description=f"Failed to restart SyncService after {max_attempts} attempts",
+            severity="error"
+        )
     
     return False
 
