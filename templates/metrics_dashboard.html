@@ -7,6 +7,8 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.0/font/bootstrap-icons.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.1.0/dist/chartjs-plugin-annotation.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
     <style>
         .metric-card {
             transition: transform 0.2s;
@@ -364,6 +366,10 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
     <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // Register Chart.js plugins
+        Chart.register(ChartDataLabels);
+        Chart.register(ChartAnnotation);
+        
         // Prepare data for charts
         const timestamps = {{ system_metrics|map(attribute='timestamp')|list|tojson }};
         const cpuData = {{ system_metrics|map(attribute='cpu_usage')|list|tojson }};
@@ -426,8 +432,13 @@
             return gradient;
         }
         
-        // Initialize chart
+        // Initialize main metrics chart with dynamic color gradient
         const ctx = document.getElementById('metricsChart').getContext('2d');
+        
+        // Get gradient for CPU usage
+        const cpuGradient = generateGradient(ctx, 'cpu');
+        
+        // Create the chart with enhanced options
         const chart = new Chart(ctx, {
             type: 'line',
             data: {
@@ -435,18 +446,27 @@
                 datasets: [{
                     label: 'CPU Usage (%)',
                     data: cpuData,
-                    borderColor: 'rgba(75, 192, 192, 1)',
-                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    borderColor: 'rgba(25, 135, 84, 1)',
+                    backgroundColor: cpuGradient,
                     tension: 0.4,
                     borderWidth: 2,
                     pointRadius: 3,
-                    pointBackgroundColor: 'rgba(75, 192, 192, 1)',
-                    fill: true
+                    pointBackgroundColor: 'rgba(25, 135, 84, 1)',
+                    fill: true,
+                    cubicInterpolationMode: 'monotone'
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                animation: {
+                    duration: 1000,
+                    easing: 'easeOutQuart'
+                },
                 scales: {
                     y: {
                         beginAtZero: true,
@@ -454,22 +474,94 @@
                         title: {
                             display: true,
                             text: 'Percentage'
+                        },
+                        ticks: {
+                            callback: function(value) {
+                                return value + '%';
+                            }
+                        },
+                        grid: {
+                            color: 'rgba(200, 200, 200, 0.2)'
                         }
                     },
                     x: {
                         title: {
                             display: true,
                             text: 'Time'
+                        },
+                        grid: {
+                            display: false
                         }
                     }
                 },
                 plugins: {
                     legend: {
                         position: 'top',
+                        labels: {
+                            usePointStyle: true,
+                            padding: 15
+                        }
                     },
                     tooltip: {
                         mode: 'index',
                         intersect: false,
+                        backgroundColor: 'rgba(50, 50, 50, 0.9)',
+                        titleColor: '#ffffff',
+                        bodyColor: '#ffffff',
+                        borderColor: 'rgba(255, 255, 255, 0.2)',
+                        borderWidth: 1,
+                        padding: 10,
+                        displayColors: true,
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                label += context.parsed.y + '%';
+                                return label;
+                            }
+                        }
+                    },
+                    annotation: {
+                        annotations: {
+                            warningLine: {
+                                type: 'line',
+                                yMin: 70,
+                                yMax: 70,
+                                borderColor: 'rgba(255, 193, 7, 0.8)',
+                                borderWidth: 2,
+                                borderDash: [5, 5],
+                                label: {
+                                    display: true,
+                                    content: 'Warning Threshold',
+                                    position: 'start',
+                                    backgroundColor: 'rgba(255, 193, 7, 0.8)',
+                                    color: 'black',
+                                    font: {
+                                        size: 10
+                                    }
+                                }
+                            },
+                            criticalLine: {
+                                type: 'line',
+                                yMin: 90,
+                                yMax: 90,
+                                borderColor: 'rgba(220, 53, 69, 0.8)',
+                                borderWidth: 2,
+                                borderDash: [5, 5],
+                                label: {
+                                    display: true,
+                                    content: 'Critical Threshold',
+                                    position: 'start',
+                                    backgroundColor: 'rgba(220, 53, 69, 0.8)',
+                                    color: 'white',
+                                    font: {
+                                        size: 10
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -477,34 +569,61 @@
         
         // Switch between metrics
         document.getElementById('cpu-btn').addEventListener('click', function() {
-            updateChart('CPU Usage (%)', cpuData, 'rgba(75, 192, 192, 1)', 'rgba(75, 192, 192, 0.2)');
+            const cpuGradient = generateGradient(ctx, 'cpu');
+            updateChart('CPU Usage (%)', cpuData, 'rgba(25, 135, 84, 1)', cpuGradient, 'cpu');
             setActiveButton('cpu-btn');
         });
         
         document.getElementById('memory-btn').addEventListener('click', function() {
-            updateChart('Memory Usage (%)', memoryData, 'rgba(255, 159, 64, 1)', 'rgba(255, 159, 64, 0.2)');
+            const memoryGradient = generateGradient(ctx, 'memory');
+            updateChart('Memory Usage (%)', memoryData, 'rgba(13, 110, 253, 1)', memoryGradient, 'memory');
             setActiveButton('memory-btn');
         });
         
         document.getElementById('response-btn').addEventListener('click', function() {
-            updateChart('Response Time (s)', responseTimeData, 'rgba(153, 102, 255, 1)', 'rgba(153, 102, 255, 0.2)');
+            const responseGradient = generateGradient(ctx, 'response');
+            updateChart('Response Time (s)', responseTimeData, 'rgba(153, 102, 255, 1)', responseGradient, 'response');
             setActiveButton('response-btn');
         });
         
-        function updateChart(label, data, borderColor, backgroundColor) {
+        // Enhanced chart update function with threshold annotations
+        function updateChart(label, data, borderColor, backgroundColor, metricType) {
+            // Update dataset
             chart.data.datasets[0].label = label;
             chart.data.datasets[0].data = data;
             chart.data.datasets[0].borderColor = borderColor;
             chart.data.datasets[0].backgroundColor = backgroundColor;
             chart.data.datasets[0].pointBackgroundColor = borderColor;
             
-            // Adjust scale if showing response time
-            if (label.includes('Response')) {
-                chart.options.scales.y.max = Math.max(...responseTimeData) * 1.2;
+            // Update Y axis and annotations based on metric type
+            if (metricType === 'response') {
+                // Response time has different scale and thresholds
+                const maxValue = Math.max(...data) * 1.2 || 5.0;
+                chart.options.scales.y.max = maxValue;
+                chart.options.scales.y.ticks.callback = function(value) {
+                    return value + 's';
+                };
+                
+                // Update threshold annotations for response time
+                chart.options.plugins.annotation.annotations.warningLine.yMin = 1.0;
+                chart.options.plugins.annotation.annotations.warningLine.yMax = 1.0;
+                chart.options.plugins.annotation.annotations.criticalLine.yMin = 2.0;
+                chart.options.plugins.annotation.annotations.criticalLine.yMax = 2.0;
             } else {
+                // CPU, Memory, Disk all use percentage scale
                 chart.options.scales.y.max = 100;
+                chart.options.scales.y.ticks.callback = function(value) {
+                    return value + '%';
+                };
+                
+                // Reset to default threshold annotations
+                chart.options.plugins.annotation.annotations.warningLine.yMin = 70;
+                chart.options.plugins.annotation.annotations.warningLine.yMax = 70;
+                chart.options.plugins.annotation.annotations.criticalLine.yMin = 90;
+                chart.options.plugins.annotation.annotations.criticalLine.yMax = 90;
             }
             
+            // Apply changes
             chart.update();
         }
         
@@ -634,7 +753,7 @@
             button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Checking...';
             
             // Call the health check API endpoint
-            fetch('/api/service/health-check', {
+            fetch('/api/trigger-health-check', {
                 method: 'POST'
             })
             .then(response => response.json())
