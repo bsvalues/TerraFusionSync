@@ -724,7 +724,7 @@ def get_metrics():
     """
     try:
         # Get the most recent system metrics from the database
-        recent_metrics = SystemMetrics.query.order_by(
+        recent_metrics = db.session.query(SystemMetrics).order_by(
             SystemMetrics.timestamp.desc()).limit(1).first()
         
         if recent_metrics:
@@ -808,7 +808,7 @@ def readiness_check():
 @requires_auth
 def get_sync_pairs():
     """Get all configured sync pairs."""
-    pairs = SyncPair.query.all()
+    pairs = db.session.query(SyncPair).all()
     return jsonify([pair.to_dict() for pair in pairs])
 
 
@@ -816,7 +816,7 @@ def get_sync_pairs():
 @requires_auth
 def get_sync_pair(pair_id):
     """Get or update a specific sync pair by ID."""
-    pair = SyncPair.query.get_or_404(pair_id)
+    pair = db.session.query(SyncPair).get_or_404(pair_id)
     
     if request.method == 'GET':
         return jsonify(pair.to_dict())
@@ -875,7 +875,7 @@ def get_sync_operations():
         pair_id = request.args.get('pair_id', type=int)
         status = request.args.get('status')
         
-        query = SyncOperation.query
+        query = db.session.query(SyncOperation)
         
         if pair_id:
             query = query.filter_by(sync_pair_id=pair_id)
@@ -904,7 +904,7 @@ def get_sync_operations():
             }), 400
         
         # Get the sync pair
-        sync_pair = SyncPair.query.get(data['sync_pair_id'])
+        sync_pair = db.session.query(SyncPair).get(data['sync_pair_id'])
         if not sync_pair:
             return jsonify({
                 "error": "Invalid sync_pair_id",
@@ -966,7 +966,7 @@ def get_system_metrics():
     """Get system metrics from the database."""
     limit = request.args.get('limit', 100, type=int)
     
-    system_metrics = SystemMetrics.query.order_by(
+    system_metrics = db.session.query(SystemMetrics).order_by(
         SystemMetrics.timestamp.desc()).limit(limit).all()
     
     # Also try to collect new metrics 
@@ -1018,7 +1018,7 @@ def refresh_metrics():
 def get_metrics_status():
     """Get status information about metrics collection."""
     # Get the most recent metrics
-    most_recent = SystemMetrics.query.order_by(
+    most_recent = db.session.query(SystemMetrics).order_by(
         SystemMetrics.timestamp.desc()).first()
     
     # Get timestamp of most recent collection
@@ -1027,18 +1027,18 @@ def get_metrics_status():
     time_since_last = (now - last_collection_time).total_seconds() if last_collection_time else None
     
     # Get metrics collection failure audit logs
-    recent_failures = AuditEntry.query.filter(
+    recent_failures = db.session.query(AuditEntry).filter(
         AuditEntry.event_type.in_(['metrics_collection_failed', 'metrics_collection_error'])
     ).order_by(AuditEntry.timestamp.desc()).limit(5).all()
     
     # Get metrics collection retry success logs
-    recent_retries = AuditEntry.query.filter_by(
+    recent_retries = db.session.query(AuditEntry).filter_by(
         event_type='metrics_collection_retry_success'
     ).order_by(AuditEntry.timestamp.desc()).limit(5).all()
     
     # Get count of metrics in the last 24 hours
     day_ago = now - timedelta(days=1)
-    count_24h = SystemMetrics.query.filter(
+    count_24h = db.session.query(SystemMetrics).filter(
         SystemMetrics.timestamp >= day_ago
     ).count()
     
@@ -1108,7 +1108,7 @@ def get_audit_entries():
     limit = request.args.get('limit', 100, type=int)
     
     # Build query
-    query = AuditEntry.query
+    query = db.session.query(AuditEntry)
     
     if from_date:
         query = query.filter(AuditEntry.timestamp >= from_date)
@@ -1141,7 +1141,7 @@ def get_audit_entries():
 @requires_auth
 def get_audit_entry(audit_id):
     """Get a specific audit entry by ID."""
-    entry = AuditEntry.query.get_or_404(audit_id)
+    entry = db.session.query(AuditEntry).get_or_404(audit_id)
     return jsonify(entry.to_dict())
 
 
