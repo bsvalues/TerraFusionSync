@@ -36,10 +36,13 @@ except ImportError:
 METRICS_AVAILABLE = True
 # Import authentication module
 try:
-    from apps.backend.api.auth import requires_auth, init_auth_routes, get_current_user
+    from apps.backend.auth import requires_auth, init_auth_routes, get_current_user
+    CUSTOM_AUTH_AVAILABLE = True
+    logger.info("Using custom authentication module")
 except ImportError:
     # Provide fallback if auth module isn't available
     logging.warning("Auth module not available, using fallback implementation")
+    CUSTOM_AUTH_AVAILABLE = False
     
     def requires_auth(f):
         """Fallback auth decorator that doesn't require authentication."""
