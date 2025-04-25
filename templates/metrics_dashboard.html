@@ -502,6 +502,30 @@
                             padding: 15
                         }
                     },
+                    datalabels: {
+                        display: function(context) {
+                            // Only show labels for every nth point to avoid clutter
+                            return context.dataIndex % 3 === 0;
+                        },
+                        backgroundColor: function(context) {
+                            return context.dataset.borderColor;
+                        },
+                        borderRadius: 4,
+                        color: 'white',
+                        font: {
+                            weight: 'bold',
+                            size: 10
+                        },
+                        padding: 4,
+                        formatter: function(value, context) {
+                            // Check if we're displaying response time or percentages
+                            if (context.dataset.label.includes('Response Time')) {
+                                return value.toFixed(2) + 's';
+                            } else {
+                                return value.toFixed(1) + '%';
+                            }
+                        }
+                    },
                     tooltip: {
                         mode: 'index',
                         intersect: false,
@@ -518,7 +542,12 @@
                                 if (label) {
                                     label += ': ';
                                 }
-                                label += context.parsed.y + '%';
+                                // Check if we're displaying response time or percentages
+                                if (label.includes('Response Time')) {
+                                    label += context.parsed.y.toFixed(2) + 's';
+                                } else {
+                                    label += context.parsed.y.toFixed(1) + '%';
+                                }
                                 return label;
                             }
                         }
@@ -644,20 +673,44 @@
             fetchMetricsStatus();
         });
         
-        // Fetch metrics status from the API
+        // Fetch metrics status from the API with improved error handling
         function fetchMetricsStatus() {
-            fetch('/api/metrics/status')
-                .then(response => response.json())
-                .then(data => {
-                    updateMetricsStatus(data);
-                })
-                .catch(error => {
-                    console.error('Error fetching metrics status:', error);
-                    // Show error state on failure
-                    document.getElementById('metrics-collection-status').textContent = 'Error';
-                    document.getElementById('metrics-collection-status').className = 'badge bg-danger';
-                    document.getElementById('metrics-collection-indicator').className = 'alert-indicator alert-critical';
-                });
+            // Show loading indicators while fetching
+            const metricsStatusElement = document.getElementById('metrics-collection-status');
+            const syncStatusElement = document.getElementById('syncservice-status');
+            
+            // Set loading state
+            metricsStatusElement.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Checking...';
+            syncStatusElement.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Checking...';
+            
+            fetch('/api/metrics/status', {
+                // Add timeout to prevent long-hanging requests
+                signal: AbortSignal.timeout(5000) // 5 second timeout
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                updateMetricsStatus(data);
+            })
+            .catch(error => {
+                console.error('Error fetching metrics status:', error);
+                
+                // Show detailed error state on failure
+                document.getElementById('metrics-collection-status').textContent = 'Error';
+                document.getElementById('metrics-collection-status').className = 'badge bg-danger';
+                document.getElementById('metrics-collection-indicator').className = 'alert-indicator alert-critical';
+                
+                document.getElementById('syncservice-status').textContent = 'Disconnected';
+                document.getElementById('syncservice-status').className = 'badge bg-danger';
+                document.getElementById('syncservice-indicator').className = 'alert-indicator alert-critical';
+                
+                // Show error toast with recovery instructions
+                showToast('error', 'Connection Error', 'Unable to reach metrics service. Try the Health Check button to attempt recovery.');
+            });
         }
         
         // Update metrics status indicators
@@ -752,9 +805,15 @@
             button.disabled = true;
             button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Checking...';
             
-            // Call the health check API endpoint
-            fetch('/api/trigger-health-check', {
-                method: 'POST'
+            // Show initial notification
+            showToast('warning', 'Health Check Started', 'Running comprehensive health check and recovery...');
+            
+            // Call the health check API endpoint with error handling
+            fetch('/api/service/health-check', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
             })
             .then(response => response.json())
             .then(data => {
