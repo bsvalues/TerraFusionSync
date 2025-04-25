@@ -1166,17 +1166,17 @@ def get_audit_summary():
     ).group_by(AuditEntry.severity).all()
     
     # Get latest entry timestamp
-    latest_entry = AuditEntry.query.order_by(
+    latest_entry = db.session.query(AuditEntry).order_by(
         AuditEntry.timestamp.desc()
     ).first()
     
     # Get latest error events
-    latest_errors = AuditEntry.query.filter(
+    latest_errors = db.session.query(AuditEntry).filter(
         AuditEntry.severity.in_(['error', 'critical'])
     ).order_by(AuditEntry.timestamp.desc()).limit(5).all()
     
     return jsonify({
-        "total_entries": AuditEntry.query.count(),
+        "total_entries": db.session.query(AuditEntry).count(),
         "latest_timestamp": latest_entry.timestamp.isoformat() if latest_entry else None,
         "event_type_counts": dict(event_type_counts),
         "severity_counts": dict(severity_counts),
@@ -1316,7 +1316,7 @@ def seed_initial_data():
     """Seed the database with initial data if it's empty."""
     with app.app_context():
         # Check if we have any sync pairs
-        if SyncPair.query.count() == 0:
+        if db.session.query(SyncPair).count() == 0:
             # Add some sample sync pairs
             sample_pairs = [
                 SyncPair(
