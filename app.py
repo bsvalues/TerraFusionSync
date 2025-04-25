@@ -86,6 +86,14 @@ try:
 except ImportError:
     logger.warning("Sync operations API blueprint not available")
 
+# Register validation API blueprint
+try:
+    from apps.backend.api import validation_bp
+    app.register_blueprint(validation_bp)
+    logger.info("Registered validation API blueprint")
+except ImportError:
+    logger.warning("Validation API blueprint not available")
+
 # Create database tables if they don't exist
 with app.app_context():
     db.create_all()
