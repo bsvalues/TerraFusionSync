@@ -16,12 +16,17 @@ from typing import Dict, Any, Optional, List
 from urllib.parse import urljoin
 
 from flask import Flask, jsonify, request, render_template, redirect, url_for, Response, session
-from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.orm import DeclarativeBase
 
-from models import db, SystemMetrics, AuditEntry
-from apps.backend.models.sync_pair import SyncPair
-from apps.backend.models.sync_operation import SyncOperation
+# Create and initialize the Flask app
+app = Flask(__name__)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY") or "a secret key"
+
+# Import database models
+from apps.backend.database import db, init_app
+from apps.backend.models import SyncPair, SyncOperation, AuditEntry, SystemMetrics
+
+# Initialize the database with the Flask app
+init_app(app)
 
 # Import system monitor utility if available
 try:
@@ -70,19 +75,8 @@ except ImportError:
     SYNC_API_AVAILABLE = False
     logging.warning("Sync operations API module not available")
 
-# Create and configure the Flask application
-app = Flask(__name__)
-app.secret_key = os.environ.get("SESSION_SECRET", "terraFusionSyncServiceSecret")
-
-# Configure the database connection
-app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL")
-app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-    "pool_recycle": 300,
-    "pool_pre_ping": True,
-}
-
-# Initialize the database with the Flask app
-db.init_app(app)
+# Initialize authentication routes
+init_auth_routes(app)
 
 # Register API blueprints
 try:
@@ -235,7 +229,8 @@ def collect_syncservice_metrics():
         
         # Create a new SystemMetrics record
         metrics = SystemMetrics(
-            timestamp=timestamp,
+            service="sync_service",
+            status="healthy",
             cpu_usage=system_data.get("cpu_usage_percent", 0.0),
             memory_usage=system_data.get("memory_usage_percent", 0.0),
             disk_usage=system_data.get("disk_usage_percent", 0.0),
@@ -244,6 +239,8 @@ def collect_syncservice_metrics():
             error_count=metrics_data.get("performance", {}).get("error_count", 0),
             sync_operations_count=metrics_data.get("performance", {}).get("sync_operations_count", 0)
         )
+        # Set timestamp separately
+        metrics.timestamp = timestamp
         
         # Save to database
         with app.app_context():
@@ -507,7 +504,7 @@ def root():
     """Root endpoint for the API Gateway."""
     return render_template('index.html', 
                           service_status=check_syncservice_status(),
-                          sync_pairs=SyncPair.query.all())
+                          sync_pairs=db.session.query(SyncPair).all())
 
 
 @app.route('/dashboard')
@@ -525,8 +522,8 @@ def sync_dashboard():
     user = get_current_user()
     return render_template('sync_dashboard.html',
                           user=user,
-                          sync_pairs=SyncPair.query.all(),
-                          recent_operations=SyncOperation.query.order_by(
+                          sync_pairs=db.session.query(SyncPair).all(),
+                          recent_operations=db.session.query(SyncOperation).order_by(
                               SyncOperation.started_at.desc()).limit(10).all())
 
 
@@ -537,7 +534,7 @@ def metrics_dashboard():
     user = get_current_user()
     return render_template('metrics_dashboard.html',
                           user=user,
-                          system_metrics=SystemMetrics.query.order_by(
+                          system_metrics=db.session.query(SystemMetrics).order_by(
                               SystemMetrics.timestamp.desc()).limit(100).all())
 
 
@@ -566,7 +563,7 @@ def audit_dashboard():
     severity = request.args.get('severity')
     
     # Build query
-    query = AuditEntry.query
+    query = db.session.query(AuditEntry)
     
     if from_date:
         query = query.filter(AuditEntry.timestamp >= from_date)
@@ -597,16 +594,16 @@ def audit_dashboard():
         db.func.count(AuditEntry.id)
     ).group_by(AuditEntry.severity).all()
     
-    latest_entry = AuditEntry.query.order_by(
+    latest_entry = db.session.query(AuditEntry).order_by(
         AuditEntry.timestamp.desc()
     ).first()
     
-    latest_errors = AuditEntry.query.filter(
+    latest_errors = db.session.query(AuditEntry).filter(
         AuditEntry.severity.in_(['error', 'critical'])
     ).order_by(AuditEntry.timestamp.desc()).limit(5).all()
     
     summary = {
-        "total_entries": AuditEntry.query.count(),
+        "total_entries": db.session.query(AuditEntry).count(),
         "latest_timestamp": latest_entry.timestamp if latest_entry else None,
         "event_type_counts": dict(event_type_counts),
         "severity_counts": dict(severity_counts),
@@ -1248,7 +1245,9 @@ def create_audit_log(
     severity: str = "info",
     user_id: str = None,
     username: str = None,
-    correlation_id: str = None
+    ip_address: str = None,
+    correlation_id: str = None,
+    **kwargs
 ) -> AuditEntry:
     """
     Create and save an audit log entry.
@@ -1293,9 +1292,12 @@ def create_audit_log(
         user_id=user_id,
         username=username,
         ip_address=ip_address,
-        user_agent=user_agent,
         correlation_id=correlation_id
     )
+    
+    # Set user_agent separately to avoid compatibility issues
+    if user_agent:
+        entry.user_agent = user_agent
     
     # Save to database
     db.session.add(entry)
@@ -1386,6 +1388,8 @@ def seed_initial_data():
             # Add some system metrics
             sample_metrics = [
                 SystemMetrics(
+                    service="sync_service",
+                    status="healthy",
                     timestamp=datetime(2023, 1, 1, 8, 0, 0),
                     cpu_usage=45.2,
                     memory_usage=60.5,
@@ -1396,6 +1400,8 @@ def seed_initial_data():
                     sync_operations_count=1
                 ),
                 SystemMetrics(
+                    service="sync_service",
+                    status="healthy",
                     timestamp=datetime(2023, 1, 1, 9, 0, 0),
                     cpu_usage=78.3,
                     memory_usage=72.8,

@@ -1,13 +1,19 @@
 """
-Models package for TerraFusion SyncService platform.
+TerraFusion SyncService models package.
 
-This package contains SQLAlchemy models for the database.
+This package contains the database models for the TerraFusion SyncService.
 """
 
-from app import db
-from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.orm import DeclarativeBase
-
-# Import all models to make them available through the package
+from .base import Base
 from .sync_pair import SyncPair
 from .sync_operation import SyncOperation
+from .audit import AuditEntry
+from .system_metrics import SystemMetrics
+
+__all__ = [
+    'Base',
+    'SyncPair',
+    'SyncOperation',
+    'AuditEntry',
+    'SystemMetrics',
+]
