@@ -16,20 +16,47 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger("self_healing_test")
 
 # Import self-healing components
-from apps.backend.syncservice.syncservice.core.self_healing import (
-    CircuitBreaker,
-    CircuitOpenError,
-    CircuitState,
-    FixedRetryStrategy,
-    LinearRetryStrategy,
-    ExponentialRetryStrategy,
-    ExponentialWithJitterRetryStrategy,
-    RetryStrategyType,
-    SelfHealingOrchestrator,
-    HealthCheck,
-    HealthStatus,
-    ResourceType
-)
+try:
+    # Try direct import first
+    from apps.backend.syncservice.syncservice.core.self_healing import (
+        CircuitBreaker,
+        CircuitOpenError,
+        CircuitState,
+        FixedRetryStrategy,
+        LinearRetryStrategy,
+        ExponentialRetryStrategy,
+        ExponentialWithJitterRetryStrategy,
+        RetryStrategyType,
+        SelfHealingOrchestrator,
+        HealthCheck,
+        HealthStatus,
+        ResourceType
+    )
+except ImportError:
+    # Fall back to direct import of the files
+    import sys
+    import os
+    
+    # Add the core directory to the Python path
+    sys.path.append(os.path.abspath("apps/backend/syncservice/syncservice/core"))
+    
+    # Now import from the direct modules
+    from self_healing.circuit_breaker import CircuitBreaker, CircuitOpenError, CircuitState
+    from self_healing.retry_strategy import (
+        BaseRetryStrategy as _BaseRetryStrategy,  # Import but rename to avoid conflict
+        FixedRetryStrategy, 
+        LinearRetryStrategy,
+        ExponentialRetryStrategy,
+        ExponentialWithJitterRetryStrategy,
+        RetryStrategyType,
+        create_retry_strategy
+    )
+    from self_healing.orchestrator import (
+        SelfHealingOrchestrator,
+        HealthCheck,
+        HealthStatus,
+        ResourceType
+    )
 
 
 def test_circuit_breaker():
@@ -344,18 +371,27 @@ def test_integrated_self_healing():
 
 if __name__ == "__main__":
     try:
-        test_circuit_breaker()
-        print("\n")
-        
-        test_retry_strategies()
-        print("\n")
-        
-        test_self_healing_orchestrator()
-        print("\n")
-        
-        test_integrated_self_healing()
-        
-        logger.info("All tests completed successfully!")
+        import sys
+        # Check if a specific test was requested
+        if len(sys.argv) > 1:
+            test_name = sys.argv[1]
+            if test_name == "circuit_breaker":
+                test_circuit_breaker()
+            elif test_name == "retry":
+                test_retry_strategies()
+            elif test_name == "orchestrator":
+                test_self_healing_orchestrator()
+            elif test_name == "integrated":
+                test_integrated_self_healing()
+            else:
+                logger.error(f"Unknown test: {test_name}")
+                logger.info("Available tests: circuit_breaker, retry, orchestrator, integrated")
+        else:
+            # Just run the circuit breaker test by default
+            logger.info("Running circuit breaker test only. Use argument to specify test.")
+            test_circuit_breaker()
+            
+        logger.info("Test completed successfully!")
     except Exception as e:
         logger.error(f"Test failed with error: {str(e)}")
         raise

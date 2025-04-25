@@ -10,7 +10,7 @@ import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from ...core.self_healing import (
+from .self_healing import (
     SelfHealingOrchestrator,
     ResourceType,
     HealthStatus,
