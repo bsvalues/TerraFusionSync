@@ -1,136 +1,142 @@
+#!/usr/bin/env python3
 """
-Test script to verify the health check endpoints.
+Health Endpoint Smoke Test Script
 
-This script tests the health check endpoints of both the API Gateway and SyncService
-to ensure they're providing accurate and consistent information.
+This script tests the health endpoints of both the API Gateway (port 5000)
+and the SyncService (port 8080) to verify they are working correctly.
+
+Usage:
+    python test_health_endpoints.py
 """
-import requests
-import logging
-import sys
+
+import argparse
 import json
+import sys
+import time
+from typing import Dict, List, Tuple
+import requests
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
-# Endpoints to test
-API_GATEWAY = "http://0.0.0.0:5000"
-SYNCSERVICE = "http://0.0.0.0:8080"
+# Define the services and their health endpoints
+SERVICES = {
+    "API Gateway": {
+        "base_url": "http://localhost:5000",
+        "endpoints": {
+            "liveness": "/health/live",
+            "readiness": "/health/ready"
+        }
+    },
+    "SyncService": {
+        "base_url": "http://localhost:8080",
+        "endpoints": {
+            "health": "/health"
+        }
+    }
+}
 
-def test_api_gateway_health_endpoints():
-    """Test all health-related endpoints of the API Gateway."""
-    endpoints = [
-        '/api/status',
-        '/health/live',
-        '/health/ready'
-    ]
+
+def test_endpoint(url: str, expected_status: int = 200) -> Tuple[bool, dict, int]:
+    """
+    Test a health endpoint and return the result.
     
-    results = {}
-    all_successful = True
-    
-    for endpoint in endpoints:
+    Args:
+        url: The URL to test
+        expected_status: The expected HTTP status code (default: 200)
+        
+    Returns:
+        Tuple of (success, response_json, status_code)
+    """
+    try:
+        response = requests.get(url, timeout=5)
+        status_code = response.status_code
+        
         try:
-            url = f"{API_GATEWAY}{endpoint}"
-            logger.info(f"Testing API Gateway endpoint: {url}")
-            response = requests.get(url, timeout=5)
-            
-            if response.status_code in (200, 503):  # 503 is acceptable for readiness check
-                logger.info(f"✅ Endpoint {endpoint} returned status {response.status_code}")
-                results[endpoint] = {
-                    "status_code": response.status_code,
-                    "response": response.json()
-                }
-            else:
-                logger.error(f"❌ Endpoint {endpoint} returned unexpected status {response.status_code}")
-                all_successful = False
-                results[endpoint] = {
-                    "status_code": response.status_code,
-                    "error": f"Unexpected status code: {response.status_code}"
-                }
-        except Exception as e:
-            logger.error(f"❌ Error accessing endpoint {endpoint}: {str(e)}")
-            all_successful = False
-            results[endpoint] = {
-                "error": str(e)
-            }
-    
-    return all_successful, results
+            response_json = response.json()
+        except ValueError:
+            response_json = {"error": "Invalid JSON response", "text": response.text}
+        
+        return status_code == expected_status, response_json, status_code
+    except requests.RequestException as e:
+        return False, {"error": str(e)}, 0
 
-def test_syncservice_health_endpoints():
-    """Test all health-related endpoints of the SyncService."""
-    endpoints = [
-        '/health',
-        '/health/live',
-        '/health/ready'
-    ]
+
+def run_tests(verbose: bool = False) -> Tuple[bool, List[Dict]]:
+    """
+    Run tests on all health endpoints.
     
-    results = {}
-    all_successful = True
+    Args:
+        verbose: Whether to print verbose output
+        
+    Returns:
+        Tuple of (all_passed, results)
+    """
+    results = []
+    all_passed = True
     
-    for endpoint in endpoints:
-        try:
-            url = f"{SYNCSERVICE}{endpoint}"
-            logger.info(f"Testing SyncService endpoint: {url}")
-            response = requests.get(url, timeout=5)
+    for service_name, service_config in SERVICES.items():
+        base_url = service_config["base_url"]
+        
+        for endpoint_name, endpoint_path in service_config["endpoints"].items():
+            url = f"{base_url}{endpoint_path}"
             
-            if response.status_code in (200, 503):  # 503 is acceptable for readiness check
-                logger.info(f"✅ Endpoint {endpoint} returned status {response.status_code}")
-                results[endpoint] = {
-                    "status_code": response.status_code,
-                    "response": response.json()
-                }
-            else:
-                logger.error(f"❌ Endpoint {endpoint} returned unexpected status {response.status_code}")
-                all_successful = False
-                results[endpoint] = {
-                    "status_code": response.status_code,
-                    "error": f"Unexpected status code: {response.status_code}"
-                }
-        except Exception as e:
-            logger.error(f"❌ Error accessing endpoint {endpoint}: {str(e)}")
-            all_successful = False
-            results[endpoint] = {
-                "error": str(e)
+            if verbose:
+                print(f"Testing {service_name} {endpoint_name} endpoint: {url}")
+            
+            success, response, status_code = test_endpoint(url)
+            all_passed = all_passed and success
+            
+            result = {
+                "service": service_name,
+                "endpoint": endpoint_name,
+                "url": url,
+                "success": success,
+                "status_code": status_code,
+                "response": response
             }
+            
+            results.append(result)
+            
+            if verbose:
+                status = "✅ PASSED" if success else "❌ FAILED"
+                print(f"  {status} (Status: {status_code})")
+                print(f"  Response: {json.dumps(response, indent=2)}")
+                print()
     
-    return all_successful, results
+    return all_passed, results
+
 
 def main():
-    """Main function to run the tests."""
-    logger.info("Testing health endpoints...")
+    """Main entry point."""
+    parser = argparse.ArgumentParser(description="Test health endpoints of TerraFusion services")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
+    parser.add_argument("-w", "--wait", type=int, default=0, help="Wait time in seconds before running tests")
+    args = parser.parse_args()
     
-    # Test API Gateway health endpoints
-    api_success, api_results = test_api_gateway_health_endpoints()
+    if args.wait > 0:
+        print(f"Waiting {args.wait} seconds for services to start...")
+        time.sleep(args.wait)
     
-    # Test SyncService health endpoints
-    sync_success, sync_results = test_syncservice_health_endpoints()
+    print("Testing health endpoints...")
+    all_passed, results = run_tests(args.verbose)
     
-    # Print detailed results
-    logger.info("\n===== API Gateway Health Endpoints =====")
-    for endpoint, result in api_results.items():
-        if 'error' in result:
-            logger.info(f"{endpoint}: ERROR - {result['error']}")
-        else:
-            status = result['status_code']
-            resp = json.dumps(result['response'], indent=2)
-            logger.info(f"{endpoint}: {status}\n{resp}")
-    
-    logger.info("\n===== SyncService Health Endpoints =====")
-    for endpoint, result in sync_results.items():
-        if 'error' in result:
-            logger.info(f"{endpoint}: ERROR - {result['error']}")
-        else:
-            status = result['status_code']
-            resp = json.dumps(result['response'], indent=2)
-            logger.info(f"{endpoint}: {status}\n{resp}")
-    
-    # Summarize results
-    if api_success and sync_success:
-        logger.info("\n✅ All health endpoints are working correctly!")
+    if all_passed:
+        print("\n✅ All health endpoint tests PASSED")
         return 0
     else:
-        logger.error("\n❌ Some health endpoints failed. See logs for details.")
+        print("\n❌ Some health endpoint tests FAILED")
+        if not args.verbose:
+            print("\nRun with --verbose for detailed information")
+            
+            # Print a summary of failures
+            for result in results:
+                if not result["success"]:
+                    service = result["service"]
+                    endpoint = result["endpoint"]
+                    status = result["status_code"]
+                    print(f"- {service} {endpoint}: Failed with status {status}")
+        
         return 1
+
 
 if __name__ == "__main__":
     sys.exit(main())

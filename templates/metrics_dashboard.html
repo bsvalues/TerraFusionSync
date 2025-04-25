@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Metrics Dashboard - TerraFusion SyncService</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.0/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .metric-card {
+            transition: transform 0.2s;
+        }
+        .metric-card:hover {
+            transform: translateY(-5px);
+        }
+        .value-up {
+            color: #198754;
+        }
+        .value-down {
+            color: #dc3545;
+        }
+        .alert-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+        .alert-normal {
+            background-color: #20c997;
+        }
+        .alert-warning {
+            background-color: #ffc107;
+        }
+        .alert-critical {
+            background-color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-arrow-repeat me-2"></i>
+                TerraFusion SyncService
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/dashboard">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/dashboard/sync">Sync Operations</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/dashboard/metrics">Metrics</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/dashboard/audit">Audit Trail</a>
+                    </li>
+                </ul>
+                <ul class="navbar-nav ms-auto">
+                    {% if user %}
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="bi bi-person-circle me-1"></i>
+                            {{ user.name }}
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarDropdown">
+                            <li><a class="dropdown-item" href="/profile">Profile</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="/logout">Logout</a></li>
+                        </ul>
+                    </li>
+                    {% else %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="/login">Login</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid py-4">
+        <div class="row mb-4">
+            <div class="col">
+                <h1 class="h3">System Metrics</h1>
+                <p class="text-muted">Real-time performance monitoring of the TerraFusion platform</p>
+            </div>
+            <div class="col-auto">
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-outline-secondary">
+                        <i class="bi bi-download me-1"></i>Export
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" id="refresh-metrics">
+                        <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card metric-card h-100">
+                    <div class="card-body text-center">
+                        <div class="display-4 text-primary mb-2">
+                            {{ system_metrics[0].cpu_usage|round(1) }}%
+                        </div>
+                        <h5 class="card-title mb-0">CPU Usage</h5>
+                        <p class="text-muted small">Current system processor usage</p>
+                        {% if system_metrics|length > 1 %}
+                            {% if system_metrics[0].cpu_usage > system_metrics[1].cpu_usage %}
+                                <div class="small value-up"><i class="bi bi-arrow-up-right"></i> {{ ((system_metrics[0].cpu_usage - system_metrics[1].cpu_usage) / system_metrics[1].cpu_usage * 100)|round(1) }}% from previous</div>
+                            {% else %}
+                                <div class="small value-down"><i class="bi bi-arrow-down-right"></i> {{ ((system_metrics[1].cpu_usage - system_metrics[0].cpu_usage) / system_metrics[1].cpu_usage * 100)|round(1) }}% from previous</div>
+                            {% endif %}
+                        {% endif %}
+                    </div>
+                    <div class="card-footer bg-transparent">
+                        <div class="progress" style="height: 5px;">
+                            <div class="progress-bar {% if system_metrics[0].cpu_usage > 80 %}bg-danger{% elif system_metrics[0].cpu_usage > 60 %}bg-warning{% else %}bg-success{% endif %}" role="progressbar" style="width: {{ system_metrics[0].cpu_usage }}%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card metric-card h-100">
+                    <div class="card-body text-center">
+                        <div class="display-4 text-primary mb-2">
+                            {{ system_metrics[0].memory_usage|round(1) }}%
+                        </div>
+                        <h5 class="card-title mb-0">Memory Usage</h5>
+                        <p class="text-muted small">Current RAM utilization</p>
+                        {% if system_metrics|length > 1 %}
+                            {% if system_metrics[0].memory_usage > system_metrics[1].memory_usage %}
+                                <div class="small value-up"><i class="bi bi-arrow-up-right"></i> {{ ((system_metrics[0].memory_usage - system_metrics[1].memory_usage) / system_metrics[1].memory_usage * 100)|round(1) }}% from previous</div>
+                            {% else %}
+                                <div class="small value-down"><i class="bi bi-arrow-down-right"></i> {{ ((system_metrics[1].memory_usage - system_metrics[0].memory_usage) / system_metrics[1].memory_usage * 100)|round(1) }}% from previous</div>
+                            {% endif %}
+                        {% endif %}
+                    </div>
+                    <div class="card-footer bg-transparent">
+                        <div class="progress" style="height: 5px;">
+                            <div class="progress-bar {% if system_metrics[0].memory_usage > 80 %}bg-danger{% elif system_metrics[0].memory_usage > 60 %}bg-warning{% else %}bg-success{% endif %}" role="progressbar" style="width: {{ system_metrics[0].memory_usage }}%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card metric-card h-100">
+                    <div class="card-body text-center">
+                        <div class="display-4 text-primary mb-2">
+                            {{ system_metrics[0].disk_usage|round(1) }}%
+                        </div>
+                        <h5 class="card-title mb-0">Disk Usage</h5>
+                        <p class="text-muted small">Storage space utilization</p>
+                        {% if system_metrics|length > 1 %}
+                            {% if system_metrics[0].disk_usage > system_metrics[1].disk_usage %}
+                                <div class="small value-up"><i class="bi bi-arrow-up-right"></i> {{ ((system_metrics[0].disk_usage - system_metrics[1].disk_usage) / system_metrics[1].disk_usage * 100)|round(1) }}% from previous</div>
+                            {% else %}
+                                <div class="small value-down"><i class="bi bi-arrow-down-right"></i> {{ ((system_metrics[1].disk_usage - system_metrics[0].disk_usage) / system_metrics[1].disk_usage * 100)|round(1) }}% from previous</div>
+                            {% endif %}
+                        {% endif %}
+                    </div>
+                    <div class="card-footer bg-transparent">
+                        <div class="progress" style="height: 5px;">
+                            <div class="progress-bar {% if system_metrics[0].disk_usage > 85 %}bg-danger{% elif system_metrics[0].disk_usage > 70 %}bg-warning{% else %}bg-success{% endif %}" role="progressbar" style="width: {{ system_metrics[0].disk_usage }}%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card metric-card h-100">
+                    <div class="card-body text-center">
+                        <div class="display-4 text-primary mb-2">
+                            {{ system_metrics[0].response_time|round(2) }}s
+                        </div>
+                        <h5 class="card-title mb-0">Response Time</h5>
+                        <p class="text-muted small">Average API response latency</p>
+                        {% if system_metrics|length > 1 %}
+                            {% if system_metrics[0].response_time > system_metrics[1].response_time %}
+                                <div class="small value-up"><i class="bi bi-arrow-up-right"></i> {{ ((system_metrics[0].response_time - system_metrics[1].response_time) / system_metrics[1].response_time * 100)|round(1) }}% from previous</div>
+                            {% else %}
+                                <div class="small value-down"><i class="bi bi-arrow-down-right"></i> {{ ((system_metrics[1].response_time - system_metrics[0].response_time) / system_metrics[1].response_time * 100)|round(1) }}% from previous</div>
+                            {% endif %}
+                        {% endif %}
+                    </div>
+                    <div class="card-footer bg-transparent">
+                        <div class="progress" style="height: 5px;">
+                            <div class="progress-bar {% if system_metrics[0].response_time > 2.0 %}bg-danger{% elif system_metrics[0].response_time > 1.0 %}bg-warning{% else %}bg-success{% endif %}" role="progressbar" style="width: {{ (system_metrics[0].response_time / 5.0 * 100)|round(0) }}%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mb-4">
+            <div class="col-lg-8">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Historical Performance</h5>
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button type="button" class="btn btn-outline-secondary active" id="cpu-btn">CPU</button>
+                            <button type="button" class="btn btn-outline-secondary" id="memory-btn">Memory</button>
+                            <button type="button" class="btn btn-outline-secondary" id="response-btn">Response Time</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="metricsChart" height="250"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-4">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0">System Status</h5>
+                    </div>
+                    <div class="card-body">
+                        <ul class="list-group list-group-flush">
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="alert-indicator {% if system_metrics[0].cpu_usage < 70 %}alert-normal{% elif system_metrics[0].cpu_usage < 90 %}alert-warning{% else %}alert-critical{% endif %}"></span>
+                                    CPU Status
+                                </div>
+                                <span class="badge {% if system_metrics[0].cpu_usage < 70 %}bg-success{% elif system_metrics[0].cpu_usage < 90 %}bg-warning{% else %}bg-danger{% endif %}">
+                                    {% if system_metrics[0].cpu_usage < 70 %}Normal{% elif system_metrics[0].cpu_usage < 90 %}Warning{% else %}Critical{% endif %}
+                                </span>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="alert-indicator {% if system_metrics[0].memory_usage < 70 %}alert-normal{% elif system_metrics[0].memory_usage < 90 %}alert-warning{% else %}alert-critical{% endif %}"></span>
+                                    Memory Status
+                                </div>
+                                <span class="badge {% if system_metrics[0].memory_usage < 70 %}bg-success{% elif system_metrics[0].memory_usage < 90 %}bg-warning{% else %}bg-danger{% endif %}">
+                                    {% if system_metrics[0].memory_usage < 70 %}Normal{% elif system_metrics[0].memory_usage < 90 %}Warning{% else %}Critical{% endif %}
+                                </span>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="alert-indicator {% if system_metrics[0].disk_usage < 80 %}alert-normal{% elif system_metrics[0].disk_usage < 90 %}alert-warning{% else %}alert-critical{% endif %}"></span>
+                                    Disk Status
+                                </div>
+                                <span class="badge {% if system_metrics[0].disk_usage < 80 %}bg-success{% elif system_metrics[0].disk_usage < 90 %}bg-warning{% else %}bg-danger{% endif %}">
+                                    {% if system_metrics[0].disk_usage < 80 %}Normal{% elif system_metrics[0].disk_usage < 90 %}Warning{% else %}Critical{% endif %}
+                                </span>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="alert-indicator {% if system_metrics[0].response_time < 1.0 %}alert-normal{% elif system_metrics[0].response_time < 2.0 %}alert-warning{% else %}alert-critical{% endif %}"></span>
+                                    Response Time
+                                </div>
+                                <span class="badge {% if system_metrics[0].response_time < 1.0 %}bg-success{% elif system_metrics[0].response_time < 2.0 %}bg-warning{% else %}bg-danger{% endif %}">
+                                    {% if system_metrics[0].response_time < 1.0 %}Normal{% elif system_metrics[0].response_time < 2.0 %}Warning{% else %}Critical{% endif %}
+                                </span>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="alert-indicator {% if system_metrics[0].error_count == 0 %}alert-normal{% elif system_metrics[0].error_count < 5 %}alert-warning{% else %}alert-critical{% endif %}"></span>
+                                    Error Rate
+                                </div>
+                                <span class="badge {% if system_metrics[0].error_count == 0 %}bg-success{% elif system_metrics[0].error_count < 5 %}bg-warning{% else %}bg-danger{% endif %}">
+                                    {% if system_metrics[0].error_count == 0 %}No Errors{% elif system_metrics[0].error_count < 5 %}{{ system_metrics[0].error_count }} Errors{% else %}Critical{% endif %}
+                                </span>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="card-footer bg-transparent">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <small class="text-muted">Last updated: {{ system_metrics[0].timestamp }}</small>
+                            <button class="btn btn-sm btn-outline-primary" id="check-status-btn">Check Now</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Recent Metrics Data</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover table-striped mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Timestamp</th>
+                                        <th>CPU Usage</th>
+                                        <th>Memory Usage</th>
+                                        <th>Disk Usage</th>
+                                        <th>Active Connections</th>
+                                        <th>Response Time</th>
+                                        <th>Error Count</th>
+                                        <th>Sync Operations</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for metric in system_metrics %}
+                                    <tr>
+                                        <td>{{ metric.timestamp }}</td>
+                                        <td class="{% if metric.cpu_usage > 80 %}text-danger{% elif metric.cpu_usage > 60 %}text-warning{% endif %}">{{ metric.cpu_usage }}%</td>
+                                        <td class="{% if metric.memory_usage > 80 %}text-danger{% elif metric.memory_usage > 60 %}text-warning{% endif %}">{{ metric.memory_usage }}%</td>
+                                        <td class="{% if metric.disk_usage > 85 %}text-danger{% elif metric.disk_usage > 70 %}text-warning{% endif %}">{{ metric.disk_usage }}%</td>
+                                        <td>{{ metric.active_connections }}</td>
+                                        <td class="{% if metric.response_time > 2.0 %}text-danger{% elif metric.response_time > 1.0 %}text-warning{% endif %}">{{ metric.response_time }}s</td>
+                                        <td class="{% if metric.error_count > 5 %}text-danger{% elif metric.error_count > 0 %}text-warning{% endif %}">{{ metric.error_count }}</td>
+                                        <td>{{ metric.sync_operations_count }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Prepare data for charts
+        const timestamps = {{ system_metrics|map(attribute='timestamp')|list|tojson }};
+        const cpuData = {{ system_metrics|map(attribute='cpu_usage')|list|tojson }};
+        const memoryData = {{ system_metrics|map(attribute='memory_usage')|list|tojson }};
+        const responseTimeData = {{ system_metrics|map(attribute='response_time')|list|tojson }};
+        
+        // Reverse arrays to show chronological order
+        timestamps.reverse();
+        cpuData.reverse();
+        memoryData.reverse();
+        responseTimeData.reverse();
+        
+        // Format timestamps for display
+        const formattedLabels = timestamps.map(timestamp => {
+            const date = new Date(timestamp);
+            return date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        });
+        
+        // Initialize chart
+        const ctx = document.getElementById('metricsChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: formattedLabels,
+                datasets: [{
+                    label: 'CPU Usage (%)',
+                    data: cpuData,
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    tension: 0.4,
+                    borderWidth: 2,
+                    pointRadius: 3,
+                    pointBackgroundColor: 'rgba(75, 192, 192, 1)',
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        title: {
+                            display: true,
+                            text: 'Percentage'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Time'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                    }
+                }
+            }
+        });
+        
+        // Switch between metrics
+        document.getElementById('cpu-btn').addEventListener('click', function() {
+            updateChart('CPU Usage (%)', cpuData, 'rgba(75, 192, 192, 1)', 'rgba(75, 192, 192, 0.2)');
+            setActiveButton('cpu-btn');
+        });
+        
+        document.getElementById('memory-btn').addEventListener('click', function() {
+            updateChart('Memory Usage (%)', memoryData, 'rgba(255, 159, 64, 1)', 'rgba(255, 159, 64, 0.2)');
+            setActiveButton('memory-btn');
+        });
+        
+        document.getElementById('response-btn').addEventListener('click', function() {
+            updateChart('Response Time (s)', responseTimeData, 'rgba(153, 102, 255, 1)', 'rgba(153, 102, 255, 0.2)');
+            setActiveButton('response-btn');
+        });
+        
+        function updateChart(label, data, borderColor, backgroundColor) {
+            chart.data.datasets[0].label = label;
+            chart.data.datasets[0].data = data;
+            chart.data.datasets[0].borderColor = borderColor;
+            chart.data.datasets[0].backgroundColor = backgroundColor;
+            chart.data.datasets[0].pointBackgroundColor = borderColor;
+            
+            // Adjust scale if showing response time
+            if (label.includes('Response')) {
+                chart.options.scales.y.max = Math.max(...responseTimeData) * 1.2;
+            } else {
+                chart.options.scales.y.max = 100;
+            }
+            
+            chart.update();
+        }
+        
+        function setActiveButton(activeId) {
+            ['cpu-btn', 'memory-btn', 'response-btn'].forEach(id => {
+                document.getElementById(id).classList.remove('active');
+            });
+            document.getElementById(activeId).classList.add('active');
+        }
+        
+        // Refresh metrics
+        document.getElementById('refresh-metrics').addEventListener('click', function() {
+            window.location.reload();
+        });
+        
+        // Check status
+        document.getElementById('check-status-btn').addEventListener('click', function() {
+            window.location.reload();
+        });
+    });
+    </script>
+</body>
+</html>

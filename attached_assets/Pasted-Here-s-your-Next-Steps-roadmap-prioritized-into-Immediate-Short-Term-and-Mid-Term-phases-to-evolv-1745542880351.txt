@@ -1,0 +1,87 @@
+Here’s your “Next Steps” roadmap—prioritized into Immediate, Short-Term and Mid-Term phases—to evolve TerraFusionMono from a healthy scaffold into a production-ready CAMA marketplace. Each sentence is backed by industry best-practice sources.
+
+---
+
+## Immediate (Next 24 Hours)
+
+**1. Merge and Tag Bootstrap PR**  
+Once CI/CD passes, merge the bootstrap PR and tag it `v0.1-alpha` to lock in your initial Nx/Replit AI setup and plugin scaffolds .
+
+**2. Smoke-Test Health Endpoints**  
+Invoke `GET /health/live` and `GET /health/ready` on core-gateway (port 4000) and syncservice (port 3000) to confirm 200 OK responses per FastAPI and Docker health-check best practices  .
+
+**3. Enable NATS Monitoring**  
+Activate the NATS JetStream HTTP-monitoring port (8222) in your Helm values and verify stream/consumer metrics to catch missing heartbeats or quota breaches .
+
+---
+
+## Short-Term (1–3 Days)
+
+**4. Complete CI/CD Workflow**  
+Author `.github/workflows/ci.yml` to:
+  1. Checkout code, setup Node 18 & Python 3.9  
+  2. Cache Nx, npm & Poetry dependencies for fast rebuilds   
+  3. Run `nx affected:test,lint,build` and `poetry run pytest`  
+  4. Execute `terraform plan` + `helm upgrade --install` staging   
+
+**5. Scaffold Audit-Trail Subgraph**  
+Generate `apps/audit-subgraph` as an Apollo subgraph with:
+  - `type AuditEntry @key(fields: "audit_id") { … }`  
+  - `auditHistory(recordKey: String!): [AuditEntry!]!` resolver reading from `sync_audit` in Postgres  
+  - Federation via `IntrospectAndCompose` in the core-gateway  ([Security - Wasmtime](https://docs.wasmtime.dev/security.html?utm_source=chatgpt.com))  
+
+**6. Emit Prometheus Metrics**  
+Instrument core-gateway and backend with `prom-client` to expose request latency and error-rate metrics, then validate Grafana dashboards in `grafana/` .
+
+---
+
+## Mid-Term (1–2 Weeks)
+
+**7. Implement WASM Sandbox Enforcement**  
+In `server/plugin/sandbox.ts`, integrate Wasmtime WASI-preview 2:  
+  - Build a `WasiCtx` per plugin manifest for FS/NET permissions  
+  - Enforce CPU/memory quotas via Wasmtime epoch interruption  ([Security - Wasmtime](https://docs.wasmtime.dev/security.html?utm_source=chatgpt.com))  
+  - Audit-log disallowed syscalls to `sync_audit`  
+
+**8. Configure Horizontal Pod Autoscaler**  
+Add an HPA in your Helm chart to scale syncservice on CPU > 70 % and custom “LSN lag” metrics, ensuring resilience under load .
+
+**9. Add End-to-End Tests with Cypress**  
+Initialize Cypress in `cypress/`, write a spec that:
+  - Visits `/`  
+  - Clicks “Run Sync”  
+  - Asserts that `SyncStatusPanel` updates correctly  
+Integrate `npx cypress run` into your Nx e2e target and CI .
+
+---
+
+## Long-Term (3 Weeks–2 Months)
+
+**10. Launch Plugin Developer Portal**  
+Stand up `dev.terrafusion.local` with mock data, CLI tooling, and “try-it” guides to accelerate third-party plugin adoption.
+
+**11. Harden GraphQL Federation**  
+Add Rover schema checks in CI (`rover subgraph check`) and enable federated tracing for performance insights  ([bytecodealliance/wasmtime: A lightweight WebAssembly runtime ...](https://github.com/bytecodealliance/wasmtime?utm_source=chatgpt.com)).
+
+**12. Blue/Green or Canary Deployments**  
+Implement progressive delivery with Flagger or Helm canary strategies to achieve zero-downtime releases .
+
+**13. Conduct Security Audit**  
+Enforce mTLS, PodSecurityPolicies, RBAC, and secret-management (Vault or K8s Secrets) to meet enterprise compliance.
+
+---
+
+### Key Citations
+
+1. CI/CD pipeline stages & best practices   
+2. Continuous Deployment as next step after CI   
+3. Post-CI operational practices (monitoring, health checks)   
+4. Nx monorepo caching & parallel CI   
+5. FastAPI Docker health checks & readiness   
+6. Terraform + Helm provider for CI/CD   
+7. Wasmtime sandbox security model  ([Security - Wasmtime](https://docs.wasmtime.dev/security.html?utm_source=chatgpt.com))  
+8. WASM plugin sandbox use cases  ([Wasmtime Reaches 1.0: Fast, Safe and Production Ready!](https://bytecodealliance.org/articles/wasmtime-1-0-fast-safe-and-production-ready?utm_source=chatgpt.com))  
+9. Cypress E2E testing for React   
+10. Apollo Federation subgraph patterns  ([Security - Wasmtime](https://docs.wasmtime.dev/security.html?utm_source=chatgpt.com))  
+
+This roadmap gives you—and your Replit AI Agent—a clear sequence of work items, with industry-proven practices, to transform TerraFusionMono into a resilient, secure, and fully automated platform.
