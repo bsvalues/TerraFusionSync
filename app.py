@@ -125,6 +125,27 @@ def collect_syncservice_metrics():
             db.session.add(metrics)
             db.session.commit()
             logger.info(f"Stored SyncService metrics at {timestamp}")
+            
+            # Create audit log entry for metrics collection
+            try:
+                create_audit_log(
+                    event_type="metrics_collected",
+                    resource_type="system_metrics",
+                    description=f"Collected system metrics from SyncService (CPU: {metrics.cpu_usage:.1f}%, Memory: {metrics.memory_usage:.1f}%)",
+                    severity="info",
+                    previous_state=None,
+                    new_state={
+                        "cpu_usage": metrics.cpu_usage,
+                        "memory_usage": metrics.memory_usage,
+                        "disk_usage": metrics.disk_usage,
+                        "active_connections": metrics.active_connections,
+                        "error_count": metrics.error_count,
+                        "sync_operations_count": metrics.sync_operations_count
+                    }
+                )
+                logger.info("Created audit log entry for metrics collection")
+            except Exception as e:
+                logger.error(f"Failed to create audit log for metrics collection: {str(e)}")
         
         return metrics_data
     except Exception as e:
