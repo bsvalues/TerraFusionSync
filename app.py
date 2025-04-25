@@ -132,6 +132,84 @@ def metrics_dashboard():
                               SystemMetrics.timestamp.desc()).limit(100).all())
 
 
+@app.route('/dashboard/audit')
+@requires_auth
+def audit_dashboard():
+    """Audit trail dashboard."""
+    user = get_current_user()
+    
+    # Parse query parameters
+    try:
+        from_date = request.args.get('from_date')
+        if from_date:
+            from_date = datetime.fromisoformat(from_date.replace('Z', '+00:00'))
+        
+        to_date = request.args.get('to_date')
+        if to_date:
+            to_date = datetime.fromisoformat(to_date.replace('Z', '+00:00'))
+    except ValueError:
+        # If dates are invalid, ignore them
+        from_date = None
+        to_date = None
+    
+    event_type = request.args.get('event_type')
+    resource_type = request.args.get('resource_type')
+    severity = request.args.get('severity')
+    
+    # Build query
+    query = AuditEntry.query
+    
+    if from_date:
+        query = query.filter(AuditEntry.timestamp >= from_date)
+    
+    if to_date:
+        query = query.filter(AuditEntry.timestamp <= to_date)
+    
+    if event_type:
+        query = query.filter(AuditEntry.event_type == event_type)
+    
+    if resource_type:
+        query = query.filter(AuditEntry.resource_type == resource_type)
+    
+    if severity:
+        query = query.filter(AuditEntry.severity == severity)
+    
+    # Get audit entries with pagination
+    audit_entries = query.order_by(AuditEntry.timestamp.desc()).limit(100).all()
+    
+    # Get summary data for the dashboard
+    event_type_counts = db.session.query(
+        AuditEntry.event_type, 
+        db.func.count(AuditEntry.id)
+    ).group_by(AuditEntry.event_type).all()
+    
+    severity_counts = db.session.query(
+        AuditEntry.severity, 
+        db.func.count(AuditEntry.id)
+    ).group_by(AuditEntry.severity).all()
+    
+    latest_entry = AuditEntry.query.order_by(
+        AuditEntry.timestamp.desc()
+    ).first()
+    
+    latest_errors = AuditEntry.query.filter(
+        AuditEntry.severity.in_(['error', 'critical'])
+    ).order_by(AuditEntry.timestamp.desc()).limit(5).all()
+    
+    summary = {
+        "total_entries": AuditEntry.query.count(),
+        "latest_timestamp": latest_entry.timestamp if latest_entry else None,
+        "event_type_counts": dict(event_type_counts),
+        "severity_counts": dict(severity_counts),
+        "latest_errors": latest_errors
+    }
+    
+    return render_template('audit_dashboard.html',
+                          user=user,
+                          audit_entries=audit_entries,
+                          summary=summary)
+
+
 @app.route('/api/docs')
 def api_docs():
     """Redirect to the API documentation."""
@@ -220,31 +298,151 @@ def get_sync_pairs():
     return jsonify([pair.to_dict() for pair in pairs])
 
 
-@app.route('/api/sync-pairs/<int:pair_id>', methods=['GET'])
+@app.route('/api/sync-pairs/<int:pair_id>', methods=['GET', 'PUT'])
 @requires_auth
 def get_sync_pair(pair_id):
-    """Get a specific sync pair by ID."""
+    """Get or update a specific sync pair by ID."""
     pair = SyncPair.query.get_or_404(pair_id)
-    return jsonify(pair.to_dict())
+    
+    if request.method == 'GET':
+        return jsonify(pair.to_dict())
+    
+    # Handle PUT request to update sync pair
+    if request.method == 'PUT':
+        # Get the JSON data from the request
+        data = request.json
+        
+        if not data:
+            return jsonify({
+                "error": "Missing request data",
+                "message": "Request body must contain sync pair data"
+            }), 400
+        
+        # Save previous state for audit log
+        previous_state = pair.to_dict()
+        
+        # Update allowed fields
+        if 'name' in data:
+            pair.name = data['name']
+        if 'description' in data:
+            pair.description = data['description']
+        if 'config' in data:
+            pair.config = data['config']
+        if 'active' in data:
+            pair.active = data['active']
+        
+        # Save changes
+        pair.updated_at = datetime.utcnow()
+        db.session.commit()
+        
+        # Create audit log entry
+        user = get_current_user()
+        create_audit_log(
+            event_type="config_changed",
+            resource_type="sync_pair",
+            resource_id=str(pair_id),
+            description=f"Updated sync configuration for {pair.name}",
+            previous_state=previous_state,
+            new_state=pair.to_dict(),
+            severity="info",
+            user_id=user.get('id') if user else None,
+            username=user.get('username') if user else None
+        )
+        
+        return jsonify(pair.to_dict())
 
 
-@app.route('/api/sync-operations', methods=['GET'])
+@app.route('/api/sync-operations', methods=['GET', 'POST'])
 @requires_auth
 def get_sync_operations():
-    """Get all sync operations, with optional filtering."""
-    pair_id = request.args.get('pair_id', type=int)
-    status = request.args.get('status')
+    """Get all sync operations, with optional filtering or start a new operation."""
+    # Handle GET request
+    if request.method == 'GET':
+        pair_id = request.args.get('pair_id', type=int)
+        status = request.args.get('status')
+        
+        query = SyncOperation.query
+        
+        if pair_id:
+            query = query.filter_by(sync_pair_id=pair_id)
+        
+        if status:
+            query = query.filter_by(status=status)
+        
+        operations = query.order_by(SyncOperation.started_at.desc()).all()
+        return jsonify([op.to_dict() for op in operations])
     
-    query = SyncOperation.query
-    
-    if pair_id:
-        query = query.filter_by(sync_pair_id=pair_id)
-    
-    if status:
-        query = query.filter_by(status=status)
-    
-    operations = query.order_by(SyncOperation.started_at.desc()).all()
-    return jsonify([op.to_dict() for op in operations])
+    # Handle POST request to start a new sync operation
+    elif request.method == 'POST':
+        data = request.json
+        
+        if not data:
+            return jsonify({
+                "error": "Missing request data",
+                "message": "Request body must contain sync operation parameters"
+            }), 400
+        
+        # Validate required fields
+        if 'sync_pair_id' not in data:
+            return jsonify({
+                "error": "Missing sync_pair_id",
+                "message": "sync_pair_id is required to start a sync operation"
+            }), 400
+        
+        # Get the sync pair
+        sync_pair = SyncPair.query.get(data['sync_pair_id'])
+        if not sync_pair:
+            return jsonify({
+                "error": "Invalid sync_pair_id",
+                "message": f"No sync pair found with ID {data['sync_pair_id']}"
+            }), 404
+        
+        # Determine operation type (default to incremental)
+        operation_type = data.get('operation_type', 'incremental')
+        if operation_type not in ['full', 'incremental']:
+            return jsonify({
+                "error": "Invalid operation_type",
+                "message": "operation_type must be 'full' or 'incremental'"
+            }), 400
+        
+        # Create the sync operation
+        operation = SyncOperation(
+            sync_pair_id=sync_pair.id,
+            operation_type=operation_type,
+            status='pending',
+            started_at=datetime.utcnow(),
+            total_records=0,
+            processed_records=0,
+            successful_records=0,
+            failed_records=0
+        )
+        
+        # Save to database
+        db.session.add(operation)
+        db.session.commit()
+        
+        # Create audit log entry
+        user = get_current_user()
+        create_audit_log(
+            event_type="sync_started",
+            resource_type="sync_operation",
+            resource_id=str(operation.id),
+            operation_id=operation.id,
+            description=f"{operation_type.capitalize()} synchronization started for {sync_pair.name}",
+            new_state=operation.to_dict(),
+            severity="info",
+            user_id=user.get('id') if user else None,
+            username=user.get('username') if user else None,
+            correlation_id=f"sync-{operation.id}"
+        )
+        
+        # In a real implementation, this would trigger the sync process
+        # Here we'll just acknowledge the request
+        
+        return jsonify({
+            "message": f"{operation_type.capitalize()} sync started for pair {sync_pair.name}",
+            "operation": operation.to_dict()
+        })
 
 
 @app.route('/api/metrics', methods=['GET'])
@@ -597,7 +795,113 @@ def seed_initial_data():
             for metric in sample_metrics:
                 db.session.add(metric)
             
+            # Add sample audit entries
+            sample_audit_entries = [
+                AuditEntry(
+                    timestamp=datetime(2023, 1, 1, 8, 0, 0),
+                    user_id="system",
+                    username="system",
+                    event_type="sync_started",
+                    resource_type="sync_operation",
+                    resource_id="1",
+                    operation_id=1,
+                    description="Full synchronization started for PACS-CAMA Integration",
+                    ip_address="127.0.0.1",
+                    severity="info",
+                    correlation_id="corr-123456"
+                ),
+                AuditEntry(
+                    timestamp=datetime(2023, 1, 1, 10, 30, 0),
+                    user_id="system",
+                    username="system",
+                    event_type="sync_completed",
+                    resource_type="sync_operation",
+                    resource_id="1",
+                    operation_id=1,
+                    description="Full synchronization completed for PACS-CAMA Integration: 4950 successful, 50 failed records",
+                    ip_address="127.0.0.1",
+                    severity="info",
+                    correlation_id="corr-123456"
+                ),
+                AuditEntry(
+                    timestamp=datetime(2023, 1, 1, 10, 30, 0),
+                    user_id="system",
+                    username="system",
+                    event_type="error_detected",
+                    resource_type="sync_record",
+                    resource_id="property-12345",
+                    operation_id=1,
+                    description="Failed to sync property data: Invalid format in source system",
+                    previous_state={"status": "pending"},
+                    new_state={"status": "error", "error_code": "FORMAT_ERROR"},
+                    ip_address="127.0.0.1",
+                    severity="error",
+                    correlation_id="corr-123456"
+                ),
+                AuditEntry(
+                    timestamp=datetime(2023, 1, 2, 8, 0, 0),
+                    user_id="admin",
+                    username="admin",
+                    event_type="sync_started",
+                    resource_type="sync_operation",
+                    resource_id="2",
+                    operation_id=2,
+                    description="Incremental synchronization started for PACS-CAMA Integration",
+                    ip_address="192.168.1.100",
+                    severity="info",
+                    correlation_id="corr-789012"
+                ),
+                AuditEntry(
+                    timestamp=datetime(2023, 1, 2, 8, 45, 0),
+                    user_id="admin",
+                    username="admin",
+                    event_type="sync_completed",
+                    resource_type="sync_operation",
+                    resource_id="2",
+                    operation_id=2,
+                    description="Incremental synchronization completed for PACS-CAMA Integration: 148 successful, 2 failed records",
+                    ip_address="192.168.1.100",
+                    severity="info",
+                    correlation_id="corr-789012"
+                ),
+                AuditEntry(
+                    timestamp=datetime(2023, 1, 3, 14, 30, 0),
+                    user_id="admin",
+                    username="admin",
+                    event_type="config_changed",
+                    resource_type="sync_pair",
+                    resource_id="1",
+                    description="Updated sync configuration for PACS-CAMA Integration",
+                    previous_state={"sync_interval_hours": 24, "batch_size": 100},
+                    new_state={"sync_interval_hours": 12, "batch_size": 200},
+                    ip_address="192.168.1.100",
+                    severity="info"
+                ),
+                AuditEntry(
+                    timestamp=datetime(2023, 1, 4, 9, 15, 0),
+                    user_id="system",
+                    username="system",
+                    event_type="system_alert",
+                    resource_type="system",
+                    description="High CPU usage detected (85%)",
+                    ip_address="127.0.0.1",
+                    severity="warning"
+                )
+            ]
+            
+            for entry in sample_audit_entries:
+                db.session.add(entry)
+            
             db.session.commit()
+            
+            # Create a current audit entry using the utility function
+            create_audit_log(
+                event_type="system_startup",
+                resource_type="system",
+                description="Application initialized and database seeded with sample data",
+                severity="info"
+            )
+            
             logger.info("Database seeded with initial sample data")
 
 
