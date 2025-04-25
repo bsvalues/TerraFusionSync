@@ -17,6 +17,10 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import DeclarativeBase
 
 from models import db, SyncPair, SyncOperation, SystemMetrics, AuditEntry
+
+# Metrics functionality is disabled to avoid recursion errors
+# We'll use a simple implementation that doesn't cause errors
+METRICS_AVAILABLE = False
 # Import authentication module
 try:
     from apps.backend.api.auth import requires_auth, init_auth_routes, get_current_user
@@ -53,6 +57,9 @@ db.init_app(app)
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+
+# Metrics implementation will be simplified for now
+# We've disabled metrics to stabilize the application
 
 # SyncService connection settings
 SYNCSERVICE_BASE_URL = "http://0.0.0.0:8080"
@@ -246,6 +253,55 @@ def liveness_check():
         "timestamp": datetime.utcnow().isoformat()
     })
 
+@app.route('/metrics')
+def get_metrics():
+    """
+    Prometheus metrics endpoint.
+    
+    This endpoint exposes metrics in Prometheus format for scraping.
+    
+    Since we've disabled the Prometheus metrics for stability,
+    we're returning a simple plaintext representation of the most 
+    important system metrics.
+    """
+    try:
+        # Get the most recent system metrics from the database
+        recent_metrics = SystemMetrics.query.order_by(
+            SystemMetrics.timestamp.desc()).limit(1).first()
+        
+        if recent_metrics:
+            # Format a simple plaintext representation
+            metrics_text = f"""# HELP terrafusion_system_cpu_usage Current CPU usage percentage
+# TYPE terrafusion_system_cpu_usage gauge
+terrafusion_system_cpu_usage {recent_metrics.cpu_usage}
+
+# HELP terrafusion_system_memory_usage Current memory usage percentage
+# TYPE terrafusion_system_memory_usage gauge
+terrafusion_system_memory_usage {recent_metrics.memory_usage}
+
+# HELP terrafusion_system_disk_usage Current disk usage percentage
+# TYPE terrafusion_system_disk_usage gauge
+terrafusion_system_disk_usage {recent_metrics.disk_usage}
+
+# HELP terrafusion_active_connections Number of active connections
+# TYPE terrafusion_active_connections gauge
+terrafusion_active_connections {recent_metrics.active_connections}
+
+# HELP terrafusion_response_time Average API response time in seconds
+# TYPE terrafusion_response_time gauge
+terrafusion_response_time {recent_metrics.response_time}
+
+# HELP terrafusion_error_count Total error count
+# TYPE terrafusion_error_count counter
+terrafusion_error_count {recent_metrics.error_count}
+"""
+            return Response(metrics_text, content_type="text/plain")
+        else:
+            return Response("# No metrics available", content_type="text/plain")
+    except Exception as e:
+        logger.error(f"Error generating metrics: {str(e)}")
+        return Response(f"# Error generating metrics: {str(e)}", content_type="text/plain")
+        
 @app.route('/health/ready')
 def readiness_check():
     """
@@ -447,14 +503,14 @@ def get_sync_operations():
 
 @app.route('/api/metrics', methods=['GET'])
 @requires_auth
-def get_metrics():
-    """Get system metrics."""
+def get_system_metrics():
+    """Get system metrics from the database."""
     limit = request.args.get('limit', 100, type=int)
     
-    metrics = SystemMetrics.query.order_by(
+    system_metrics = SystemMetrics.query.order_by(
         SystemMetrics.timestamp.desc()).limit(limit).all()
     
-    return jsonify([metric.to_dict() for metric in metrics])
+    return jsonify([metric.to_dict() for metric in system_metrics])
 
 
 @app.route('/api/audit', methods=['GET'])
