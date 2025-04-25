@@ -82,14 +82,16 @@ else:
     api_gateway_monitor = None
     logger.warning("No monitoring instance available for API Gateway")
 
-# Variables for metrics collection
+# Variables for metrics collection and service health checks
 last_metrics_collection_time = 0
+last_service_health_check_time = 0
 METRICS_COLLECTION_INTERVAL = 60  # seconds
+SERVICE_HEALTH_CHECK_INTERVAL = 300  # seconds (5 minutes)
 
-# Create a middleware to trigger metrics collection periodically
+# Create a middleware to trigger metrics collection and service health checks periodically
 @app.before_request
 def before_request_middleware():
-    global last_metrics_collection_time
+    global last_metrics_collection_time, last_service_health_check_time
     current_time = time.time()
     
     # If it's been more than METRICS_COLLECTION_INTERVAL seconds since the last collection
@@ -99,6 +101,14 @@ def before_request_middleware():
         thread.daemon = True
         thread.start()
         last_metrics_collection_time = current_time
+        
+    # If it's been more than SERVICE_HEALTH_CHECK_INTERVAL seconds since the last health check
+    if current_time - last_service_health_check_time > SERVICE_HEALTH_CHECK_INTERVAL:
+        # Run the service health check in a separate thread
+        thread = threading.Thread(target=lambda: check_and_ensure_service_health())
+        thread.daemon = True
+        thread.start()
+        last_service_health_check_time = current_time
 
 def collect_metrics_safely():
     """Safely collect metrics without affecting the main application."""
@@ -250,22 +260,91 @@ SYNCSERVICE_BASE_URL = "http://0.0.0.0:8080"
 def ensure_syncservice_running() -> bool:
     """
     Ensure the SyncService is running.
-    If not, attempt to start it in the background.
+    If not, attempt to start it in the background using restart script.
+    
+    Implements automatic service recovery with retry logic and proper logging.
     
     Returns:
         bool: True if the SyncService is running or was started successfully
     """
+    # First, check if the service is already running
     if check_syncservice_status():
         return True
     
-    try:
-        logger.info("SyncService not running, attempting to start it...")
-        # This would typically start the service in a background process or workflow
-        # For now, we'll just return False as we don't have direct process control
-        return False
-    except Exception as e:
-        logger.error(f"Failed to start SyncService: {str(e)}")
-        return False
+    # If we get here, the service is not running, so try to start it
+    logger.warning("SyncService not running, attempting to restart it...")
+    
+    # Create audit log for restart attempt
+    create_audit_log(
+        event_type="service_restart_attempt",
+        resource_type="system",
+        description="Automatic SyncService restart triggered due to detected outage",
+        severity="warning"
+    )
+    
+    # Maximum number of restart attempts
+    max_attempts = 3
+    
+    # Try to restart the service with multiple attempts if needed
+    for attempt in range(1, max_attempts + 1):
+        try:
+            logger.info(f"SyncService restart attempt {attempt}/{max_attempts}")
+            
+            # Use the restart script to restart the SyncService
+            import subprocess
+            
+            # Get the path to the restart script
+            restart_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 
+                                        "restart_syncservice_workflow.py")
+            
+            # Execute the restart script
+            subprocess.run(["python", restart_script], 
+                          stderr=subprocess.PIPE,
+                          stdout=subprocess.PIPE,
+                          check=False,
+                          timeout=30)
+            
+            # Wait for the service to start up
+            logger.info("Waiting for SyncService to start...")
+            
+            # Check with exponential backoff - wait longer between each check
+            wait_times = [2, 4, 8]
+            for wait in wait_times:
+                time.sleep(wait)
+                if check_syncservice_status():
+                    logger.info("SyncService successfully restarted!")
+                    
+                    # Create success audit log
+                    create_audit_log(
+                        event_type="service_restart_success",
+                        resource_type="system",
+                        description=f"SyncService was successfully restarted after {attempt} attempt(s)",
+                        severity="info"
+                    )
+                    return True
+            
+            # If we got here, the service didn't start even after waiting
+            logger.warning(f"SyncService didn't respond after restart attempt {attempt}")
+            
+        except subprocess.TimeoutExpired:
+            logger.error(f"Timeout while executing restart script (attempt {attempt})")
+        except subprocess.SubprocessError as e:
+            logger.error(f"Error executing restart script: {str(e)} (attempt {attempt})")
+        except Exception as e:
+            logger.error(f"Unexpected error during SyncService restart: {str(e)} (attempt {attempt})")
+    
+    # If we get here, all restart attempts failed
+    logger.error(f"Failed to restart SyncService after {max_attempts} attempts")
+    
+    # Create failure audit log
+    create_audit_log(
+        event_type="service_restart_failure",
+        resource_type="system",
+        description=f"Failed to restart SyncService after {max_attempts} attempts",
+        severity="error"
+    )
+    
+    return False
 
 
 def check_syncservice_status() -> bool:
