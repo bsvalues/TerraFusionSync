@@ -1,8 +1,12 @@
 """
-Self-Healing package for the SyncService.
+Self-healing package for the SyncService.
 
-This package contains components for implementing self-healing capabilities,
-including retry strategies, circuit breakers, and orchestrators for resilient operations.
+This package provides components for implementing self-healing mechanisms
+in the SyncService, including circuit breakers, retry strategies, and
+health monitoring.
 """
 
-from .orchestrator import RetryStrategy, CircuitBreaker, SelfHealingOrchestrator
+# Import main components for easy access
+from .orchestrator import SelfHealingOrchestrator
+from .circuit_breaker import CircuitBreaker
+from .retry_strategy import RetryStrategy

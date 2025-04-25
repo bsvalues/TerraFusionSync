@@ -1,214 +1,371 @@
 """
-Synchronization Engine module for the SyncService.
+Core sync engine for the SyncService.
 
-This module orchestrates the end-to-end synchronization process, coordinating the various
-components to detect changes, transform, validate, and sync data between systems.
+This module provides the main sync engine that orchestrates data transfers
+between source and target systems, handling validation, transformation,
+and error recovery.
 """
 
 import logging
-import time
-from typing import Dict, Any, Optional, List
+import json
+from enum import Enum
+from typing import Dict, Any, List, Optional, Callable, Tuple, Type, Set
 from datetime import datetime
 
-# Import self-healing components
-from .self_healing import RetryStrategy, CircuitBreaker, SelfHealingOrchestrator
+from ..models.base import SyncOperation, SyncPair, SyncStatus, OperationType
+from .self_healing.circuit_breaker import CircuitBreaker
+from .self_healing.retry_strategy import RetryStrategy
+from .self_healing.orchestrator import SelfHealingOrchestrator
 
 logger = logging.getLogger(__name__)
 
 
 class SyncEngine:
     """
-    Main synchronization engine that coordinates the end-to-end sync process.
+    Core sync engine for transferring data between systems.
     
-    This class is responsible for:
-    1. Orchestrating the entire sync process
-    2. Handling errors and retries through the self-healing orchestrator
-    3. Tracking and reporting progress
-    4. Managing the state of the sync operation
+    The sync engine coordinates the entire sync process including:
+    - Reading data from source systems
+    - Transforming data according to mappings
+    - Validating data integrity
+    - Writing data to target systems
+    - Handling errors and recovery
     """
     
-    def __init__(self):
-        """Initialize the sync engine with its dependencies."""
-        # Create self-healing orchestrator with default settings
-        self.orchestrator = SelfHealingOrchestrator(
-            retry_strategy=RetryStrategy(
-                max_attempts=3,
-                initial_delay=2.0,
-                backoff_factor=2.0,
-                max_delay=30.0
-            ),
-            circuit_breaker=CircuitBreaker(
-                failure_threshold=5,
-                recovery_timeout=300.0  # 5 minutes
-            )
+    def __init__(
+        self,
+        orchestrator: Optional[SelfHealingOrchestrator] = None,
+        retry_strategy: Optional[RetryStrategy] = None,
+        circuit_breaker: Optional[CircuitBreaker] = None
+    ):
+        """
+        Initialize the sync engine.
+        
+        Args:
+            orchestrator: Self-healing orchestrator to use
+            retry_strategy: Default retry strategy for operations
+            circuit_breaker: Default circuit breaker for operations
+        """
+        # Create or use provided components
+        self.orchestrator = orchestrator or SelfHealingOrchestrator("SyncEngine")
+        self.retry_strategy = retry_strategy or self.orchestrator.register_retry_strategy(
+            name="default_sync_retry",
+            max_attempts=5,
+            initial_delay=2.0,
+            max_delay=60.0,
+            backoff_factor=2.0,
+            jitter=True
         )
+        self.circuit_breaker = circuit_breaker or self.orchestrator.register_circuit_breaker(
+            name="default_sync_circuit",
+            failure_threshold=3,
+            recovery_timeout=300,  # 5 minutes
+            reset_timeout=1800  # 30 minutes
+        )
+        
+        # Register health check
+        self.orchestrator.register_health_check("sync_engine", self._check_health)
+        
+        # Stats and metrics
+        self.operations_completed = 0
+        self.operations_failed = 0
+        self.last_operation_time = None
+        self.last_error = None
         
         logger.info("SyncEngine initialized with self-healing capabilities")
     
-    def start_sync_operation(self, operation: Dict[str, Any]) -> bool:
+    def execute_sync(self, operation: SyncOperation) -> bool:
         """
-        Start a synchronization operation with self-healing capabilities.
+        Execute a sync operation with self-healing capabilities.
         
-        Args:
-            operation: The sync operation to start
-            
-        Returns:
-            True if the operation was started successfully, False otherwise
-        """
-        operation_id = operation.get('id', 'unknown')
-        operation_type = operation.get('operation_type', 'unknown')
-        sync_pair_id = operation.get('sync_pair_id', 'unknown')
-        
-        logger.info(f"Starting {operation_type} sync operation {operation_id} for pair {sync_pair_id}")
-        
-        # Create a function to execute the sync operation
-        def execute_sync() -> Dict[str, Any]:
-            result = self._execute_sync_operation(operation)
-            return result
-        
-        # Create a function to handle errors
-        def handle_error(e: Exception) -> None:
-            logger.error(f"Sync operation {operation_id} failed: {str(e)}")
-            self._handle_operation_failure(operation, e)
-        
-        # Execute the operation with self-healing capabilities
-        try:
-            result = self.orchestrator.execute(
-                operation=execute_sync,
-                error_handler=handle_error,
-                retry_callback=lambda attempt: self._on_retry_attempt(attempt, operation),
-                circuit_breaker_callback=lambda: self._on_circuit_break(operation)
-            )
-            
-            if result:
-                logger.info(f"Sync operation {operation_id} completed successfully")
-                return True
-            else:
-                logger.error(f"Sync operation {operation_id} failed after all retry attempts")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Unexpected error in sync operation {operation_id}: {str(e)}")
-            return False
-    
-    def _execute_sync_operation(self, operation: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Execute a sync operation from start to finish.
-        
-        This is the core method that performs the actual synchronization.
+        This method handles the entire sync process from start to finish,
+        including reading from source, transforming data, and writing to target.
         
         Args:
             operation: The sync operation to execute
             
         Returns:
-            Dictionary with operation results
+            True if the operation completed successfully, False otherwise
         """
-        operation_id = operation.get('id', 'unknown')
-        operation_type = operation.get('operation_type', 'unknown')
-        start_time = time.time()
+        logger.info(f"Starting sync operation {operation.id} for pair {operation.sync_pair_id}")
         
-        logger.info(f"Executing {operation_type} sync operation {operation_id}")
-        
-        # In a real implementation, we would:
-        # 1. Connect to source system
-        # 2. Connect to target system
-        # 3. Based on operation_type (full, incremental, delta), perform the appropriate sync logic
-        # 4. Track progress and update operation status
-        # 5. Handle specific errors through the self-healing orchestrator
-        
-        # Simulated operation execution
         try:
-            # Simulated work
-            logger.info(f"Performing data extraction for operation {operation_id}")
-            # Extract data from source...
+            # Update operation status
+            operation.status = SyncStatus.RUNNING
+            operation.started_at = datetime.now()
             
-            logger.info(f"Performing data transformation for operation {operation_id}")
-            # Transform data...
+            # Get sync pair details
+            sync_pair = self._get_sync_pair(operation.sync_pair_id)
+            if not sync_pair:
+                raise ValueError(f"Sync pair {operation.sync_pair_id} not found")
             
-            logger.info(f"Performing data validation for operation {operation_id}")
-            # Validate data...
+            # Determine what systems we're connecting to
+            source_system = sync_pair.source_system
+            target_system = sync_pair.target_system
             
-            logger.info(f"Performing data loading for operation {operation_id}")
-            # Load data to target...
+            # Create specific circuit breakers for source and target if needed
+            source_cb = self.orchestrator.register_circuit_breaker(f"source_{sync_pair.id}")
+            target_cb = self.orchestrator.register_circuit_breaker(f"target_{sync_pair.id}")
             
-            duration = time.time() - start_time
+            # Execute each phase with resiliency
+            data = self._read_from_source(operation, source_system, source_cb)
+            if not data:
+                raise ValueError("No data returned from source system")
+                
+            transformed_data = self._transform_data(operation, data, sync_pair.mappings)
+            if not transformed_data:
+                raise ValueError("Data transformation failed")
+                
+            success = self._write_to_target(operation, transformed_data, target_system, target_cb)
+            if not success:
+                raise ValueError("Failed to write to target system")
             
-            # Construct result
-            result = {
-                'operation_id': operation_id,
-                'status': 'completed',
-                'duration_seconds': duration,
-                'records_processed': 1000,  # Example metrics
-                'records_succeeded': 998,
-                'records_failed': 2,
-                'completed_at': datetime.utcnow().isoformat()
-            }
+            # Update operation on success
+            operation.status = SyncStatus.COMPLETED
+            operation.completed_at = datetime.now()
+            self.operations_completed += 1
+            self.last_operation_time = datetime.now()
             
+            logger.info(f"Sync operation {operation.id} completed successfully")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Sync operation {operation.id} failed: {str(e)}")
+            
+            # Update operation on failure
+            operation.status = SyncStatus.FAILED
+            operation.completed_at = datetime.now()
+            if operation.details:
+                operation.details.error = str(e)
+            self.operations_failed += 1
+            self.last_error = str(e)
+            self.last_operation_time = datetime.now()
+            
+            return False
+    
+    def _read_from_source(
+        self, 
+        operation: SyncOperation,
+        source_config: Dict[str, Any],
+        circuit_breaker: Optional[CircuitBreaker] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Read data from the source system with resilience.
+        
+        Args:
+            operation: The sync operation being executed
+            source_config: Configuration for the source system
+            circuit_breaker: Circuit breaker for the source system
+            
+        Returns:
+            List of data records from the source
+        """
+        # Use the orchestrator to execute with resilience
+        try:
+            data = self.orchestrator.execute_with_resilience(
+                func=lambda: self._execute_read(operation, source_config),
+                circuit_name=circuit_breaker.name if circuit_breaker else "default_sync_circuit",
+                retry_name="source_retry"
+            )
+            
+            logger.info(f"Successfully read {len(data)} records from source for operation {operation.id}")
+            return data
+            
+        except Exception as e:
+            logger.error(f"Failed to read from source for operation {operation.id}: {str(e)}")
+            raise
+    
+    def _execute_read(self, operation: SyncOperation, source_config: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Execute the actual read operation to the source system.
+        
+        This would be implemented with connectors for specific systems.
+        
+        Args:
+            operation: The sync operation being executed
+            source_config: Configuration for the source system
+            
+        Returns:
+            List of data records from the source
+        """
+        # This would actually connect to the source system
+        # For demonstration, we return mock data
+        logger.info(f"Reading data from source system {source_config.get('type', 'unknown')}")
+        
+        # This is a placeholder and would be replaced with actual connection code
+        # In a real implementation, this would use a connector to read from the source system
+        # based on source_config and operation parameters
+        
+        # Simulate a read operation
+        return [{"id": 1, "name": "Example Data"}]
+    
+    def _transform_data(
+        self,
+        operation: SyncOperation,
+        data: List[Dict[str, Any]],
+        mappings: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Transform data according to mappings.
+        
+        Args:
+            operation: The sync operation being executed
+            data: Data records from the source
+            mappings: Field mappings to apply
+            
+        Returns:
+            Transformed data records
+        """
+        try:
+            logger.info(f"Transforming {len(data)} records for operation {operation.id}")
+            
+            # This would apply the transformation mappings to convert source format to target format
+            # For demonstration, we pass through the data
+            transformed = []
+            
+            for record in data:
+                # Apply mappings
+                transformed_record = {}
+                for mapping in mappings:
+                    source_field = mapping.get('source_field')
+                    target_field = mapping.get('target_field')
+                    
+                    if source_field in record:
+                        transformed_record[target_field] = record[source_field]
+                
+                transformed.append(transformed_record)
+            
+            return transformed
+            
+        except Exception as e:
+            logger.error(f"Data transformation failed for operation {operation.id}: {str(e)}")
+            raise
+    
+    def _write_to_target(
+        self,
+        operation: SyncOperation,
+        data: List[Dict[str, Any]],
+        target_config: Dict[str, Any],
+        circuit_breaker: Optional[CircuitBreaker] = None
+    ) -> bool:
+        """
+        Write data to the target system with resilience.
+        
+        Args:
+            operation: The sync operation being executed
+            data: Transformed data records
+            target_config: Configuration for the target system
+            circuit_breaker: Circuit breaker for the target system
+            
+        Returns:
+            True if write was successful, False otherwise
+        """
+        # Use the orchestrator to execute with resilience
+        try:
+            result = self.orchestrator.execute_with_resilience(
+                func=lambda: self._execute_write(operation, data, target_config),
+                circuit_name=circuit_breaker.name if circuit_breaker else "default_sync_circuit",
+                retry_name="target_retry"
+            )
+            
+            logger.info(f"Successfully wrote {len(data)} records to target for operation {operation.id}")
             return result
             
         except Exception as e:
-            logger.error(f"Error executing sync operation {operation_id}: {str(e)}")
+            logger.error(f"Failed to write to target for operation {operation.id}: {str(e)}")
             raise
     
-    def _handle_operation_failure(self, operation: Dict[str, Any], error: Exception) -> None:
+    def _execute_write(
+        self,
+        operation: SyncOperation,
+        data: List[Dict[str, Any]],
+        target_config: Dict[str, Any]
+    ) -> bool:
         """
-        Handle a failed operation.
+        Execute the actual write operation to the target system.
+        
+        This would be implemented with connectors for specific systems.
         
         Args:
-            operation: The failed operation
-            error: The exception that caused the failure
+            operation: The sync operation being executed
+            data: Transformed data records
+            target_config: Configuration for the target system
+            
+        Returns:
+            True if write was successful, False otherwise
         """
-        operation_id = operation.get('id', 'unknown')
+        # This would actually connect to the target system
+        # For demonstration, we return success
+        logger.info(f"Writing {len(data)} records to target system {target_config.get('type', 'unknown')}")
         
-        # In a production implementation, we would:
-        # 1. Update operation status in the database
-        # 2. Create detailed error logs
-        # 3. Categorize the error for better retry strategies
-        # 4. Potentially notify administrators
+        # This is a placeholder and would be replaced with actual connection code
+        # In a real implementation, this would use a connector to write to the target system
+        # based on target_config and operation parameters
         
-        logger.error(f"Handling failure for operation {operation_id}: {str(error)}")
-        
-        # Example error categorization
-        if "connection refused" in str(error).lower():
-            logger.warning(f"Connection issue detected for operation {operation_id}, marked for retry")
-        elif "timeout" in str(error).lower():
-            logger.warning(f"Timeout issue detected for operation {operation_id}, marked for retry")
-        elif "permission denied" in str(error).lower():
-            logger.error(f"Permission issue detected for operation {operation_id}, may require manual intervention")
-        else:
-            logger.error(f"Unknown error for operation {operation_id}, attempting retry")
+        # Simulate a write operation
+        return True
     
-    def _on_retry_attempt(self, attempt: int, operation: Dict[str, Any]) -> None:
+    def _get_sync_pair(self, sync_pair_id: str) -> Optional[SyncPair]:
         """
-        Callback when a retry is attempted.
+        Get a sync pair by ID.
+        
+        In a real implementation, this would query the database.
         
         Args:
-            attempt: The retry attempt number
-            operation: The operation being retried
+            sync_pair_id: ID of the sync pair
+            
+        Returns:
+            SyncPair if found, None otherwise
         """
-        operation_id = operation.get('id', 'unknown')
+        # This is a placeholder and would be replaced with database query
+        sync_pair = SyncPair(id=sync_pair_id, name="Demo Sync Pair")
+        sync_pair.source_system = {
+            "type": "cama",
+            "url": "https://cama.example.org/api",
+            "auth": "oauth"
+        }
+        sync_pair.target_system = {
+            "type": "pacs",
+            "url": "https://pacs.example.org/api",
+            "auth": "basic"
+        }
+        sync_pair.mappings = [
+            {"source_field": "id", "target_field": "record_id"},
+            {"source_field": "name", "target_field": "record_name"}
+        ]
         
-        logger.info(f"Retry attempt {attempt} for operation {operation_id}")
-        
-        # In a production implementation, we would:
-        # 1. Update operation status in the database
-        # 2. Create an audit log entry for the retry
-        # 3. Check system health before retrying
-        # 4. Potentially apply different strategies based on retry count
+        return sync_pair
     
-    def _on_circuit_break(self, operation: Dict[str, Any]) -> None:
+    def _check_health(self) -> bool:
         """
-        Callback when a circuit breaker is activated.
+        Health check for the sync engine.
         
-        Args:
-            operation: The operation that triggered the circuit breaker
+        Returns:
+            True if healthy, False otherwise
         """
-        operation_id = operation.get('id', 'unknown')
+        # Check if we've had too many recent failures
+        if self.operations_completed == 0 and self.operations_failed > 5:
+            return False
+            
+        # Check if circuit breakers are healthy
+        for name, cb in self.orchestrator.circuit_breakers.items():
+            if cb.state != "CLOSED":
+                return False
+                
+        return True
+    
+    def get_status(self) -> Dict[str, Any]:
+        """
+        Get the current status of the sync engine.
         
-        logger.warning(f"Circuit breaker activated for operation {operation_id}")
-        
-        # In a production implementation, we would:
-        # 1. Update operation status in the database
-        # 2. Create an audit log entry for the circuit break
-        # 3. Notify administrators of a potential system-wide issue
-        # 4. Potentially trigger a system health check
+        Returns:
+            Dictionary with status information
+        """
+        return {
+            "operations_completed": self.operations_completed,
+            "operations_failed": self.operations_failed,
+            "last_operation_time": self.last_operation_time.isoformat() if self.last_operation_time else None,
+            "last_error": self.last_error,
+            "health": self.orchestrator.get_health_status(),
+            "circuit_breakers": {name: cb.get_status() for name, cb in self.orchestrator.circuit_breakers.items()}
+        }
