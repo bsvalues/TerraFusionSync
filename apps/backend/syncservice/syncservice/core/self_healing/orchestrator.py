@@ -1,432 +1,511 @@
 """
-Self-healing orchestrator for the SyncService.
+Self-healing orchestrator for the TerraFusion SyncService platform.
 
 This module provides the main orchestrator that coordinates self-healing
-mechanisms, including circuit breakers, retry strategies, and health monitoring.
-It serves as the central point for implementing resilience patterns.
+activities, including circuit breakers, retry strategies, and recovery operations.
 """
 
-import os
 import time
 import logging
 import threading
-from enum import Enum, auto
-from typing import Dict, Any, Callable, Optional, List, Type, Set, Union
+from typing import Dict, List, Any, Optional, Callable, Tuple, Set
 from datetime import datetime, timedelta
 
 from .circuit_breaker import CircuitBreaker
-from .retry_strategy import RetryStrategy
+from .retry_strategy import RetryStrategy, ExponentialBackoffStrategy
 
 logger = logging.getLogger(__name__)
 
 
-class HealthStatus(Enum):
-    """Enumeration of possible health status values."""
-    HEALTHY = auto()
-    DEGRADED = auto()
-    UNHEALTHY = auto()
+class ResourceStatus:
+    """Status of a monitored resource."""
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    FAILING = "failing"
+    RECOVERING = "recovering"
 
 
 class SelfHealingOrchestrator:
     """
-    Main orchestrator for self-healing capabilities in the SyncService.
+    Orchestrator for self-healing operations.
     
-    This class combines circuit breakers, retry strategies, and health monitoring
-    to provide comprehensive resilience for the SyncService's interactions with
-    external systems.
+    This class coordinates circuit breakers, retry strategies, and recovery
+    operations for different components of the system.
     """
     
-    def __init__(self, service_name: str = "SyncService"):
-        """
-        Initialize the self-healing orchestrator.
-        
-        Args:
-            service_name: Name of the service this orchestrator is protecting
-        """
-        self.service_name = service_name
+    def __init__(self):
+        """Initialize a new self-healing orchestrator."""
         self.circuit_breakers: Dict[str, CircuitBreaker] = {}
         self.retry_strategies: Dict[str, RetryStrategy] = {}
-        self.health_checks: Dict[str, Callable[[], bool]] = {}
-        self.last_health_check = None
-        self.health_status = HealthStatus.HEALTHY
-        self.health_history = []
-        self.recovery_actions = []
+        self.resource_monitors: Dict[str, Callable[[], bool]] = {}
+        self.recovery_handlers: Dict[str, Callable[[], bool]] = {}
+        self.status_history: Dict[str, List[Tuple[datetime, str]]] = {}
+        self.health_check_intervals: Dict[str, int] = {}
+        self.last_health_check: Dict[str, datetime] = {}
+        self.resource_dependencies: Dict[str, Set[str]] = {}
         
-        # Default recovery settings
-        self.recovery_threshold = int(os.environ.get("RECOVERY_THRESHOLD", "3"))
-        self.recovery_window = int(os.environ.get("RECOVERY_WINDOW", "1800"))  # 30 minutes
-        self.max_auto_recoveries = int(os.environ.get("MAX_AUTO_RECOVERIES", "5"))
+        # Lock for thread safety
+        self._lock = threading.RLock()
         
-        # Internal state
-        self._recoveries_in_window = 0
-        self._last_recovery_time = None
+        # Start the health check thread
+        self._stop_health_check = threading.Event()
+        self._health_check_thread = None
         
-        logger.info(f"SelfHealingOrchestrator initialized for {service_name}")
-        
-        # Start background health check thread
-        self._start_health_check_thread()
+        logger.info("Self-healing orchestrator initialized")
     
     def register_circuit_breaker(
         self,
-        name: str,
+        resource_id: str,
         failure_threshold: int = 5,
-        recovery_timeout: int = 60,
+        reset_timeout: int = 60,
         half_open_max_calls: int = 1,
-        reset_timeout: int = 300
+        excluded_exceptions: Optional[List[type]] = None
     ) -> CircuitBreaker:
         """
-        Register a new circuit breaker for a specific component.
+        Register a circuit breaker for a resource.
         
         Args:
-            name: Identifier for the circuit breaker
-            failure_threshold: Number of consecutive failures before opening circuit
-            recovery_timeout: Seconds to wait before attempting recovery
-            half_open_max_calls: Number of test calls allowed in half-open state
-            reset_timeout: Maximum seconds to keep circuit open before forced reset
+            resource_id: Unique identifier for the resource
+            failure_threshold: Number of consecutive failures before opening the circuit
+            reset_timeout: Seconds to wait before attempting to close the circuit again
+            half_open_max_calls: Maximum number of calls to allow in half-open state
+            excluded_exceptions: Exceptions that should not count as failures
             
         Returns:
-            The created CircuitBreaker instance
+            The created circuit breaker
         """
-        if name in self.circuit_breakers:
-            logger.warning(f"Circuit breaker '{name}' already exists, returning existing instance")
-            return self.circuit_breakers[name]
-        
-        cb = CircuitBreaker(
-            name=name,
-            failure_threshold=failure_threshold,
-            recovery_timeout=recovery_timeout,
-            half_open_max_calls=half_open_max_calls,
-            reset_timeout=reset_timeout
-        )
-        
-        self.circuit_breakers[name] = cb
-        logger.info(f"Registered circuit breaker '{name}'")
-        return cb
+        with self._lock:
+            circuit_breaker = CircuitBreaker(
+                name=resource_id,
+                failure_threshold=failure_threshold,
+                reset_timeout_seconds=reset_timeout,
+                half_open_max_calls=half_open_max_calls,
+                excluded_exceptions=excluded_exceptions
+            )
+            self.circuit_breakers[resource_id] = circuit_breaker
+            logger.info(f"Registered circuit breaker for resource: {resource_id}")
+            
+            # Initialize status history
+            if resource_id not in self.status_history:
+                self.status_history[resource_id] = [(datetime.utcnow(), ResourceStatus.HEALTHY)]
+            
+            return circuit_breaker
     
     def register_retry_strategy(
         self,
-        name: str,
-        max_attempts: int = 3,
-        initial_delay: float = 1.0,
+        resource_id: str,
+        strategy_type: str = "exponential",
+        base_delay: float = 1.0,
         max_delay: float = 60.0,
-        backoff_factor: float = 2.0,
-        jitter: bool = True,
-        retry_on_exceptions: Optional[Set[Type[Exception]]] = None
+        **kwargs
     ) -> RetryStrategy:
         """
-        Register a new retry strategy for a specific component.
+        Register a retry strategy for a resource.
         
         Args:
-            name: Identifier for the retry strategy
-            max_attempts: Maximum number of attempts including the initial one
-            initial_delay: Initial delay between retries in seconds
-            max_delay: Maximum delay between retries in seconds
-            backoff_factor: Multiplier for exponential backoff
-            jitter: Whether to add randomized jitter to delays
-            retry_on_exceptions: Set of exception types to retry on
+            resource_id: Unique identifier for the resource
+            strategy_type: Type of retry strategy ('exponential' or 'linear')
+            base_delay: Base delay in seconds
+            max_delay: Maximum delay in seconds
+            **kwargs: Additional parameters for the specific strategy
             
         Returns:
-            The created RetryStrategy instance
+            The created retry strategy
         """
-        if name in self.retry_strategies:
-            logger.warning(f"Retry strategy '{name}' already exists, returning existing instance")
-            return self.retry_strategies[name]
-        
-        rs = RetryStrategy(
-            max_attempts=max_attempts,
-            initial_delay=initial_delay,
-            max_delay=max_delay,
-            backoff_factor=backoff_factor,
-            jitter=jitter,
-            retry_on_exceptions=retry_on_exceptions
-        )
-        
-        self.retry_strategies[name] = rs
-        logger.info(f"Registered retry strategy '{name}'")
-        return rs
-    
-    def register_health_check(self, name: str, check_func: Callable[[], bool]) -> None:
-        """
-        Register a health check function.
-        
-        Args:
-            name: Identifier for the health check
-            check_func: Function that returns True if healthy, False otherwise
-        """
-        self.health_checks[name] = check_func
-        logger.info(f"Registered health check '{name}'")
-    
-    def execute_with_resilience(
-        self,
-        func: Callable,
-        circuit_name: str,
-        retry_name: str,
-        *args,
-        **kwargs
-    ) -> Any:
-        """
-        Execute a function with both circuit breaker and retry protection.
-        
-        This method combines circuit breaker and retry strategy to provide
-        comprehensive resilience for external system interactions.
-        
-        Args:
-            func: The function to execute
-            circuit_name: Name of the circuit breaker to use
-            retry_name: Name of the retry strategy to use
-            *args: Positional arguments for the function
-            **kwargs: Keyword arguments for the function
-            
-        Returns:
-            Result of the function if successful
-            
-        Raises:
-            Exception: If the operation fails after all retry attempts or
-                       if the circuit breaker is open
-        """
-        # Get or create circuit breaker and retry strategy
-        circuit_breaker = self.get_or_create_circuit_breaker(circuit_name)
-        retry_strategy = self.get_or_create_retry_strategy(retry_name)
-        
-        # Execute with both protections
-        try:
-            # Use circuit breaker to wrap the retry strategy
-            return circuit_breaker.execute(
-                lambda: retry_strategy.execute(func, *args, **kwargs)
-            )
-        except Exception as e:
-            logger.error(f"Operation failed with resilience protection: {str(e)}")
-            # Record the failure for health assessment
-            self._record_failure(circuit_name, str(e))
-            raise
-    
-    def get_or_create_circuit_breaker(self, name: str) -> CircuitBreaker:
-        """
-        Get an existing circuit breaker or create a new one if it doesn't exist.
-        
-        Args:
-            name: Name of the circuit breaker
-            
-        Returns:
-            CircuitBreaker instance
-        """
-        if name not in self.circuit_breakers:
-            logger.info(f"Auto-creating circuit breaker '{name}'")
-            return self.register_circuit_breaker(name)
-        return self.circuit_breakers[name]
-    
-    def get_or_create_retry_strategy(self, name: str) -> RetryStrategy:
-        """
-        Get an existing retry strategy or create a new one if it doesn't exist.
-        
-        Args:
-            name: Name of the retry strategy
-            
-        Returns:
-            RetryStrategy instance
-        """
-        if name not in self.retry_strategies:
-            logger.info(f"Auto-creating retry strategy '{name}'")
-            return self.register_retry_strategy(name)
-        return self.retry_strategies[name]
-    
-    def check_health(self) -> Dict[str, Any]:
-        """
-        Check the health of all registered components.
-        
-        Returns:
-            Dictionary with health status information
-        """
-        results = {}
-        all_checks_passed = True
-        any_checks_failed = False
-        check_time = datetime.now()
-        
-        # Execute all registered health checks
-        for name, check_func in self.health_checks.items():
-            try:
-                passed = check_func()
-                results[name] = passed
-                if not passed:
-                    all_checks_passed = False
-                    any_checks_failed = True
-            except Exception as e:
-                logger.error(f"Health check '{name}' failed with exception: {str(e)}")
-                results[name] = False
-                all_checks_passed = False
-                any_checks_failed = True
-        
-        # Check circuit breakers
-        circuit_status = {}
-        for name, cb in self.circuit_breakers.items():
-            cb_status = cb.get_status()
-            circuit_status[name] = cb_status
-            if cb_status['state'] != 'CLOSED':
-                all_checks_passed = False
-        
-        # Determine overall health status
-        if all_checks_passed:
-            status = HealthStatus.HEALTHY
-        elif any_checks_failed:
-            status = HealthStatus.UNHEALTHY
-        else:
-            status = HealthStatus.DEGRADED
-        
-        # Update internal state
-        self.health_status = status
-        self.last_health_check = check_time
-        
-        # Record health check in history
-        health_record = {
-            'timestamp': check_time,
-            'status': status.name,
-            'check_results': results,
-            'circuit_status': circuit_status
-        }
-        self.health_history.append(health_record)
-        
-        # Trim history to most recent 100 checks
-        if len(self.health_history) > 100:
-            self.health_history = self.health_history[-100:]
-        
-        return health_record
-    
-    def attempt_recovery(self, component_name: Optional[str] = None) -> bool:
-        """
-        Attempt to recover a degraded or unhealthy component.
-        
-        Args:
-            component_name: Name of the component to recover, or None for all
-            
-        Returns:
-            True if recovery was attempted, False otherwise
-        """
-        # Check if we've exceeded the maximum auto-recoveries in the window
-        current_time = datetime.now()
-        if self._last_recovery_time:
-            # Reset counter if we're outside the window
-            if current_time - self._last_recovery_time > timedelta(seconds=self.recovery_window):
-                self._recoveries_in_window = 0
-            # Check if we've exceeded the limit
-            elif self._recoveries_in_window >= self.max_auto_recoveries:
-                logger.warning(
-                    f"Maximum auto-recoveries ({self.max_auto_recoveries}) "
-                    f"reached in {self.recovery_window}s window, skipping recovery"
-                )
-                return False
-        
-        # Update recovery counters
-        self._recoveries_in_window += 1
-        self._last_recovery_time = current_time
-        
-        recovery_actions = []
-        
-        # Reset circuit breakers
-        if component_name:
-            if component_name in self.circuit_breakers:
-                cb = self.circuit_breakers[component_name]
-                logger.info(f"Attempting recovery of circuit breaker '{component_name}'")
-                cb.reset()
-                recovery_actions.append(f"Reset circuit breaker '{component_name}'")
-        else:
-            # Reset all circuit breakers if no specific component
-            for name, cb in self.circuit_breakers.items():
-                logger.info(f"Attempting recovery of circuit breaker '{name}'")
-                cb.reset()
-                recovery_actions.append(f"Reset circuit breaker '{name}'")
-        
-        # Record recovery attempt
-        recovery_record = {
-            'timestamp': current_time,
-            'component': component_name or 'all',
-            'actions': recovery_actions,
-            'recovery_count': self._recoveries_in_window
-        }
-        self.recovery_actions.append(recovery_record)
-        
-        # Trim history to most recent 100 recoveries
-        if len(self.recovery_actions) > 100:
-            self.recovery_actions = self.recovery_actions[-100:]
-        
-        return True
-    
-    def get_health_status(self) -> Dict[str, Any]:
-        """
-        Get the current health status of the service.
-        
-        Returns:
-            Dictionary with health status information
-        """
-        # Perform a health check if we haven't done one yet or it's been too long
-        if not self.last_health_check or \
-           datetime.now() - self.last_health_check > timedelta(minutes=1):
-            self.check_health()
-        
-        return {
-            'service_name': self.service_name,
-            'status': self.health_status.name,
-            'last_check': self.last_health_check.isoformat() if self.last_health_check else None,
-            'circuit_breakers': {name: cb.get_status() for name, cb in self.circuit_breakers.items()},
-            'recovery_attempts': len(self.recovery_actions),
-            'recovery_window_remaining': self._get_recovery_window_remaining(),
-            'recoveries_available': max(0, self.max_auto_recoveries - self._recoveries_in_window)
-        }
-    
-    def _get_recovery_window_remaining(self) -> int:
-        """
-        Get the number of seconds remaining in the current recovery window.
-        
-        Returns:
-            Seconds remaining in the recovery window, or 0 if no window is active
-        """
-        if not self._last_recovery_time:
-            return 0
-        
-        window_end = self._last_recovery_time + timedelta(seconds=self.recovery_window)
-        now = datetime.now()
-        
-        if now >= window_end:
-            return 0
-        
-        return int((window_end - now).total_seconds())
-    
-    def _record_failure(self, component_name: str, error_message: str) -> None:
-        """
-        Record a component failure for health assessment.
-        
-        Args:
-            component_name: Name of the component that failed
-            error_message: Error message from the failure
-        """
-        failure_record = {
-            'timestamp': datetime.now(),
-            'component': component_name,
-            'error': error_message
-        }
-        
-        # This could be expanded to store failures in a database or other persistent storage
-        logger.warning(f"Component '{component_name}' failed: {error_message}")
-    
-    def _start_health_check_thread(self) -> None:
-        """Start a background thread for periodic health checks."""
-        def health_check_worker():
-            while True:
-                try:
-                    # Run health check every 60 seconds
-                    self.check_health()
-                    
-                    # Auto-recover if unhealthy
-                    if self.health_status == HealthStatus.UNHEALTHY:
-                        logger.warning("Service is unhealthy, attempting auto-recovery")
-                        self.attempt_recovery()
-                        
-                except Exception as e:
-                    logger.error(f"Error in health check thread: {str(e)}")
+        with self._lock:
+            if strategy_type.lower() == "exponential":
+                multiplier = kwargs.get("multiplier", 2.0)
+                jitter_factor = kwargs.get("jitter_factor", 0.2)
+                retryable_exceptions = kwargs.get("retryable_exceptions", None)
                 
-                # Sleep for 60 seconds
-                time.sleep(60)
+                strategy = ExponentialBackoffStrategy(
+                    base_delay=base_delay,
+                    max_delay=max_delay,
+                    multiplier=multiplier,
+                    jitter_factor=jitter_factor,
+                    retryable_exceptions=retryable_exceptions
+                )
+            else:
+                raise ValueError(f"Unsupported retry strategy type: {strategy_type}")
+            
+            self.retry_strategies[resource_id] = strategy
+            logger.info(f"Registered {strategy_type} retry strategy for resource: {resource_id}")
+            
+            return strategy
+    
+    def register_resource_monitor(
+        self,
+        resource_id: str,
+        monitor_func: Callable[[], bool],
+        health_check_interval: int = 60,
+        dependencies: Optional[List[str]] = None
+    ):
+        """
+        Register a health check function for a resource.
         
-        # Start thread
-        thread = threading.Thread(target=health_check_worker, daemon=True)
-        thread.start()
-        logger.info("Started background health check thread")
+        Args:
+            resource_id: Unique identifier for the resource
+            monitor_func: Function that returns True if the resource is healthy
+            health_check_interval: Interval in seconds between health checks
+            dependencies: List of resource IDs that this resource depends on
+        """
+        with self._lock:
+            self.resource_monitors[resource_id] = monitor_func
+            self.health_check_intervals[resource_id] = health_check_interval
+            self.last_health_check[resource_id] = datetime.utcnow() - timedelta(seconds=health_check_interval)
+            
+            # Initialize status history if not already present
+            if resource_id not in self.status_history:
+                self.status_history[resource_id] = [(datetime.utcnow(), ResourceStatus.HEALTHY)]
+            
+            # Register dependencies
+            if dependencies:
+                self.resource_dependencies[resource_id] = set(dependencies)
+                logger.info(f"Resource {resource_id} depends on: {', '.join(dependencies)}")
+            else:
+                self.resource_dependencies[resource_id] = set()
+            
+            logger.info(f"Registered resource monitor for: {resource_id} with interval {health_check_interval}s")
+    
+    def register_recovery_handler(
+        self,
+        resource_id: str,
+        recovery_func: Callable[[], bool]
+    ):
+        """
+        Register a recovery function for a resource.
+        
+        Args:
+            resource_id: Unique identifier for the resource
+            recovery_func: Function that attempts to recover the resource,
+                           returns True if recovery was successful
+        """
+        with self._lock:
+            self.recovery_handlers[resource_id] = recovery_func
+            logger.info(f"Registered recovery handler for resource: {resource_id}")
+    
+    def start_health_monitoring(self, interval: int = 30):
+        """
+        Start the health monitoring thread.
+        
+        Args:
+            interval: Interval in seconds to run the health check loop
+        """
+        if self._health_check_thread and self._health_check_thread.is_alive():
+            logger.warning("Health monitoring thread already running")
+            return
+        
+        self._stop_health_check.clear()
+        self._health_check_thread = threading.Thread(
+            target=self._health_check_loop,
+            args=(interval,),
+            daemon=True
+        )
+        self._health_check_thread.start()
+        logger.info(f"Started health monitoring thread with interval {interval}s")
+    
+    def stop_health_monitoring(self):
+        """Stop the health monitoring thread."""
+        if not self._health_check_thread or not self._health_check_thread.is_alive():
+            logger.warning("Health monitoring thread not running")
+            return
+        
+        self._stop_health_check.set()
+        self._health_check_thread.join(timeout=5.0)
+        logger.info("Stopped health monitoring thread")
+    
+    def _health_check_loop(self, interval: int):
+        """
+        Main health check loop.
+        
+        Args:
+            interval: Interval in seconds to run the health check loop
+        """
+        logger.info("Health check loop started")
+        
+        while not self._stop_health_check.is_set():
+            try:
+                self.check_all_resources()
+            except Exception as e:
+                logger.error(f"Error in health check loop: {str(e)}")
+            
+            # Wait for the next interval or until stopped
+            self._stop_health_check.wait(interval)
+    
+    def check_all_resources(self):
+        """Check the health of all registered resources."""
+        with self._lock:
+            now = datetime.utcnow()
+            
+            # Top-down approach: check resources with no dependencies first
+            resources_to_check = []
+            resource_dependencies = self.resource_dependencies.copy()
+            
+            # Find resources that are due for a health check
+            due_resources = {
+                resource_id for resource_id in self.resource_monitors
+                if (now - self.last_health_check.get(resource_id, datetime.min)).total_seconds() 
+                >= self.health_check_intervals.get(resource_id, 60)
+            }
+            
+            # Build a list of resources to check in dependency order
+            while due_resources:
+                # Find resources with no pending dependencies
+                independent_resources = {
+                    resource_id for resource_id in due_resources
+                    if not resource_dependencies.get(resource_id, set())
+                }
+                
+                if not independent_resources:
+                    # Circular dependency detected, log and break
+                    logger.warning(f"Circular dependency detected in resources: {due_resources}")
+                    break
+                
+                # Add independent resources to the check list
+                resources_to_check.extend(independent_resources)
+                
+                # Remove checked resources from the pending list
+                due_resources -= independent_resources
+                
+                # Remove checked resources from dependencies
+                for deps in resource_dependencies.values():
+                    deps -= independent_resources
+            
+            # Now check the resources in order
+            for resource_id in resources_to_check:
+                try:
+                    self.check_resource(resource_id)
+                except Exception as e:
+                    logger.error(f"Error checking resource {resource_id}: {str(e)}")
+                finally:
+                    self.last_health_check[resource_id] = now
+    
+    def check_resource(self, resource_id: str) -> bool:
+        """
+        Check the health of a specific resource.
+        
+        Args:
+            resource_id: Unique identifier for the resource
+            
+        Returns:
+            True if the resource is healthy, False otherwise
+        """
+        if resource_id not in self.resource_monitors:
+            logger.warning(f"No monitor registered for resource: {resource_id}")
+            return False
+        
+        monitor_func = self.resource_monitors[resource_id]
+        circuit_breaker = self.circuit_breakers.get(resource_id)
+        retry_strategy = self.retry_strategies.get(resource_id)
+        
+        # Determine current status
+        current_status = self.get_resource_status(resource_id)
+        
+        try:
+            # Execute the monitor function with circuit breaker protection if available
+            if circuit_breaker:
+                try:
+                    if retry_strategy:
+                        # Use both circuit breaker and retry strategy
+                        result = circuit_breaker.execute(
+                            lambda: retry_strategy.execute_with_retry(
+                                monitor_func,
+                                max_attempts=3,
+                                on_retry_callback=lambda attempt, exc: logger.warning(
+                                    f"Retry {attempt} for resource {resource_id} after error: {str(exc)}"
+                                )
+                            )
+                        )
+                    else:
+                        # Use only circuit breaker
+                        result = circuit_breaker.execute(monitor_func)
+                except Exception as e:
+                    logger.warning(f"Health check failed for resource {resource_id}: {str(e)}")
+                    result = False
+            else:
+                # No circuit breaker, use retry strategy if available
+                if retry_strategy:
+                    try:
+                        result = retry_strategy.execute_with_retry(
+                            monitor_func,
+                            max_attempts=3,
+                            on_retry_callback=lambda attempt, exc: logger.warning(
+                                f"Retry {attempt} for resource {resource_id} after error: {str(exc)}"
+                            )
+                        )
+                    except Exception as e:
+                        logger.warning(f"Health check failed for resource {resource_id}: {str(e)}")
+                        result = False
+                else:
+                    # No circuit breaker or retry strategy
+                    result = monitor_func()
+            
+            # Update status based on result
+            if result:
+                if current_status != ResourceStatus.HEALTHY:
+                    self._update_resource_status(resource_id, ResourceStatus.HEALTHY)
+                    logger.info(f"Resource {resource_id} is now HEALTHY")
+            else:
+                if current_status == ResourceStatus.HEALTHY:
+                    self._update_resource_status(resource_id, ResourceStatus.DEGRADED)
+                    logger.warning(f"Resource {resource_id} is now DEGRADED")
+                elif current_status == ResourceStatus.DEGRADED:
+                    self._update_resource_status(resource_id, ResourceStatus.FAILING)
+                    logger.error(f"Resource {resource_id} is now FAILING")
+                
+                # Attempt recovery if the resource is failing
+                if self.get_resource_status(resource_id) == ResourceStatus.FAILING:
+                    self._initiate_recovery(resource_id)
+            
+            return result
+        except Exception as e:
+            logger.error(f"Error monitoring resource {resource_id}: {str(e)}")
+            
+            # Update status to failing on exception
+            if current_status != ResourceStatus.FAILING:
+                self._update_resource_status(resource_id, ResourceStatus.FAILING)
+                logger.error(f"Resource {resource_id} is now FAILING due to exception: {str(e)}")
+                
+                # Attempt recovery
+                self._initiate_recovery(resource_id)
+            
+            return False
+    
+    def _initiate_recovery(self, resource_id: str):
+        """
+        Initiate recovery for a failing resource.
+        
+        Args:
+            resource_id: Unique identifier for the resource
+        """
+        if resource_id not in self.recovery_handlers:
+            logger.warning(f"No recovery handler registered for resource: {resource_id}")
+            return
+        
+        # Update status to recovering
+        self._update_resource_status(resource_id, ResourceStatus.RECOVERING)
+        logger.info(f"Initiating recovery for resource: {resource_id}")
+        
+        recovery_func = self.recovery_handlers[resource_id]
+        retry_strategy = self.retry_strategies.get(resource_id, 
+                                                 ExponentialBackoffStrategy(
+                                                     base_delay=1.0,
+                                                     max_delay=30.0,
+                                                     multiplier=2.0,
+                                                     jitter_factor=0.2
+                                                 ))
+        
+        # Execute the recovery function with retry
+        try:
+            success = retry_strategy.execute_with_retry(
+                recovery_func,
+                max_attempts=3,
+                on_retry_callback=lambda attempt, exc: logger.warning(
+                    f"Retry {attempt} for recovery of resource {resource_id} after error: {str(exc)}"
+                )
+            )
+            
+            if success:
+                logger.info(f"Recovery successful for resource: {resource_id}")
+                self._update_resource_status(resource_id, ResourceStatus.HEALTHY)
+                
+                # Reset the circuit breaker if one exists
+                circuit_breaker = self.circuit_breakers.get(resource_id)
+                if circuit_breaker:
+                    circuit_breaker.reset()
+                    logger.info(f"Reset circuit breaker for resource: {resource_id}")
+            else:
+                logger.error(f"Recovery failed for resource: {resource_id}")
+                self._update_resource_status(resource_id, ResourceStatus.FAILING)
+        except Exception as e:
+            logger.error(f"Error during recovery for resource {resource_id}: {str(e)}")
+            self._update_resource_status(resource_id, ResourceStatus.FAILING)
+    
+    def _update_resource_status(self, resource_id: str, status: str):
+        """
+        Update the status of a resource.
+        
+        Args:
+            resource_id: Unique identifier for the resource
+            status: New status
+        """
+        with self._lock:
+            # Initialize history if needed
+            if resource_id not in self.status_history:
+                self.status_history[resource_id] = []
+            
+            # Add the new status
+            self.status_history[resource_id].append((datetime.utcnow(), status))
+            
+            # Limit history size
+            if len(self.status_history[resource_id]) > 100:
+                self.status_history[resource_id] = self.status_history[resource_id][-100:]
+    
+    def get_resource_status(self, resource_id: str) -> str:
+        """
+        Get the current status of a resource.
+        
+        Args:
+            resource_id: Unique identifier for the resource
+            
+        Returns:
+            Current status of the resource, or HEALTHY if no status is available
+        """
+        with self._lock:
+            if resource_id not in self.status_history or not self.status_history[resource_id]:
+                return ResourceStatus.HEALTHY
+            
+            return self.status_history[resource_id][-1][1]
+    
+    def get_status_history(self, resource_id: str) -> List[Tuple[datetime, str]]:
+        """
+        Get the status history of a resource.
+        
+        Args:
+            resource_id: Unique identifier for the resource
+            
+        Returns:
+            List of (timestamp, status) tuples
+        """
+        with self._lock:
+            if resource_id not in self.status_history:
+                return []
+            
+            return self.status_history[resource_id].copy()
+    
+    def get_metrics(self) -> Dict[str, Any]:
+        """
+        Get metrics about the orchestrator and its components.
+        
+        Returns:
+            Dictionary with orchestrator metrics
+        """
+        with self._lock:
+            metrics = {
+                "resources": {}
+            }
+            
+            for resource_id in set(self.resource_monitors.keys()) | set(self.circuit_breakers.keys()):
+                resource_metrics = {
+                    "status": self.get_resource_status(resource_id),
+                    "last_check": self.last_health_check.get(resource_id, "never").isoformat() 
+                                if isinstance(self.last_health_check.get(resource_id), datetime) else "never",
+                    "check_interval": self.health_check_intervals.get(resource_id),
+                    "dependencies": list(self.resource_dependencies.get(resource_id, set())),
+                    "has_monitor": resource_id in self.resource_monitors,
+                    "has_recovery": resource_id in self.recovery_handlers
+                }
+                
+                # Add circuit breaker metrics if available
+                if resource_id in self.circuit_breakers:
+                    circuit_breaker = self.circuit_breakers[resource_id]
+                    resource_metrics["circuit_breaker"] = circuit_breaker.get_metrics()
+                
+                # Add retry strategy metrics if available
+                if resource_id in self.retry_strategies:
+                    retry_strategy = self.retry_strategies[resource_id]
+                    resource_metrics["retry_strategy"] = retry_strategy.get_metrics()
+                
+                metrics["resources"][resource_id] = resource_metrics
+            
+            return metrics

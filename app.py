@@ -19,7 +19,9 @@ from flask import Flask, jsonify, request, render_template, redirect, url_for, R
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import DeclarativeBase
 
-from models import db, SyncPair, SyncOperation, SystemMetrics, AuditEntry
+from models import db, SystemMetrics, AuditEntry
+from apps.backend.models.sync_pair import SyncPair
+from apps.backend.models.sync_operation import SyncOperation
 
 # Import system monitor utility if available
 try:
@@ -62,7 +64,6 @@ except ImportError:
 
 # Import API blueprints
 try:
-    from apps.backend.api import sync_bp
     SYNC_API_AVAILABLE = True
     logger.info("Sync operations API module available")
 except ImportError:
@@ -85,9 +86,10 @@ db.init_app(app)
 
 # Register API blueprints
 try:
+    from apps.backend.api.sync_operations import sync_bp
     app.register_blueprint(sync_bp)
     logger.info("Registered sync operations API blueprint")
-except NameError:
+except ImportError:
     logger.warning("Sync operations API blueprint not available")
 
 # Create database tables if they don't exist

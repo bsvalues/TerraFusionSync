@@ -1,12 +1,11 @@
 """
-Self-healing package for the SyncService.
+Self-healing package for TerraFusion SyncService platform.
 
-This package provides components for implementing self-healing mechanisms
+This package provides components for implementing self-healing capabilities 
 in the SyncService, including circuit breakers, retry strategies, and
-health monitoring.
+orchestration of recovery operations.
 """
 
-# Import main components for easy access
-from .orchestrator import SelfHealingOrchestrator
 from .circuit_breaker import CircuitBreaker
-from .retry_strategy import RetryStrategy
+from .retry_strategy import RetryStrategy, ExponentialBackoffStrategy
+from .orchestrator import SelfHealingOrchestrator
