@@ -616,6 +616,14 @@ def audit_dashboard():
                           summary=summary)
 
 
+@app.route('/architecture')
+@requires_auth
+def architecture_visualization():
+    """Interactive system architecture visualization."""
+    user = get_current_user()
+    return render_template('architecture.html', user=user)
+
+
 @app.route('/api/docs')
 def api_docs():
     """Redirect to the API documentation."""
@@ -1012,6 +1020,228 @@ def refresh_metrics():
         "message": "Metrics collection initiated",
         "timestamp": datetime.utcnow().isoformat()
     })
+
+@app.route('/api/architecture')
+@requires_auth
+def get_architecture_data():
+    """
+    API endpoint to provide system architecture data for visualization.
+    
+    Returns JSON data with nodes and links representing the system components
+    and their relationships.
+    """
+    # Check the status of services
+    syncservice_status = check_syncservice_status()
+    
+    # Check database connection
+    try:
+        # Simple database query to check connection
+        db_status = db.session.execute(db.select(db.func.now())).scalar() is not None
+    except Exception as e:
+        logger.error(f"Database connection error: {str(e)}")
+        db_status = False
+    
+    # Get latest metrics
+    try:
+        latest_metrics = db.session.query(SystemMetrics).order_by(
+            SystemMetrics.timestamp.desc()).first()
+    except Exception:
+        latest_metrics = None
+    
+    # Define node statuses based on health checks
+    api_gateway_status = "normal"
+    sync_service_status = "normal" if syncservice_status else "error"
+    database_status = "normal" if db_status else "error"
+    
+    # Set warning thresholds
+    cpu_warning = 70.0
+    cpu_critical = 90.0
+    memory_warning = 80.0
+    memory_critical = 95.0
+    
+    # Get metrics for status evaluation
+    if latest_metrics:
+        cpu_usage = latest_metrics.cpu_usage
+        memory_usage = latest_metrics.memory_usage
+        
+        # Set status based on resource usage
+        if cpu_usage > cpu_critical or memory_usage > memory_critical:
+            api_gateway_status = "error"
+            sync_service_status = "error" if syncservice_status else "error"
+        elif cpu_usage > cpu_warning or memory_usage > memory_warning:
+            api_gateway_status = "warning"
+            sync_service_status = "warning" if syncservice_status else "error"
+    
+    # Build the architecture data structure with nodes and links
+    nodes = [
+        {
+            "id": "client",
+            "name": "Client Applications",
+            "type": "client",
+            "description": "End-user applications that interact with the TerraFusion SyncService platform",
+            "status": "normal"
+        },
+        {
+            "id": "api_gateway",
+            "name": "API Gateway",
+            "type": "api",
+            "description": "Flask-based API Gateway that handles authentication, routing, and proxying to the SyncService",
+            "status": api_gateway_status,
+            "metrics": {
+                "cpu_usage": f"{latest_metrics.cpu_usage:.1f}%" if latest_metrics else "N/A",
+                "memory_usage": f"{latest_metrics.memory_usage:.1f}%" if latest_metrics else "N/A",
+                "response_time": f"{latest_metrics.response_time:.3f}s" if latest_metrics else "N/A",
+                "error_count": str(latest_metrics.error_count) if latest_metrics else "N/A"
+            } if latest_metrics else {}
+        },
+        {
+            "id": "sync_service",
+            "name": "SyncService",
+            "type": "service",
+            "description": "Core FastAPI-based service that implements the data synchronization and transformation logic",
+            "status": sync_service_status,
+            "metrics": {
+                "cpu_usage": f"{latest_metrics.cpu_usage:.1f}%" if latest_metrics else "N/A",
+                "memory_usage": f"{latest_metrics.memory_usage:.1f}%" if latest_metrics else "N/A",
+                "active_connections": str(latest_metrics.active_connections) if latest_metrics else "N/A",
+                "sync_operations": str(latest_metrics.sync_operations_count) if latest_metrics else "N/A"
+            } if latest_metrics else {}
+        },
+        {
+            "id": "database",
+            "name": "PostgreSQL Database",
+            "type": "database",
+            "description": "Primary database storing configuration, metrics, audit entries, and operation state",
+            "status": database_status,
+            "metrics": {
+                "disk_usage": f"{latest_metrics.disk_usage:.1f}%" if latest_metrics else "N/A"
+            } if latest_metrics else {}
+        },
+        {
+            "id": "auth_service",
+            "name": "Authentication Service",
+            "type": "auth",
+            "description": "Handles user authentication and authorization, integrated with County's Azure AD",
+            "status": "normal"
+        },
+        {
+            "id": "pacs_system",
+            "name": "PACS System",
+            "type": "service",
+            "description": "Legacy Picture Archiving and Communication System",
+            "status": "normal"
+        },
+        {
+            "id": "cama_system",
+            "name": "CAMA System",
+            "type": "service",
+            "description": "Computer Assisted Mass Appraisal System",
+            "status": "normal"
+        },
+        {
+            "id": "metrics_handler",
+            "name": "Metrics Collector",
+            "type": "service",
+            "description": "Component responsible for collecting and storing system metrics",
+            "status": "normal" if latest_metrics else "warning",
+            "statusDetails": "Last collection: " + (latest_metrics.timestamp.strftime("%Y-%m-%d %H:%M:%S") if latest_metrics else "Never")
+        },
+        {
+            "id": "self_healing",
+            "name": "Self-Healing System",
+            "type": "service",
+            "description": "Autonomous recovery system with circuit breakers and retry orchestration",
+            "status": "normal"
+        }
+    ]
+    
+    # Define the relationships between components
+    links = [
+        {
+            "source": "client",
+            "target": "api_gateway",
+            "description": "HTTP/HTTPS requests"
+        },
+        {
+            "source": "api_gateway",
+            "target": "sync_service",
+            "description": "Internal HTTP requests",
+            "status": "error" if not syncservice_status else None
+        },
+        {
+            "source": "api_gateway",
+            "target": "database",
+            "description": "SQL queries via SQLAlchemy",
+            "status": "error" if not db_status else None
+        },
+        {
+            "source": "api_gateway",
+            "target": "auth_service",
+            "description": "Authentication requests"
+        },
+        {
+            "source": "sync_service",
+            "target": "database",
+            "description": "SQL queries via SQLAlchemy",
+            "status": "error" if not db_status else None
+        },
+        {
+            "source": "sync_service",
+            "target": "pacs_system",
+            "description": "Data extraction and synchronization"
+        },
+        {
+            "source": "sync_service",
+            "target": "cama_system",
+            "description": "Data insertion and validation"
+        },
+        {
+            "source": "metrics_handler",
+            "target": "sync_service",
+            "description": "Metrics collection",
+            "status": "error" if not syncservice_status else None
+        },
+        {
+            "source": "metrics_handler",
+            "target": "database",
+            "description": "Metrics storage",
+            "status": "error" if not db_status else None
+        },
+        {
+            "source": "self_healing",
+            "target": "sync_service",
+            "description": "Service monitoring and recovery",
+            "status": "error" if not syncservice_status else None
+        },
+        {
+            "source": "self_healing",
+            "target": "database",
+            "description": "State persistence",
+            "status": "error" if not db_status else None
+        }
+    ]
+    
+    # Create audit entry for architecture view access
+    try:
+        user = get_current_user()
+        create_audit_log(
+            event_type="architecture_view",
+            resource_type="system",
+            description="Architecture visualization data accessed",
+            severity="info",
+            user_id=getattr(user, 'id', None),
+            username=getattr(user, 'username', None)
+        )
+    except Exception as e:
+        logger.error(f"Failed to create audit log for architecture view: {str(e)}")
+    
+    return jsonify({
+        "nodes": nodes,
+        "links": links,
+        "timestamp": datetime.utcnow().isoformat(),
+        "system_status": "healthy" if syncservice_status and db_status else "degraded"
+    })
+
 
 @app.route('/api/metrics/status')
 @requires_auth
