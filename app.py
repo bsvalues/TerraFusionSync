@@ -16,7 +16,7 @@ from flask import Flask, jsonify, request, render_template, redirect, url_for, R
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import DeclarativeBase
 
-from models import db, SyncPair, SyncOperation, SystemMetrics
+from models import db, SyncPair, SyncOperation, SystemMetrics, AuditEntry
 # Import authentication module
 try:
     from apps.backend.api.auth import requires_auth, init_auth_routes, get_current_user
@@ -259,6 +259,121 @@ def get_metrics():
     return jsonify([metric.to_dict() for metric in metrics])
 
 
+@app.route('/api/audit', methods=['GET'])
+@requires_auth
+def get_audit_entries():
+    """
+    Get audit trail entries with filtering options.
+    
+    Query parameters:
+        - from_date: ISO-formatted date to filter events from
+        - to_date: ISO-formatted date to filter events to
+        - event_type: Type of event to filter (e.g., 'sync_started')
+        - resource_type: Type of resource to filter (e.g., 'sync_pair')
+        - resource_id: ID of resource to filter
+        - operation_id: ID of sync operation to filter
+        - severity: Severity level to filter (e.g., 'error')
+        - limit: Maximum number of entries to return (default: 100)
+    """
+    # Parse query parameters
+    try:
+        from_date = request.args.get('from_date')
+        if from_date:
+            from_date = datetime.fromisoformat(from_date.replace('Z', '+00:00'))
+        
+        to_date = request.args.get('to_date')
+        if to_date:
+            to_date = datetime.fromisoformat(to_date.replace('Z', '+00:00'))
+    except ValueError:
+        return jsonify({
+            "error": "Invalid date format",
+            "message": "Dates must be in ISO format (YYYY-MM-DDTHH:MM:SS.sssZ)"
+        }), 400
+    
+    event_type = request.args.get('event_type')
+    resource_type = request.args.get('resource_type')
+    resource_id = request.args.get('resource_id')
+    operation_id = request.args.get('operation_id', type=int)
+    severity = request.args.get('severity')
+    limit = request.args.get('limit', 100, type=int)
+    
+    # Build query
+    query = AuditEntry.query
+    
+    if from_date:
+        query = query.filter(AuditEntry.timestamp >= from_date)
+    
+    if to_date:
+        query = query.filter(AuditEntry.timestamp <= to_date)
+    
+    if event_type:
+        query = query.filter(AuditEntry.event_type == event_type)
+    
+    if resource_type:
+        query = query.filter(AuditEntry.resource_type == resource_type)
+    
+    if resource_id:
+        query = query.filter(AuditEntry.resource_id == resource_id)
+    
+    if operation_id:
+        query = query.filter(AuditEntry.operation_id == operation_id)
+    
+    if severity:
+        query = query.filter(AuditEntry.severity == severity)
+    
+    # Execute query with limit and order by timestamp
+    entries = query.order_by(AuditEntry.timestamp.desc()).limit(limit).all()
+    
+    return jsonify([entry.to_dict() for entry in entries])
+
+
+@app.route('/api/audit/<int:audit_id>', methods=['GET'])
+@requires_auth
+def get_audit_entry(audit_id):
+    """Get a specific audit entry by ID."""
+    entry = AuditEntry.query.get_or_404(audit_id)
+    return jsonify(entry.to_dict())
+
+
+@app.route('/api/audit/summary', methods=['GET'])
+@requires_auth
+def get_audit_summary():
+    """
+    Get audit trail summary statistics.
+    
+    Returns counts and latest events grouped by event type and severity.
+    """
+    # Get count by event type
+    event_type_counts = db.session.query(
+        AuditEntry.event_type, 
+        db.func.count(AuditEntry.id)
+    ).group_by(AuditEntry.event_type).all()
+    
+    # Get count by severity
+    severity_counts = db.session.query(
+        AuditEntry.severity, 
+        db.func.count(AuditEntry.id)
+    ).group_by(AuditEntry.severity).all()
+    
+    # Get latest entry timestamp
+    latest_entry = AuditEntry.query.order_by(
+        AuditEntry.timestamp.desc()
+    ).first()
+    
+    # Get latest error events
+    latest_errors = AuditEntry.query.filter(
+        AuditEntry.severity.in_(['error', 'critical'])
+    ).order_by(AuditEntry.timestamp.desc()).limit(5).all()
+    
+    return jsonify({
+        "total_entries": AuditEntry.query.count(),
+        "latest_timestamp": latest_entry.timestamp.isoformat() if latest_entry else None,
+        "event_type_counts": dict(event_type_counts),
+        "severity_counts": dict(severity_counts),
+        "latest_errors": [error.to_dict() for error in latest_errors]
+    })
+
+
 @app.route('/api/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE'])
 @requires_auth
 def proxy(path):
@@ -307,6 +422,74 @@ def proxy(path):
 
 # Initialize authentication routes
 init_auth_routes(app)
+
+# Utility function for creating audit log entries
+def create_audit_log(
+    event_type: str,
+    resource_type: str,
+    description: str,
+    resource_id: str = None,
+    operation_id: int = None,
+    previous_state: dict = None,
+    new_state: dict = None,
+    severity: str = "info",
+    user_id: str = None,
+    username: str = None,
+    correlation_id: str = None
+) -> AuditEntry:
+    """
+    Create and save an audit log entry.
+    
+    Args:
+        event_type: Type of event (e.g., 'sync_started', 'sync_completed', 'config_changed')
+        resource_type: Type of resource (e.g., 'sync_pair', 'operation', 'system_config')
+        description: Human-readable description of the event
+        resource_id: ID of the resource (if applicable)
+        operation_id: ID of the sync operation (if applicable)
+        previous_state: JSON representation of previous state for tracking changes
+        new_state: JSON representation of new state for tracking changes
+        severity: Event severity ('info', 'warning', 'error', 'critical')
+        user_id: ID of the user who performed the action (if available)
+        username: Username of the user who performed the action (if available)
+        correlation_id: Unique ID for tracing related events
+    
+    Returns:
+        The created AuditEntry instance
+    """
+    # Get current user if available and not provided
+    if not user_id or not username:
+        current_user = get_current_user()
+        if current_user:
+            user_id = user_id or current_user.get('id')
+            username = username or current_user.get('username')
+    
+    # Get client information from request
+    ip_address = request.remote_addr if request else None
+    user_agent = request.user_agent.string if request and request.user_agent else None
+    
+    # Create audit entry
+    entry = AuditEntry(
+        event_type=event_type,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        operation_id=operation_id,
+        description=description,
+        previous_state=previous_state,
+        new_state=new_state,
+        severity=severity,
+        user_id=user_id,
+        username=username,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        correlation_id=correlation_id
+    )
+    
+    # Save to database
+    db.session.add(entry)
+    db.session.commit()
+    
+    return entry
+
 
 # Create database tables if they don't exist
 with app.app_context():
