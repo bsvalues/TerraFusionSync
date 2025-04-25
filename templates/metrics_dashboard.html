@@ -683,10 +683,17 @@
             metricsStatusElement.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Checking...';
             syncStatusElement.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Checking...';
             
-            fetch('/api/metrics/status', {
-                // Add timeout to prevent long-hanging requests
-                signal: AbortSignal.timeout(5000) // 5 second timeout
-            })
+            // Implement fetch with timeout using Promise race
+            const fetchWithTimeout = (url, options, timeout = 5000) => {
+                return Promise.race([
+                    fetch(url, options),
+                    new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error('Request timeout')), timeout)
+                    )
+                ]);
+            };
+            
+            fetchWithTimeout('/api/metrics/status', {})
             .then(response => {
                 if (!response.ok) {
                     throw new Error(`HTTP error ${response.status}`);
@@ -767,10 +774,10 @@
             button.disabled = true;
             button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Refreshing...';
             
-            // Call the refresh API endpoint
-            fetch('/api/metrics/refresh', {
+            // Call the refresh API endpoint with timeout
+            fetchWithTimeout('/api/metrics/refresh', {
                 method: 'POST'
-            })
+            }, 8000)
             .then(response => response.json())
             .then(data => {
                 // Show toast notification for metrics refresh
@@ -808,13 +815,13 @@
             // Show initial notification
             showToast('warning', 'Health Check Started', 'Running comprehensive health check and recovery...');
             
-            // Call the health check API endpoint with error handling
-            fetch('/api/service/health-check', {
+            // Call the health check API endpoint with error handling and timeout
+            fetchWithTimeout('/api/service/health-check', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 }
-            })
+            }, 10000) // Longer timeout for health check since it might restart services
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
