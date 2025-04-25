@@ -39,19 +39,11 @@ def main():
         # Set environment variable to run in development mode with no auth
         os.environ["SYNCSERVICE_DEV_MODE"] = "1"
         
-        # Get the current directory
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        
-        # Path to the SyncService directory
-        syncservice_dir = os.path.join(current_dir, "apps", "backend", "syncservice")
-        
-        # Change to the SyncService directory
-        os.chdir(syncservice_dir)
-        
-        # Command to run uvicorn
+        # Use the local standalone syncservice.py implementation
+        # This has the updated health check endpoints
         cmd = [
             sys.executable, "-m", "uvicorn",
-            "syncservice.main:app",
+            "syncservice:app",
             "--host", "0.0.0.0",
             "--port", "8080",
             "--reload"

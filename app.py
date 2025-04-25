@@ -140,7 +140,9 @@ def api_docs():
 
 @app.route('/api/status')
 def status():
-    """API status endpoint."""
+    """
+    API status endpoint providing overall system status.
+    """
     syncservice_status = check_syncservice_status()
     
     return jsonify({
@@ -152,6 +154,61 @@ def status():
             "database": "online"  # This would normally check the database connection
         },
         "version": "0.1.0"
+    })
+
+@app.route('/health/live')
+def liveness_check():
+    """
+    Kubernetes liveness probe endpoint.
+    Verifies that the API Gateway is running and responsive.
+    """
+    return jsonify({
+        "status": "alive",
+        "service": "TerraFusion API Gateway",
+        "timestamp": datetime.utcnow().isoformat()
+    })
+
+@app.route('/health/ready')
+def readiness_check():
+    """
+    Kubernetes readiness probe endpoint.
+    Verifies that the API Gateway is ready to accept traffic.
+    """
+    # Check if SyncService is available
+    syncservice_status = check_syncservice_status()
+    
+    # Check database connection
+    try:
+        # Simple database query to check connection
+        db_status = db.session.execute(db.select(db.func.now())).scalar() is not None
+    except Exception as e:
+        logger.error(f"Database connection error: {str(e)}")
+        db_status = False
+    
+    # Determine if we're ready based on component status
+    is_ready = db_status  # We can function without SyncService, but not without DB
+    
+    if not is_ready:
+        # Return 503 Service Unavailable if not ready
+        return jsonify({
+            "status": "not_ready",
+            "reason": "One or more critical dependencies unavailable",
+            "details": {
+                "database": "up" if db_status else "down",
+                "sync_service": "up" if syncservice_status else "down",
+            },
+            "timestamp": datetime.utcnow().isoformat()
+        }), 503
+    
+    return jsonify({
+        "status": "ready",
+        "details": {
+            "dependencies": {
+                "database": "up",
+                "sync_service": "up" if syncservice_status else "down",
+            }
+        },
+        "timestamp": datetime.utcnow().isoformat()
     })
 
 

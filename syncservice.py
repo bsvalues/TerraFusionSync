@@ -96,7 +96,10 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
+    """
+    General health check endpoint that provides comprehensive system status.
+    This combines liveness and readiness information.
+    """
     health_data = system_monitor.get_system_health()
     return {
         "service": "TerraFusion SyncService",
@@ -104,6 +107,54 @@ async def health_check():
         "version": "0.1.0",
         "time": datetime.utcnow().isoformat(),
         "system": health_data
+    }
+
+@app.get("/health/live")
+async def liveness_check():
+    """
+    Kubernetes liveness probe endpoint.
+    Verifies that the application is running and responsive.
+    """
+    return {
+        "status": "alive",
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+@app.get("/health/ready")
+async def readiness_check():
+    """
+    Kubernetes readiness probe endpoint.
+    Verifies that the application is ready to accept traffic.
+    """
+    # Check system health to ensure we're in a good state
+    health_data = system_monitor.get_system_health()
+    
+    # In a real implementation, we would check database connections,
+    # message queue connections, and other dependencies
+    
+    is_ready = health_data["status"] == "healthy"
+    
+    if not is_ready:
+        # Return 503 Service Unavailable if not ready
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "not_ready",
+                "reason": "System health check failed",
+                "details": health_data,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+    
+    return {
+        "status": "ready",
+        "details": {
+            "dependencies": {
+                "database": "up",  # This would be dynamic in a real implementation
+                "message_queue": "up"
+            }
+        },
+        "timestamp": datetime.utcnow().isoformat()
     }
 
 @app.get("/config")

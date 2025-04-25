@@ -1,0 +1,67 @@
+Here’s the “What’s Next” roadmap—broken into Immediate, Short-Term, Mid-Term, and Long-Term phases—with concrete tasks, timelines, and best-practice citations. Each step builds on the deep-dive findings to turn TerraFusionMono into a rock-solid, production-grade platform.  
+
+**Key Findings Summary:**  
+You’ve bootstrapped an Nx monorepo hosting a federated GraphQL gateway, backend sync service, and UI shell with GIS and levy-calc plugins. Core scaffolding exists, but critical gaps remain in CI/CD, health-checks, observability, sandbox security, audit-trail federation, and testing. Addressing these in priority order will de-risk your platform and accelerate delivery.  
+
+---
+
+## Immediate (Next 24 Hours)
+
+| Task | Why | References |
+|------|-----|------------|
+| **Merge bootstrap PRs** | Lock in Nx, Replit AI Agent setup, initial plugins |  ([How to Bootstrap a Monorepo with Nx: A Comprehensive Guide](https://www.wisp.blog/blog/how-to-bootstrap-a-monorepo-with-nx-a-comprehensive-guide?utm_source=chatgpt.com)) |
+| **Smoke-test health endpoints** (`/health/live`, `/health/ready`) on core-gateway & syncservice | Verify basic liveness/readiness per FastAPI/Apollo best practices   ([A Guide to Monorepos for Front-end Code | Toptal®](https://www.toptal.com/front-end/guide-to-monorepos?utm_source=chatgpt.com)) |  
+| **Enable NATS monitoring** (HTTP port 8222) and verify consumer/stream metrics | Ensure JetStream health and quotas  |  
+
+---
+
+## Short-Term (1–3 Days)
+
+| Task | Why | References |
+|------|-----|------------|
+| **CI Workflow**: Create `.github/workflows/ci.yml` to run `nx affected:test,lint,build`, `poetry run pytest`, `terraform plan` & `helm upgrade` | Enforce quality gates & automated deploys  ([Bootstrapping App - Developer Roadmap Help? : r/startups - Reddit](https://www.reddit.com/r/startups/comments/w1lkhx/bootstrapping_app_developer_roadmap_help/?utm_source=chatgpt.com))  |  
+| **Audit-Trail Subgraph**: Scaffold `apps/audit-subgraph` with Apollo Subgraph, define `AuditEntry` type & `auditHistory` query, federate via gateway | Provide lineage via GraphQL federation  |  
+| **Emit Prometheus metrics** (latency, errors) from core-gateway & backend using `prom-client` | Feed Grafana dashboards for SLOs  ([How to deploy Portworx using GitOps workflows](https://portworx.com/blog/how-to-deploy-portworx-using-gitops-workflows/?utm_source=chatgpt.com)) |  
+
+---
+
+## Mid-Term (1–2 Weeks)
+
+| Task | Why | References |
+|------|-----|------------|
+| **WASM Sandbox**: Implement Wasmtime WASI-preview2 sandbox in `server/plugin/sandbox.ts`, enforce `manifest.yaml` FS/network quotas, audit syscalls | Secure plugin execution  ([Devpod: Improving Developer Productivity at Uber with Remote ...](https://www.uber.com/en-US/blog/devpod-improving-developer-productivity-at-uber/?utm_source=chatgpt.com))  |  
+| **Horizontal Pod Autoscaler**: Configure HPA in Helm (scale on CPU & custom “LSN lag” metric) | Auto-scale syncservice under load  |  
+| **E2E Testing**: Add Cypress tests for SyncStatusPanel & sync flow; integrate into Nx e2e target and CI | Validate end-to-end behavior  |  
+
+---
+
+## Long-Term (3 Weeks–2 Months)
+
+| Task | Why | References |
+|------|-----|------------|
+| **Plugin Dev Portal**: Launch sandbox environment with mock data, CLI, and docs for third-party developers | Drive ecosystem growth |  
+| **Federation Hardening**: Add Rover schema checks in CI, federated tracing, field-level metrics | Ensure supergraph integrity  |  
+| **Blue/Green Deployments**: Implement blue/green or canary via Flagger or Helm strategies | Zero-downtime releases  ([Monorepo in Data Science Teams — A Practical Starting Point from ...](https://medium.com/clarityai-engineering/monorepo-in-data-science-teams-892fe64a9ef0?utm_source=chatgpt.com)) |  
+| **Security Audit**: Conduct pen test, enforce mTLS, PodSecurityPolicies, and least-privilege IAM | Enterprise compliance |  
+
+---
+
+## Milestones & Metrics
+
+| Milestone               | Timeline    | Success Criteria                                      |
+|-------------------------|-------------|-------------------------------------------------------|
+| **Alpha Release**       | Today       | CI green, health endpoints pass, basic sync works     |
+| **Pipeline Complete**   | +3 days     | Automated CI/CD, staging deploys succeed              |
+| **Sandbox Enforced**    | +2 weeks    | WASM sandbox in place, audit logs captured            |
+| **E2E Coverage ≥ 80 %** | +3 weeks    | Cypress tests passing in CI                           |
+| **v1.0 Beta**           | +2 months   | Stable canary rollout, audit lineage in production    |
+
+---
+
+**Next Immediate Prompt for Replit AI Agent:**
+
+```text
+“Implement the CI workflow: create `.github/workflows/ci.yml` as specified in the Short-Term plan (step 1), including Nx caching, Poetry tests, Terraform plan, and Helm deploy.”
+```
+
+Use that to kick off the next automated PR.
