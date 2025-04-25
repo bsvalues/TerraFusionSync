@@ -369,18 +369,62 @@
         const cpuData = {{ system_metrics|map(attribute='cpu_usage')|list|tojson }};
         const memoryData = {{ system_metrics|map(attribute='memory_usage')|list|tojson }};
         const responseTimeData = {{ system_metrics|map(attribute='response_time')|list|tojson }};
+        const diskData = {{ system_metrics|map(attribute='disk_usage')|list|tojson }};
+        const activeConnectionsData = {{ system_metrics|map(attribute='active_connections')|list|tojson }};
+        const errorCountData = {{ system_metrics|map(attribute='error_count')|list|tojson }};
         
-        // Reverse arrays to show chronological order
+        // Collect advanced metrics if available
+        const syncOperationsCountData = {{ system_metrics|map(attribute='sync_operations_count')|list|tojson }};
+        const syncSuccessRateData = {{ system_metrics|map(attribute='sync_operations_success_rate')|list|tojson }};
+        
+        // Reverse arrays to show chronological order (newest data last)
         timestamps.reverse();
         cpuData.reverse();
         memoryData.reverse();
         responseTimeData.reverse();
+        diskData.reverse();
+        activeConnectionsData.reverse();
+        errorCountData.reverse();
+        syncOperationsCountData.reverse();
+        syncSuccessRateData.reverse();
         
         // Format timestamps for display
         const formattedLabels = timestamps.map(timestamp => {
             const date = new Date(timestamp);
             return date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
         });
+        
+        // Generate color gradients based on thresholds
+        function generateGradient(ctx, metric) {
+            // Create gradient based on metric type
+            const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+            
+            if (metric === 'cpu' || metric === 'memory' || metric === 'disk') {
+                // Resource usage gradient (green -> yellow -> red)
+                gradient.addColorStop(0, 'rgba(220, 53, 69, 0.8)');   // Red (high usage)
+                gradient.addColorStop(0.3, 'rgba(255, 193, 7, 0.8)'); // Yellow (medium usage)
+                gradient.addColorStop(0.7, 'rgba(25, 135, 84, 0.8)'); // Green (low usage)
+                gradient.addColorStop(1, 'rgba(25, 135, 84, 0.1)');   // Transparent green
+            } else if (metric === 'response') {
+                // Response time gradient (green -> yellow -> red)
+                gradient.addColorStop(0, 'rgba(220, 53, 69, 0.8)');   // Red (slow)
+                gradient.addColorStop(0.4, 'rgba(255, 193, 7, 0.8)'); // Yellow (medium)
+                gradient.addColorStop(0.7, 'rgba(13, 110, 253, 0.8)'); // Blue (fast)
+                gradient.addColorStop(1, 'rgba(13, 110, 253, 0.1)');   // Transparent blue
+            } else if (metric === 'errors') {
+                // Error count gradient (green -> red)
+                gradient.addColorStop(0, 'rgba(220, 53, 69, 0.8)');   // Red (many errors)
+                gradient.addColorStop(0.5, 'rgba(255, 193, 7, 0.8)'); // Yellow (some errors)
+                gradient.addColorStop(0.9, 'rgba(25, 135, 84, 0.8)'); // Green (no errors)
+                gradient.addColorStop(1, 'rgba(25, 135, 84, 0.1)');   // Transparent green
+            } else {
+                // Default gradient (blue)
+                gradient.addColorStop(0, 'rgba(13, 110, 253, 0.8)');  // Blue
+                gradient.addColorStop(1, 'rgba(13, 110, 253, 0.1)');  // Transparent blue
+            }
+            
+            return gradient;
+        }
         
         // Initialize chart
         const ctx = document.getElementById('metricsChart').getContext('2d');
