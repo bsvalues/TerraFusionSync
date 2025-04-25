@@ -8,6 +8,7 @@ import os
 import json
 import logging
 import requests
+import subprocess
 import threading
 import time
 from datetime import datetime, timedelta
@@ -361,6 +362,118 @@ def check_syncservice_status() -> bool:
         return False
 
 
+def check_and_ensure_service_health():
+    """
+    Perform comprehensive health check and ensure services are running.
+    
+    This function is called periodically to:
+    1. Check if SyncService is running and responding
+    2. Verify the service is healthy by checking its metrics
+    3. Attempt to restart it if it's down or unhealthy
+    4. Log the results and create audit entries
+    
+    This is the main auto-recovery mechanism for the TerraFusion platform.
+    """
+    logger.info("Performing periodic service health check...")
+    
+    # Check if SyncService is responsive
+    syncservice_status = check_syncservice_status()
+    
+    if not syncservice_status:
+        logger.warning("SyncService is not responding during health check")
+        # Create audit entry for detection
+        with app.app_context():
+            create_audit_log(
+                event_type="service_outage_detected",
+                resource_type="system",
+                description="SyncService outage detected during periodic health check",
+                severity="warning"
+            )
+        
+        # Attempt to restart the service
+        restart_success = ensure_syncservice_running()
+        
+        if restart_success:
+            logger.info("SyncService auto-recovery successful")
+            # Success is already logged in ensure_syncservice_running
+            return True
+        else:
+            logger.error("SyncService auto-recovery failed")
+            # Failure is already logged in ensure_syncservice_running
+            return False
+    
+    # If we get here, the service is responding, but let's check its health
+    try:
+        # Get metrics from SyncService to check its health
+        response = requests.get(f"{SYNCSERVICE_BASE_URL}/metrics", timeout=5)
+        
+        if response.status_code != 200:
+            logger.warning(f"SyncService returned unhealthy status code: {response.status_code}")
+            
+            # Create audit entry for unhealthy service
+            with app.app_context():
+                create_audit_log(
+                    event_type="service_unhealthy",
+                    resource_type="system",
+                    description=f"SyncService is responding but unhealthy (status code: {response.status_code})",
+                    severity="warning"
+                )
+            
+            # Attempt to restart the service since it's unhealthy
+            restart_success = ensure_syncservice_running()
+            
+            if restart_success:
+                logger.info("Unhealthy SyncService auto-recovery successful")
+                return True
+            else:
+                logger.error("Unhealthy SyncService auto-recovery failed")
+                return False
+        
+        # If we get here, the service is healthy
+        metrics = response.json()
+        
+        # Check for critical resource usage that might indicate problems
+        system_data = metrics.get("system", {})
+        cpu_usage = system_data.get("cpu_usage_percent", 0.0)
+        memory_usage = system_data.get("memory_usage_percent", 0.0)
+        
+        if cpu_usage > 95 or memory_usage > 95:
+            logger.warning(f"SyncService is under resource stress: CPU={cpu_usage}%, Memory={memory_usage}%")
+            
+            # Create audit entry for resource stress
+            with app.app_context():
+                create_audit_log(
+                    event_type="service_resource_stress",
+                    resource_type="system",
+                    description=f"SyncService is under resource stress (CPU: {cpu_usage:.1f}%, Memory: {memory_usage:.1f}%)",
+                    severity="warning",
+                    new_state={
+                        "cpu_usage": cpu_usage,
+                        "memory_usage": memory_usage
+                    }
+                )
+        
+        # Log successful health check
+        logger.info(f"SyncService health check successful (CPU: {cpu_usage:.1f}%, Memory: {memory_usage:.1f}%)")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error during SyncService health check: {str(e)}")
+        
+        # Create audit entry for health check error
+        with app.app_context():
+            create_audit_log(
+                event_type="service_health_check_error",
+                resource_type="system",
+                description=f"Error during SyncService health check: {str(e)}",
+                severity="error"
+            )
+        
+        # Even though there was an error checking health, we know the service is responding
+        # so we'll consider it a partial success
+        return syncservice_status
+
+
 @app.route('/')
 def root():
     """Root endpoint for the API Gateway."""
@@ -491,16 +604,75 @@ def status():
     """
     syncservice_status = check_syncservice_status()
     
+    # Check database connection
+    try:
+        # Simple database query to check connection
+        db_status = db.session.execute(db.select(db.func.now())).scalar() is not None
+    except Exception as e:
+        logger.error(f"Database connection error: {str(e)}")
+        db_status = False
+    
     return jsonify({
         "status": "online",
         "timestamp": datetime.utcnow().isoformat(),
         "components": {
             "api_gateway": "online",
             "sync_service": "online" if syncservice_status else "offline",
-            "database": "online"  # This would normally check the database connection
+            "database": "online" if db_status else "offline"
         },
-        "version": "0.1.0"
+        "version": "0.1.0",
+        "auto_recovery": {
+            "enabled": True,
+            "last_check": datetime.fromtimestamp(last_service_health_check_time).isoformat() if last_service_health_check_time > 0 else None,
+            "check_interval": f"{SERVICE_HEALTH_CHECK_INTERVAL} seconds"
+        }
     })
+
+
+@app.route('/api/service/health-check', methods=['POST'])
+@requires_auth
+def trigger_health_check():
+    """
+    Manually trigger a service health check.
+    
+    This endpoint allows administrators to manually run a service health check
+    and attempt recovery if needed.
+    """
+    user = get_current_user()
+    
+    # Run the health check
+    try:
+        # Create audit log for manual health check
+        with app.app_context():
+            create_audit_log(
+                event_type="manual_health_check",
+                resource_type="system",
+                description="Manual service health check triggered by user",
+                severity="info",
+                user_id=getattr(user, 'id', None),
+                username=getattr(user, 'username', None)
+            )
+        
+        # Run the health check
+        health_status = check_and_ensure_service_health()
+        
+        return jsonify({
+            "success": True,
+            "message": "Health check completed successfully" if health_status else "Health check completed with issues",
+            "status": "healthy" if health_status else "unhealthy",
+            "timestamp": datetime.utcnow().isoformat(),
+            "details": {
+                "syncservice_responding": check_syncservice_status(),
+                "auto_recovery_enabled": True
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error running manual health check: {str(e)}")
+        return jsonify({
+            "success": False,
+            "message": f"Error running health check: {str(e)}",
+            "timestamp": datetime.utcnow().isoformat()
+        }), 500
 
 @app.route('/health/live')
 def liveness_check():
