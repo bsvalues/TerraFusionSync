@@ -86,6 +86,21 @@
         </div>
     </nav>
 
+    <!-- Toast container for notifications -->
+    <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1100;">
+        <div id="metricsToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header">
+                <i class="bi bi-info-circle me-1 text-primary" id="toast-icon"></i>
+                <strong class="me-auto" id="toast-title">Metrics Status</strong>
+                <small id="toast-time">Just now</small>
+                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+            <div class="toast-body" id="toast-message">
+                Metrics information will appear here.
+            </div>
+        </div>
+    </div>
+
     <div class="container-fluid py-4">
         <div class="row mb-4">
             <div class="col">
@@ -260,6 +275,20 @@
                             </li>
                             <li class="list-group-item d-flex justify-content-between align-items-center">
                                 <div>
+                                    <span class="alert-indicator alert-normal" id="metrics-collection-indicator"></span>
+                                    Metrics Collection
+                                </div>
+                                <span class="badge bg-success" id="metrics-collection-status">Normal</span>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="alert-indicator alert-normal" id="syncservice-indicator"></span>
+                                    SyncService Status
+                                </div>
+                                <span class="badge bg-success" id="syncservice-status">Connected</span>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
                                     <span class="alert-indicator {% if system_metrics[0].error_count == 0 %}alert-normal{% elif system_metrics[0].error_count < 5 %}alert-warning{% else %}alert-critical{% endif %}"></span>
                                     Error Rate
                                 </div>
@@ -272,7 +301,10 @@
                     <div class="card-footer bg-transparent">
                         <div class="d-flex justify-content-between align-items-center">
                             <small class="text-muted">Last updated: {{ system_metrics[0].timestamp }}</small>
-                            <button class="btn btn-sm btn-outline-primary" id="check-status-btn">Check Now</button>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-sm btn-outline-primary" id="check-status-btn">Check Status</button>
+                                <button class="btn btn-sm btn-outline-success" id="refresh-metrics-btn">Force Refresh</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -439,8 +471,144 @@
         
         // Check status
         document.getElementById('check-status-btn').addEventListener('click', function() {
-            window.location.reload();
+            fetchMetricsStatus();
         });
+        
+        // Fetch metrics status from the API
+        function fetchMetricsStatus() {
+            fetch('/api/metrics/status')
+                .then(response => response.json())
+                .then(data => {
+                    updateMetricsStatus(data);
+                })
+                .catch(error => {
+                    console.error('Error fetching metrics status:', error);
+                    // Show error state on failure
+                    document.getElementById('metrics-collection-status').textContent = 'Error';
+                    document.getElementById('metrics-collection-status').className = 'badge bg-danger';
+                    document.getElementById('metrics-collection-indicator').className = 'alert-indicator alert-critical';
+                });
+        }
+        
+        // Update metrics status indicators
+        function updateMetricsStatus(data) {
+            // Update metrics collection status
+            const metricsStatusElement = document.getElementById('metrics-collection-status');
+            const metricsIndicatorElement = document.getElementById('metrics-collection-indicator');
+            
+            let statusText, statusClass, indicatorClass;
+            
+            if (data.status === 'healthy') {
+                statusText = 'Normal';
+                statusClass = 'badge bg-success';
+                indicatorClass = 'alert-indicator alert-normal';
+            } else if (data.status === 'warning') {
+                statusText = 'Warning';
+                statusClass = 'badge bg-warning';
+                indicatorClass = 'alert-indicator alert-warning';
+            } else {
+                statusText = 'Error';
+                statusClass = 'badge bg-danger';
+                indicatorClass = 'alert-indicator alert-critical';
+            }
+            
+            metricsStatusElement.textContent = statusText;
+            metricsStatusElement.className = statusClass;
+            metricsIndicatorElement.className = indicatorClass;
+            
+            // Update SyncService status
+            const syncStatusElement = document.getElementById('syncservice-status');
+            const syncIndicatorElement = document.getElementById('syncservice-indicator');
+            
+            if (data.syncservice_available) {
+                syncStatusElement.textContent = 'Connected';
+                syncStatusElement.className = 'badge bg-success';
+                syncIndicatorElement.className = 'alert-indicator alert-normal';
+            } else {
+                syncStatusElement.textContent = 'Disconnected';
+                syncStatusElement.className = 'badge bg-danger';
+                syncIndicatorElement.className = 'alert-indicator alert-critical';
+            }
+            
+            // Show last collection time and stats
+            const lastUpdated = new Date(data.timestamp);
+            const statusMessage = `${data.message}. Last collection: ${new Date(data.last_collection).toLocaleTimeString() || 'Never'}`;
+            
+            // Show toast notification with status details
+            showToast(data.status, 'Metrics Status', statusMessage);
+        }
+        
+        // Manual metrics refresh button
+        document.getElementById('refresh-metrics-btn').addEventListener('click', function() {
+            const button = this;
+            button.disabled = true;
+            button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Refreshing...';
+            
+            // Call the refresh API endpoint
+            fetch('/api/metrics/refresh', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Show toast notification for metrics refresh
+                showToast('healthy', 'Metrics Refresh', 'Metrics collection initiated successfully. The page will refresh shortly.');
+                
+                // Add a short delay before checking status to allow metrics collection to complete
+                setTimeout(() => {
+                    fetchMetricsStatus();
+                    
+                    // After a short delay, reload the page to get the new metrics data
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1000);
+                }, 1000);
+            })
+            .catch(error => {
+                console.error('Error refreshing metrics:', error);
+                showToast('error', 'Metrics Refresh Failed', 'Unable to refresh metrics. Please try again or check system logs.');
+            })
+            .finally(() => {
+                // Reset button state after 3 seconds regardless of outcome
+                setTimeout(() => {
+                    button.disabled = false;
+                    button.innerHTML = 'Force Refresh';
+                }, 3000);
+            });
+        });
+        
+        // Initially fetch metrics status on page load
+        fetchMetricsStatus();
+        
+        // Refresh metrics status every 30 seconds
+        setInterval(fetchMetricsStatus, 30000);
+        
+        // Function to show toast notifications
+        function showToast(status, title, message) {
+            // Get toast elements
+            const toastElement = document.getElementById('metricsToast');
+            const toastIcon = document.getElementById('toast-icon');
+            const toastTitle = document.getElementById('toast-title');
+            const toastMessage = document.getElementById('toast-message');
+            const toastTime = document.getElementById('toast-time');
+            
+            // Update toast content based on status
+            toastTitle.textContent = title;
+            toastMessage.textContent = message;
+            toastTime.textContent = new Date().toLocaleTimeString();
+            
+            // Set icon and color based on status
+            if (status === 'healthy') {
+                toastIcon.className = 'bi bi-check-circle-fill me-1 text-success';
+            } else if (status === 'warning') {
+                toastIcon.className = 'bi bi-exclamation-triangle-fill me-1 text-warning';
+            } else {
+                toastIcon.className = 'bi bi-x-circle-fill me-1 text-danger';
+            }
+            
+            // Create Bootstrap Toast instance and show it
+            const toast = new bootstrap.Toast(toastElement);
+            toast.show();
+        }
     });
     </script>
 </body>
