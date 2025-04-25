@@ -197,11 +197,13 @@
                         </div>
                         <h5 class="card-title mb-0">Response Time</h5>
                         <p class="text-muted small">Average API response latency</p>
-                        {% if system_metrics|length > 1 %}
+                        {% if system_metrics|length > 1 and system_metrics[1].response_time > 0 %}
                             {% if system_metrics[0].response_time > system_metrics[1].response_time %}
                                 <div class="small value-up"><i class="bi bi-arrow-up-right"></i> {{ ((system_metrics[0].response_time - system_metrics[1].response_time) / system_metrics[1].response_time * 100)|round(1) }}% from previous</div>
-                            {% else %}
+                            {% elif system_metrics[1].response_time > system_metrics[0].response_time %}
                                 <div class="small value-down"><i class="bi bi-arrow-down-right"></i> {{ ((system_metrics[1].response_time - system_metrics[0].response_time) / system_metrics[1].response_time * 100)|round(1) }}% from previous</div>
+                            {% else %}
+                                <div class="small text-muted">No change from previous</div>
                             {% endif %}
                         {% endif %}
                     </div>
