@@ -8,6 +8,7 @@ import os
 import json
 import logging
 import requests
+import time
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 from urllib.parse import urljoin
@@ -574,12 +575,21 @@ def get_sync_operations():
 
 @app.route('/api/metrics', methods=['GET'])
 @requires_auth
+@app.route('/api/system-metrics')
 def get_system_metrics():
     """Get system metrics from the database."""
     limit = request.args.get('limit', 100, type=int)
     
     system_metrics = SystemMetrics.query.order_by(
         SystemMetrics.timestamp.desc()).limit(limit).all()
+    
+    # Also try to collect new metrics 
+    if check_syncservice_status():
+        try:
+            collect_syncservice_metrics()
+            logger.info("Collected new metrics from SyncService")
+        except Exception as e:
+            logger.error(f"Failed to collect new metrics: {str(e)}")
     
     return jsonify([metric.to_dict() for metric in system_metrics])
 
