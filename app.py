@@ -34,6 +34,10 @@ except ImportError:
 
 # Metrics functionality uses a simplified implementation to avoid recursion errors
 METRICS_AVAILABLE = True
+# Configure logging first to avoid "logger not defined" errors
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
 # Import authentication module
 try:
     from apps.backend.auth import requires_auth, init_auth_routes, get_current_user
@@ -41,7 +45,7 @@ try:
     logger.info("Using custom authentication module")
 except ImportError:
     # Provide fallback if auth module isn't available
-    logging.warning("Auth module not available, using fallback implementation")
+    logger.warning("Auth module not available, using fallback implementation")
     CUSTOM_AUTH_AVAILABLE = False
     
     def requires_auth(f):
@@ -58,8 +62,11 @@ except ImportError:
 
 # Import API blueprints
 try:
-    from apps.backend.api.sync_operations import sync_bp
+    from apps.backend.api import sync_bp
+    SYNC_API_AVAILABLE = True
+    logger.info("Sync operations API module available")
 except ImportError:
+    SYNC_API_AVAILABLE = False
     logging.warning("Sync operations API module not available")
 
 # Create and configure the Flask application
@@ -75,10 +82,6 @@ app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
 
 # Initialize the database with the Flask app
 db.init_app(app)
-
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
 
 # Register API blueprints
 try:

@@ -14,10 +14,10 @@ from flask import Blueprint, request, jsonify, current_app
 from sqlalchemy.exc import SQLAlchemyError
 
 # Import models
-from ..models import SyncOperation, SyncPair, AuditEntry, db
+from apps.backend.models import SyncOperation, SyncPair, AuditEntry, db
 
 # Import authentication
-from ..auth import requires_auth
+from apps.backend.auth import requires_auth
 
 logger = logging.getLogger(__name__)
 
