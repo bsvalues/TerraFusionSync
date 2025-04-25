@@ -94,6 +94,12 @@ try:
 except ImportError:
     logger.warning("Validation API blueprint not available")
 
+# Add route for validation dashboard
+@app.route('/validation', methods=['GET'])
+def validation_dashboard():
+    """Display the data validation dashboard."""
+    return render_template('validation_dashboard.html')
+
 # Create database tables if they don't exist
 with app.app_context():
     db.create_all()

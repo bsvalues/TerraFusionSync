@@ -1,0 +1,764 @@
+{% extends 'base.html' %}
+
+{% block title %}TerraFusion SyncService - Validation Dashboard{% endblock %}
+
+{% block styles %}
+<style>
+    .validation-card {
+        border-radius: 8px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        transition: all 0.3s ease;
+    }
+    
+    .validation-card:hover {
+        box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        transform: translateY(-2px);
+    }
+    
+    .validation-card-header {
+        border-radius: 8px 8px 0 0;
+        padding: 15px;
+        font-weight: bold;
+    }
+    
+    .validation-card-body {
+        padding: 15px;
+    }
+    
+    .card-valid {
+        border-left: 5px solid #4CAF50;
+    }
+    
+    .card-invalid {
+        border-left: 5px solid #F44336;
+    }
+    
+    .header-valid {
+        background-color: rgba(76, 175, 80, 0.1);
+        color: #4CAF50;
+    }
+    
+    .header-invalid {
+        background-color: rgba(244, 67, 54, 0.1);
+        color: #F44336;
+    }
+    
+    .validation-status {
+        font-size: 18px;
+        margin-right: 10px;
+    }
+    
+    .validation-count {
+        font-size: 14px;
+        color: #666;
+    }
+    
+    .error-item {
+        background-color: rgba(244, 67, 54, 0.05);
+        padding: 10px;
+        margin-bottom: 8px;
+        border-left: 3px solid #F44336;
+    }
+    
+    .warning-item {
+        background-color: rgba(255, 152, 0, 0.05);
+        padding: 10px;
+        margin-bottom: 8px;
+        border-left: 3px solid #FF9800;
+    }
+    
+    .info-item {
+        background-color: rgba(3, 169, 244, 0.05);
+        padding: 10px;
+        margin-bottom: 8px;
+        border-left: 3px solid #03A9F4;
+    }
+    
+    .validation-json-viewer {
+        background-color: #f8f9fa;
+        border-radius: 4px;
+        padding: 15px;
+        font-family: 'Courier New', monospace;
+        max-height: 300px;
+        overflow-y: auto;
+    }
+    
+    .validation-title {
+        border-bottom: 1px solid #eee;
+        padding-bottom: 10px;
+        margin-bottom: 20px;
+    }
+    
+    .validation-history-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    
+    .validation-history-table th,
+    .validation-history-table td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid #eee;
+    }
+    
+    .validation-history-table th {
+        background-color: #f8f9fa;
+        font-weight: 600;
+    }
+    
+    .validation-schema-badge {
+        display: inline-block;
+        padding: 4px 8px;
+        background-color: #e9ecef;
+        border-radius: 4px;
+        font-size: 12px;
+        margin-right: 5px;
+    }
+    
+    .schema-rule-container {
+        margin-top: 10px;
+        border: 1px solid #eee;
+        border-radius: 4px;
+        padding: 10px;
+    }
+    
+    .schema-rule-item {
+        margin-bottom: 8px;
+        padding-bottom: 8px;
+        border-bottom: 1px dashed #eee;
+    }
+    
+    .schema-rule-item:last-child {
+        border-bottom: none;
+        margin-bottom: 0;
+        padding-bottom: 0;
+    }
+    
+    .rule-badge {
+        display: inline-block;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 12px;
+        margin-right: 5px;
+        background-color: #e9ecef;
+    }
+    
+    .rule-badge.error {
+        background-color: rgba(244, 67, 54, 0.1);
+        color: #F44336;
+    }
+    
+    .rule-badge.warning {
+        background-color: rgba(255, 152, 0, 0.1);
+        color: #FF9800;
+    }
+    
+    .rule-badge.info {
+        background-color: rgba(3, 169, 244, 0.1);
+        color: #03A9F4;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="validation-title">Data Validation Dashboard</h1>
+    
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="card-title mb-0">Validate Data</h5>
+                </div>
+                <div class="card-body">
+                    <form id="validationForm">
+                        <div class="form-group mb-3">
+                            <label for="schemaSelect">Select Schema:</label>
+                            <select class="form-control" id="schemaSelect" required>
+                                <option value="">Select a schema...</option>
+                                <!-- Schema options will be populated via JavaScript -->
+                            </select>
+                        </div>
+                        <div class="form-group mb-3">
+                            <label for="jsonData">JSON Data to Validate:</label>
+                            <textarea class="form-control" id="jsonData" rows="6" required placeholder='{"field1": "value1", "field2": "value2", ...}'></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Validate</button>
+                        <button type="button" id="generateSampleBtn" class="btn btn-secondary">Generate Sample Data</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="validationResultContainer" class="row mb-4" style="display: none;">
+        <div class="col-md-12">
+            <div id="validationResultCard" class="card validation-card">
+                <div id="validationResultHeader" class="card-header validation-card-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <span id="validationStatusIcon" class="validation-status">
+                                <i class="fas fa-check-circle"></i>
+                            </span>
+                            <span id="validationStatusText">Valid</span>
+                        </div>
+                        <div class="validation-count">
+                            <span id="errorCount" class="badge bg-danger me-1">0 Errors</span>
+                            <span id="warningCount" class="badge bg-warning text-dark me-1">0 Warnings</span>
+                            <span id="infoCount" class="badge bg-info text-dark">0 Info</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body validation-card-body">
+                    <div id="errorContainer" class="mb-3" style="display: none;">
+                        <h5>Errors</h5>
+                        <div id="errorList"></div>
+                    </div>
+                    <div id="warningContainer" class="mb-3" style="display: none;">
+                        <h5>Warnings</h5>
+                        <div id="warningList"></div>
+                    </div>
+                    <div id="infoContainer" class="mb-3" style="display: none;">
+                        <h5>Info</h5>
+                        <div id="infoList"></div>
+                    </div>
+                    <h5>Full Results</h5>
+                    <pre id="fullResultJson" class="validation-json-viewer"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="card-title mb-0">Available Schemas</h5>
+                </div>
+                <div class="card-body">
+                    <div id="schemaContainer" class="row">
+                        <!-- Schema cards will be populated via JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">Validation History</h5>
+                        <button id="clearHistoryBtn" class="btn btn-sm btn-light">Clear History</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="validation-history-table">
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>Schema</th>
+                                    <th>Status</th>
+                                    <th>Errors</th>
+                                    <th>Warnings</th>
+                                    <th>Info</th>
+                                </tr>
+                            </thead>
+                            <tbody id="validationHistoryBody">
+                                <!-- History rows will be populated via JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Fetch available schemas when the page loads
+    document.addEventListener('DOMContentLoaded', function() {
+        fetchSchemas();
+        fetchValidationHistory();
+        
+        // Set up form submission
+        document.getElementById('validationForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            validateData();
+        });
+        
+        // Set up sample data generation
+        document.getElementById('generateSampleBtn').addEventListener('click', function() {
+            generateSampleData();
+        });
+        
+        // Set up clear history button
+        document.getElementById('clearHistoryBtn').addEventListener('click', function() {
+            clearValidationHistory();
+        });
+    });
+    
+    // Fetch available validation schemas
+    function fetchSchemas() {
+        fetch('/api/validation/schemas')
+            .then(response => response.json())
+            .then(data => {
+                populateSchemaSelect(data.schemas);
+                displaySchemaCards(data.schemas);
+            })
+            .catch(error => {
+                console.error('Error fetching schemas:', error);
+                showError('Failed to fetch validation schemas. Please try again later.');
+            });
+    }
+    
+    // Populate schema dropdown
+    function populateSchemaSelect(schemas) {
+        const selectElement = document.getElementById('schemaSelect');
+        
+        // Clear existing options except the default one
+        Array.from(selectElement.options).forEach((option, index) => {
+            if (index !== 0) selectElement.remove(index);
+        });
+        
+        // Add schema options
+        schemas.forEach(schema => {
+            const option = document.createElement('option');
+            option.value = schema.name;
+            option.textContent = `${schema.name} - ${schema.description}`;
+            selectElement.appendChild(option);
+        });
+    }
+    
+    // Display schema cards with details
+    function displaySchemaCards(schemas) {
+        const container = document.getElementById('schemaContainer');
+        container.innerHTML = '';
+        
+        schemas.forEach(schema => {
+            // Create card element
+            const card = document.createElement('div');
+            card.className = 'col-md-6 mb-3';
+            card.innerHTML = `
+                <div class="card h-100">
+                    <div class="card-header bg-light">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h5 class="card-title mb-0">${schema.name}</h5>
+                            <span class="badge bg-primary">${schema.rule_count} Rules</span>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <p>${schema.description}</p>
+                        <div class="d-flex mb-2">
+                            <span class="validation-schema-badge">Level: ${schema.validation_level}</span>
+                        </div>
+                        <button class="btn btn-sm btn-outline-primary schema-details-btn" data-schema="${schema.name}">
+                            View Details
+                        </button>
+                        <div class="schema-rules-container mt-3" id="schema-rules-${schema.name}" style="display: none;">
+                            <div class="schema-rule-list">Loading rules...</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.appendChild(card);
+            
+            // Add event listener to the View Details button
+            card.querySelector('.schema-details-btn').addEventListener('click', function() {
+                const schemaName = this.getAttribute('data-schema');
+                const rulesContainer = document.getElementById(`schema-rules-${schemaName}`);
+                
+                if (rulesContainer.style.display === 'none') {
+                    fetchSchemaDetails(schemaName, rulesContainer);
+                    rulesContainer.style.display = 'block';
+                    this.textContent = 'Hide Details';
+                } else {
+                    rulesContainer.style.display = 'none';
+                    this.textContent = 'View Details';
+                }
+            });
+        });
+    }
+    
+    // Fetch details for a specific schema
+    function fetchSchemaDetails(schemaName, container) {
+        fetch(`/api/validation/schemas/${schemaName}`)
+            .then(response => response.json())
+            .then(data => {
+                displaySchemaRules(data, container);
+            })
+            .catch(error => {
+                console.error(`Error fetching schema details for ${schemaName}:`, error);
+                container.querySelector('.schema-rule-list').innerHTML = 
+                    `<div class="alert alert-danger">Failed to load schema details</div>`;
+            });
+    }
+    
+    // Display schema rules in the container
+    function displaySchemaRules(schema, container) {
+        const ruleList = container.querySelector('.schema-rule-list');
+        ruleList.innerHTML = '';
+        
+        if (schema.rules && schema.rules.length > 0) {
+            schema.rules.forEach(rule => {
+                const ruleElement = document.createElement('div');
+                ruleElement.className = 'schema-rule-item';
+                
+                // Build rule content based on type
+                let ruleContent = `
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <strong>${rule.field_name}</strong>
+                            <span class="rule-badge ${rule.severity}">${rule.severity}</span>
+                            <span class="rule-badge">${rule.rule_type}</span>
+                        </div>
+                    </div>
+                    <div class="mt-1"><small>${rule.description}</small></div>
+                `;
+                
+                // Add rule-specific details
+                let ruleDetails = '';
+                if (rule.rule_type === 'RequiredFieldRule') {
+                    ruleDetails = `<div class="mt-1"><small>Required field</small></div>`;
+                } else if (rule.rule_type === 'TypeRule') {
+                    ruleDetails = `<div class="mt-1"><small>Expected type: ${rule.expected_type || ''}</small></div>`;
+                } else if (rule.rule_type === 'RangeRule') {
+                    ruleDetails = `<div class="mt-1"><small>Range: 
+                        ${rule.min_value !== undefined ? `min=${rule.min_value}` : ''} 
+                        ${rule.max_value !== undefined ? `max=${rule.max_value}` : ''}
+                    </small></div>`;
+                } else if (rule.rule_type === 'PatternRule') {
+                    ruleDetails = `<div class="mt-1"><small>Pattern: ${rule.pattern || ''}</small></div>`;
+                } else if (rule.rule_type === 'EnumRule') {
+                    const allowedValues = rule.allowed_values ? rule.allowed_values.join(', ') : '';
+                    ruleDetails = `<div class="mt-1"><small>Allowed values: ${allowedValues}</small></div>`;
+                } else if (rule.rule_type === 'DateFormatRule') {
+                    ruleDetails = `<div class="mt-1"><small>Date format: ${rule.date_format || ''}</small></div>`;
+                }
+                
+                ruleElement.innerHTML = ruleContent + ruleDetails;
+                ruleList.appendChild(ruleElement);
+            });
+        } else {
+            ruleList.innerHTML = `<div class="alert alert-info">No rules found for this schema</div>`;
+        }
+    }
+    
+    // Validate data against the selected schema
+    function validateData() {
+        const schemaName = document.getElementById('schemaSelect').value;
+        const jsonDataStr = document.getElementById('jsonData').value;
+        
+        if (!schemaName) {
+            showError('Please select a schema');
+            return;
+        }
+        
+        if (!jsonDataStr) {
+            showError('Please enter JSON data to validate');
+            return;
+        }
+        
+        // Parse JSON data
+        let jsonData;
+        try {
+            jsonData = JSON.parse(jsonDataStr);
+        } catch (error) {
+            showError('Invalid JSON format: ' + error.message);
+            return;
+        }
+        
+        // Send validation request
+        fetch(`/api/validation/validate/${schemaName}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: jsonDataStr
+        })
+        .then(response => response.json())
+        .then(data => {
+            displayValidationResults(data);
+            fetchValidationHistory(); // Refresh history after validation
+        })
+        .catch(error => {
+            console.error('Validation error:', error);
+            showError('Failed to validate data. Please try again later.');
+        });
+    }
+    
+    // Display validation results
+    function displayValidationResults(results) {
+        const container = document.getElementById('validationResultContainer');
+        const card = document.getElementById('validationResultCard');
+        const header = document.getElementById('validationResultHeader');
+        const statusIcon = document.getElementById('validationStatusIcon');
+        const statusText = document.getElementById('validationStatusText');
+        const errorCount = document.getElementById('errorCount');
+        const warningCount = document.getElementById('warningCount');
+        const infoCount = document.getElementById('infoCount');
+        const errorContainer = document.getElementById('errorContainer');
+        const warningContainer = document.getElementById('warningContainer');
+        const infoContainer = document.getElementById('infoContainer');
+        const errorList = document.getElementById('errorList');
+        const warningList = document.getElementById('warningList');
+        const infoList = document.getElementById('infoList');
+        const fullResultJson = document.getElementById('fullResultJson');
+        
+        // Update card classes based on validation status
+        if (results.valid) {
+            card.className = 'card validation-card card-valid';
+            header.className = 'card-header validation-card-header header-valid';
+            statusIcon.innerHTML = '<i class="fas fa-check-circle"></i>';
+            statusText.textContent = 'Valid';
+        } else {
+            card.className = 'card validation-card card-invalid';
+            header.className = 'card-header validation-card-header header-invalid';
+            statusIcon.innerHTML = '<i class="fas fa-times-circle"></i>';
+            statusText.textContent = 'Invalid';
+        }
+        
+        // Update counts
+        errorCount.textContent = `${results.errors.length} Errors`;
+        warningCount.textContent = `${results.warnings.length} Warnings`;
+        infoCount.textContent = `${results.info.length} Info`;
+        
+        // Display errors, warnings, and info messages
+        if (results.errors.length > 0) {
+            errorContainer.style.display = 'block';
+            errorList.innerHTML = '';
+            results.errors.forEach(error => {
+                const errorItem = document.createElement('div');
+                errorItem.className = 'error-item';
+                errorItem.innerHTML = `
+                    <div><strong>Field:</strong> ${error.field_name}</div>
+                    <div><strong>Message:</strong> ${error.message}</div>
+                    <div><strong>Value:</strong> ${JSON.stringify(error.value)}</div>
+                `;
+                errorList.appendChild(errorItem);
+            });
+        } else {
+            errorContainer.style.display = 'none';
+        }
+        
+        if (results.warnings.length > 0) {
+            warningContainer.style.display = 'block';
+            warningList.innerHTML = '';
+            results.warnings.forEach(warning => {
+                const warningItem = document.createElement('div');
+                warningItem.className = 'warning-item';
+                warningItem.innerHTML = `
+                    <div><strong>Field:</strong> ${warning.field_name}</div>
+                    <div><strong>Message:</strong> ${warning.message}</div>
+                    <div><strong>Value:</strong> ${JSON.stringify(warning.value)}</div>
+                `;
+                warningList.appendChild(warningItem);
+            });
+        } else {
+            warningContainer.style.display = 'none';
+        }
+        
+        if (results.info.length > 0) {
+            infoContainer.style.display = 'block';
+            infoList.innerHTML = '';
+            results.info.forEach(info => {
+                const infoItem = document.createElement('div');
+                infoItem.className = 'info-item';
+                infoItem.innerHTML = `
+                    <div><strong>Field:</strong> ${info.field_name}</div>
+                    <div><strong>Message:</strong> ${info.message}</div>
+                    <div><strong>Value:</strong> ${JSON.stringify(info.value)}</div>
+                `;
+                infoList.appendChild(infoItem);
+            });
+        } else {
+            infoContainer.style.display = 'none';
+        }
+        
+        // Display full JSON result
+        fullResultJson.textContent = JSON.stringify(results, null, 2);
+        
+        // Show the results container
+        container.style.display = 'block';
+    }
+    
+    // Generate sample data for the selected schema
+    function generateSampleData() {
+        const schemaName = document.getElementById('schemaSelect').value;
+        if (!schemaName) {
+            showError('Please select a schema first');
+            return;
+        }
+        
+        // Generate different sample data based on schema type
+        let sampleData = {};
+        
+        if (schemaName === 'pacs_image') {
+            sampleData = {
+                "image_id": "IMG123456",
+                "study_id": "STD789012",
+                "patient_id": "PAT345678",
+                "image_type": "DICOM",
+                "modality": "CT",
+                "acquisition_date": "2024-04-25",
+                "accession_number": "ACC123456789"
+            };
+        } else if (schemaName === 'cama_property') {
+            sampleData = {
+                "property_id": "PROP123456",
+                "parcel_id": "PARC789012",
+                "property_type": "Single Family Residence",
+                "property_class": "RESIDENTIAL",
+                "assessed_value": 350000.00,
+                "assessment_date": "2024-01-15",
+                "tax_district": "AB12"
+            };
+        } else {
+            // For unknown schemas, fetch schema details and generate based on rules
+            fetch(`/api/validation/schemas/${schemaName}`)
+                .then(response => response.json())
+                .then(data => {
+                    const generatedData = generateDataFromRules(data.rules);
+                    document.getElementById('jsonData').value = JSON.stringify(generatedData, null, 2);
+                })
+                .catch(error => {
+                    console.error(`Error fetching schema details for ${schemaName}:`, error);
+                    showError(`Failed to generate sample data for ${schemaName}`);
+                });
+            return;
+        }
+        
+        // Set the sample data in the textarea
+        document.getElementById('jsonData').value = JSON.stringify(sampleData, null, 2);
+    }
+    
+    // Generate data based on schema rules
+    function generateDataFromRules(rules) {
+        const result = {};
+        
+        if (!rules || !Array.isArray(rules)) {
+            return result;
+        }
+        
+        rules.forEach(rule => {
+            // Generate appropriate values based on rule type
+            if (rule.rule_type === 'RequiredFieldRule' || rule.rule_type === 'TypeRule') {
+                if (rule.expected_type === 'str') {
+                    result[rule.field_name] = `Sample_${rule.field_name}`;
+                } else if (rule.expected_type === 'int' || rule.expected_type === 'float') {
+                    result[rule.field_name] = 100;
+                } else {
+                    result[rule.field_name] = `Value_for_${rule.field_name}`;
+                }
+            } else if (rule.rule_type === 'EnumRule' && rule.allowed_values && rule.allowed_values.length > 0) {
+                result[rule.field_name] = rule.allowed_values[0];
+            } else if (rule.rule_type === 'DateFormatRule') {
+                result[rule.field_name] = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+            } else if (rule.rule_type === 'PatternRule') {
+                if (rule.pattern.includes('\\d')) {
+                    result[rule.field_name] = 'ABC123';
+                } else {
+                    result[rule.field_name] = 'SAMPLE';
+                }
+            } else if (rule.rule_type === 'RangeRule') {
+                if (rule.min_value !== undefined) {
+                    result[rule.field_name] = rule.min_value + 10;
+                } else {
+                    result[rule.field_name] = 100;
+                }
+            } else {
+                result[rule.field_name] = `Value_for_${rule.field_name}`;
+            }
+        });
+        
+        return result;
+    }
+    
+    // Fetch validation history
+    function fetchValidationHistory() {
+        fetch('/api/validation/history')
+            .then(response => response.json())
+            .then(data => {
+                displayValidationHistory(data.history);
+            })
+            .catch(error => {
+                console.error('Error fetching validation history:', error);
+            });
+    }
+    
+    // Display validation history
+    function displayValidationHistory(history) {
+        const historyBody = document.getElementById('validationHistoryBody');
+        historyBody.innerHTML = '';
+        
+        if (history && history.length > 0) {
+            // Sort history by timestamp (newest first)
+            const sortedHistory = [...history].sort((a, b) => {
+                return new Date(b.timestamp) - new Date(a.timestamp);
+            });
+            
+            sortedHistory.forEach(entry => {
+                const row = document.createElement('tr');
+                
+                // Format timestamp
+                const timestamp = new Date(entry.timestamp);
+                const formattedTime = timestamp.toLocaleString();
+                
+                // Status cell with color
+                const statusCell = document.createElement('td');
+                const statusBadge = document.createElement('span');
+                statusBadge.className = entry.valid 
+                    ? 'badge bg-success' 
+                    : 'badge bg-danger';
+                statusBadge.textContent = entry.valid ? 'Valid' : 'Invalid';
+                statusCell.appendChild(statusBadge);
+                
+                // Add all cells
+                row.innerHTML = `
+                    <td>${formattedTime}</td>
+                    <td><span class="validation-schema-badge">${entry.schema_name}</span></td>
+                `;
+                row.appendChild(statusCell);
+                row.innerHTML += `
+                    <td>${entry.error_count}</td>
+                    <td>${entry.warning_count}</td>
+                    <td>${entry.info_count}</td>
+                `;
+                
+                historyBody.appendChild(row);
+            });
+        } else {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td colspan="6" class="text-center">No validation history available</td>
+            `;
+            historyBody.appendChild(row);
+        }
+    }
+    
+    // Clear validation history
+    function clearValidationHistory() {
+        fetch('/api/validation/history/clear', {
+            method: 'POST'
+        })
+        .then(response => response.json())
+        .then(data => {
+            fetchValidationHistory();
+        })
+        .catch(error => {
+            console.error('Error clearing validation history:', error);
+            showError('Failed to clear validation history');
+        });
+    }
+    
+    // Show error message
+    function showError(message) {
+        alert(message);
+    }
+</script>
+{% endblock %}
