@@ -581,6 +581,49 @@
             });
         });
         
+        // Service Health Check and Auto-Recovery Button
+        document.getElementById('health-check-btn').addEventListener('click', function() {
+            const button = this;
+            button.disabled = true;
+            button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Checking...';
+            
+            // Call the health check API endpoint
+            fetch('/api/service/health-check', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Determine status message based on health check results
+                    let statusTitle = 'Health Check Complete';
+                    let statusMessage = data.message || 'Service health check completed successfully.';
+                    let statusType = data.status === 'healthy' ? 'healthy' : 'warning';
+                    
+                    // Show toast notification with health check results
+                    showToast(statusType, statusTitle, statusMessage);
+                    
+                    // After a short delay, reload the page to get the updated status
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 2000);
+                } else {
+                    // Show error toast if health check failed
+                    showToast('error', 'Health Check Failed', data.message || 'Health check failed. Please check system logs.');
+                }
+            })
+            .catch(error => {
+                console.error('Error running health check:', error);
+                showToast('error', 'Health Check Error', 'An error occurred during service health check. Please check system logs.');
+            })
+            .finally(() => {
+                // Reset button state after 3 seconds regardless of outcome
+                setTimeout(() => {
+                    button.disabled = false;
+                    button.innerHTML = '<i class="bi bi-wrench-adjustable"></i> Health Check';
+                }, 3000);
+            });
+        });
+        
         // Initially fetch metrics status on page load
         fetchMetricsStatus();
         
