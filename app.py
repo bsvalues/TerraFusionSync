@@ -81,6 +81,91 @@ else:
     api_gateway_monitor = None
     logger.warning("No monitoring instance available for API Gateway")
 
+# Variables for metrics collection
+last_metrics_collection_time = 0
+METRICS_COLLECTION_INTERVAL = 60  # seconds
+
+# Create a middleware to trigger metrics collection periodically
+@app.before_request
+def before_request_middleware():
+    global last_metrics_collection_time
+    current_time = time.time()
+    
+    # If it's been more than METRICS_COLLECTION_INTERVAL seconds since the last collection
+    if current_time - last_metrics_collection_time > METRICS_COLLECTION_INTERVAL:
+        # Run this in a separate thread to avoid blocking the request
+        import threading
+        thread = threading.Thread(target=lambda: collect_metrics_safely())
+        thread.daemon = True
+        thread.start()
+        last_metrics_collection_time = current_time
+
+def collect_metrics_safely():
+    """Safely collect metrics without affecting the main application."""
+    max_retries = 3
+    retry_delay = 2  # seconds
+    
+    for attempt in range(1, max_retries + 1):
+        try:
+            if check_syncservice_status():
+                logger.info(f"Collecting metrics from SyncService (middleware trigger, attempt {attempt}/{max_retries})")
+                result = collect_syncservice_metrics()
+                if result:
+                    logger.info("Successfully collected metrics through middleware")
+                    # Create an audit entry for the retry if it wasn't the first attempt
+                    if attempt > 1:
+                        with app.app_context():
+                            create_audit_log(
+                                event_type="metrics_collection_retry_success",
+                                resource_type="system_metrics",
+                                description=f"Successfully collected metrics after {attempt} attempts",
+                                severity="info"
+                            )
+                    return True
+                else:
+                    logger.warning(f"Failed to collect metrics on attempt {attempt}/{max_retries}")
+            else:
+                logger.warning(f"SyncService not available for middleware metrics collection (attempt {attempt}/{max_retries})")
+            
+            # If we've reached the maximum number of retries, give up
+            if attempt >= max_retries:
+                logger.error(f"Failed to collect metrics after {max_retries} attempts")
+                # Create an audit entry for the failure
+                with app.app_context():
+                    try:
+                        create_audit_log(
+                            event_type="metrics_collection_failed",
+                            resource_type="system_metrics",
+                            description=f"Failed to collect metrics after {max_retries} attempts",
+                            severity="warning"
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to create audit log for metrics collection failure: {str(e)}")
+                return False
+            
+            # Wait before retrying
+            time.sleep(retry_delay)
+        except Exception as e:
+            logger.error(f"Error in metrics collection attempt {attempt}/{max_retries}: {str(e)}")
+            
+            # If we've reached the maximum number of retries, give up
+            if attempt >= max_retries:
+                # Create an audit entry for the exception
+                with app.app_context():
+                    try:
+                        create_audit_log(
+                            event_type="metrics_collection_error",
+                            resource_type="system_metrics",
+                            description=f"Error collecting metrics after {attempt} attempts: {str(e)}",
+                            severity="error"
+                        )
+                    except Exception as log_error:
+                        logger.error(f"Failed to create audit log for metrics collection error: {str(log_error)}")
+                return False
+            
+            # Wait before retrying
+            time.sleep(retry_delay)
+
 # Function to collect metrics from syncservice
 def collect_syncservice_metrics():
     """
