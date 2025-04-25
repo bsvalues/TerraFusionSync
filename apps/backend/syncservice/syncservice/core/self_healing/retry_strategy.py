@@ -1,236 +1,257 @@
 """
-Retry Strategy implementations for the TerraFusion SyncService platform.
+Retry strategy implementations for TerraFusion SyncService platform.
 
-This module provides retry strategy abstractions used by the self-healing
-orchestrator to manage retry attempts and backoff algorithms.
+This module provides robust retry strategies for handling transient failures
+and improving resilience of the SyncService operations.
 """
 
-import time
-import random
 import logging
-from typing import Callable, Any, Dict, TypeVar, Optional, List
+import random
+import time
 from datetime import datetime
+from enum import Enum, auto
+from typing import Any, Callable, Dict, List, Optional, TypeVar, Union
 
+T = TypeVar('T')
 logger = logging.getLogger(__name__)
 
-# Type variable for retryable functions
-T = TypeVar('T')
+
+class RetryStrategyType(Enum):
+    """Types of retry strategies available."""
+    FIXED = auto()
+    LINEAR = auto() 
+    EXPONENTIAL = auto()  # Standard exponential backoff
+    EXPONENTIAL_WITH_JITTER = auto()  # Exponential with randomization to prevent thundering herd
 
 
-class RetryStrategy:
-    """
-    Base class for retry strategies.
+class BaseRetryStrategy:
+    """Base class for retry strategies."""
     
-    Defines the interface for retry strategies, which are used to determine
-    when and how to retry operations that have failed.
-    """
-    
-    def should_retry(self, attempt: int, exception: Optional[Exception] = None) -> bool:
+    def __init__(
+        self,
+        max_retries: int = 3,
+        max_retry_time: int = 300,  # 5 minutes maximum retry time
+        retry_on_exceptions: List[type] = None,
+        on_retry_callback: Optional[Callable[[int, Exception, float], None]] = None,
+        on_success_callback: Optional[Callable[[int, Any], None]] = None,
+        on_failure_callback: Optional[Callable[[int, Exception], None]] = None
+    ):
         """
-        Determine if a retry should be attempted.
+        Initialize the retry strategy.
         
         Args:
-            attempt: The current attempt number (1-based)
-            exception: The exception that caused the failure, if any
-            
-        Returns:
-            True if a retry should be attempted, False otherwise
+            max_retries: Maximum number of retry attempts
+            max_retry_time: Maximum time to spend retrying in seconds
+            retry_on_exceptions: List of exception types to retry on
+            on_retry_callback: Callback called before each retry attempt with (attempt, exception, next_wait_time)
+            on_success_callback: Callback called on successful execution with (attempts, result)
+            on_failure_callback: Callback called when all retries are exhausted with (attempts, last_exception)
         """
-        raise NotImplementedError("Subclasses must implement should_retry")
-    
-    def get_retry_interval(self, attempt: int) -> float:
-        """
-        Get the number of seconds to wait before the next retry.
+        self.max_retries = max_retries
+        self.max_retry_time = max_retry_time
+        self.retry_on_exceptions = retry_on_exceptions or [Exception]
+        self.on_retry_callback = on_retry_callback
+        self.on_success_callback = on_success_callback
+        self.on_failure_callback = on_failure_callback
         
-        Args:
-            attempt: The current attempt number (1-based)
-            
-        Returns:
-            The number of seconds to wait
-        """
-        raise NotImplementedError("Subclasses must implement get_retry_interval")
+        # Metrics for tracking retry performance
+        self.total_attempts = 0
+        self.total_retries = 0
+        self.successful_executions = 0
+        self.failed_executions = 0
     
-    def execute_with_retry(
-        self, 
-        func: Callable[..., T], 
-        *args, 
-        max_attempts: int = 3,
-        on_retry_callback: Optional[Callable[[int, Exception], None]] = None,
-        **kwargs
-    ) -> T:
+    def execute(self, function: Callable[..., T], *args: Any, **kwargs: Any) -> T:
         """
         Execute a function with retry logic.
         
         Args:
-            func: The function to execute
+            function: The function to execute
             *args: Arguments to pass to the function
-            max_attempts: Maximum number of attempts to make
-            on_retry_callback: Optional callback function called before each retry
             **kwargs: Keyword arguments to pass to the function
             
         Returns:
             The result of the function
             
         Raises:
-            The last exception encountered if all retries fail
+            Exception: The last exception if all retries are exhausted
         """
+        attempts = 0
+        start_time = time.time()
         last_exception = None
         
-        for attempt in range(1, max_attempts + 1):
+        while attempts <= self.max_retries:
+            attempts += 1
+            self.total_attempts += 1
+            
             try:
-                # Try executing the function
-                if attempt > 1:
-                    logger.info(f"Retry attempt {attempt}/{max_attempts} for {func.__name__}")
+                result = function(*args, **kwargs)
                 
-                return func(*args, **kwargs)
+                # Success! Log it and return the result
+                logger.info(f"Operation succeeded after {attempts} attempt(s)")
+                self.successful_executions += 1
+                
+                # Call the success callback if provided
+                if self.on_success_callback:
+                    try:
+                        self.on_success_callback(attempts, result)
+                    except Exception as e:
+                        logger.error(f"Error in on_success_callback: {str(e)}")
+                
+                return result
                 
             except Exception as e:
-                last_exception = e
-                logger.warning(f"Attempt {attempt}/{max_attempts} failed for {func.__name__}: {str(e)}")
+                # Check if we should retry this type of exception
+                should_retry = False
+                for exc_type in self.retry_on_exceptions:
+                    if isinstance(e, exc_type):
+                        should_retry = True
+                        break
                 
-                # If this was the last attempt, re-raise the exception
-                if attempt >= max_attempts or not self.should_retry(attempt, e):
-                    logger.error(f"Max retries ({max_attempts}) reached for {func.__name__}")
+                if not should_retry:
+                    logger.info(f"Not retrying on exception type {type(e).__name__}")
                     raise
                 
-                # Call the retry callback if provided
-                if on_retry_callback:
-                    try:
-                        on_retry_callback(attempt, e)
-                    except Exception as callback_error:
-                        logger.error(f"Error in retry callback: {str(callback_error)}")
+                last_exception = e
                 
-                # Wait before retrying
-                retry_interval = self.get_retry_interval(attempt)
-                logger.info(f"Waiting {retry_interval:.2f} seconds before retry")
-                time.sleep(retry_interval)
+                # Check if we've reached max retries
+                if attempts > self.max_retries:
+                    logger.warning(f"Max retries ({self.max_retries}) reached")
+                    self.failed_executions += 1
+                    
+                    # Call the failure callback if provided
+                    if self.on_failure_callback:
+                        try:
+                            self.on_failure_callback(attempts, last_exception)
+                        except Exception as cb_err:
+                            logger.error(f"Error in on_failure_callback: {str(cb_err)}")
+                    
+                    raise
+                
+                # Check if we've exceeded max retry time
+                elapsed_time = time.time() - start_time
+                if elapsed_time > self.max_retry_time:
+                    logger.warning(f"Max retry time ({self.max_retry_time}s) exceeded")
+                    self.failed_executions += 1
+                    
+                    # Call the failure callback if provided
+                    if self.on_failure_callback:
+                        try:
+                            self.on_failure_callback(attempts, last_exception)
+                        except Exception as cb_err:
+                            logger.error(f"Error in on_failure_callback: {str(cb_err)}")
+                    
+                    raise
+                
+                # We're going to retry, calculate wait time
+                self.total_retries += 1
+                wait_time = self._calculate_wait_time(attempts, elapsed_time)
+                
+                logger.warning(f"Retry {attempts}/{self.max_retries} after exception: {str(e)}. "
+                              f"Waiting {wait_time:.2f}s before next attempt.")
+                
+                # Call the retry callback if provided
+                if self.on_retry_callback:
+                    try:
+                        self.on_retry_callback(attempts, last_exception, wait_time)
+                    except Exception as cb_err:
+                        logger.error(f"Error in on_retry_callback: {str(cb_err)}")
+                
+                # Wait before the next attempt
+                time.sleep(wait_time)
+    
+    def _calculate_wait_time(self, attempt: int, elapsed_time: float) -> float:
+        """
+        Calculate the wait time before the next retry attempt.
         
-        # This should never be reached due to the re-raise in the loop,
-        # but just in case:
-        if last_exception:
-            raise last_exception
-        else:
-            raise RuntimeError("Unexpected end of retry loop")
+        Args:
+            attempt: The current attempt number (1-based)
+            elapsed_time: Time elapsed since the first attempt in seconds
+            
+        Returns:
+            The wait time in seconds
+        """
+        # Default implementation (fixed delay)
+        return 1.0
     
     def get_metrics(self) -> Dict[str, Any]:
         """
-        Get metrics about the retry strategy.
+        Get metrics about the retry strategy's performance.
         
         Returns:
-            Dictionary with retry strategy metrics
+            Dictionary with retry metrics
         """
         return {
-            "type": self.__class__.__name__
+            "total_attempts": self.total_attempts,
+            "total_retries": self.total_retries,
+            "successful_executions": self.successful_executions,
+            "failed_executions": self.failed_executions,
+            "success_rate": (self.successful_executions / self.total_attempts) 
+                            if self.total_attempts > 0 else 0.0,
+            "type": self.__class__.__name__,
+            "max_retries": self.max_retries,
+            "max_retry_time": self.max_retry_time
         }
-
-
-class ExponentialBackoffStrategy(RetryStrategy):
-    """
-    Exponential backoff retry strategy with jitter.
     
-    This strategy increases the wait time exponentially with each retry attempt,
-    and adds random jitter to prevent synchronized retries in distributed systems.
+    def reset_metrics(self) -> None:
+        """Reset the performance metrics."""
+        self.total_attempts = 0
+        self.total_retries = 0
+        self.successful_executions = 0
+        self.failed_executions = 0
+
+
+class FixedRetryStrategy(BaseRetryStrategy):
+    """
+    Fixed delay retry strategy.
+    
+    This strategy waits a fixed amount of time between each retry attempt.
     """
     
     def __init__(
         self,
-        base_delay: float = 1.0,
-        max_delay: float = 60.0,
-        multiplier: float = 2.0,
-        jitter_factor: float = 0.2,
-        retryable_exceptions: Optional[List[type]] = None
+        wait_time: float = 1.0,
+        **kwargs
     ):
         """
-        Initialize a new exponential backoff strategy.
+        Initialize the fixed retry strategy.
         
         Args:
-            base_delay: The base delay in seconds
-            max_delay: The maximum delay in seconds
-            multiplier: The multiplier for each retry
-            jitter_factor: The factor by which to apply random jitter (0.0 to 1.0)
-            retryable_exceptions: List of exception types that are retryable
+            wait_time: Fixed wait time between retries in seconds
+            **kwargs: Additional arguments passed to BaseRetryStrategy
         """
-        self.base_delay = base_delay
-        self.max_delay = max_delay
-        self.multiplier = multiplier
-        self.jitter_factor = min(max(0.0, jitter_factor), 1.0)  # Clamp to [0.0, 1.0]
-        self.retryable_exceptions = retryable_exceptions or []
-        self.start_time = datetime.utcnow()
-        
-        logger.info(
-            f"Initialized ExponentialBackoffStrategy with base_delay={base_delay}, "
-            f"max_delay={max_delay}, multiplier={multiplier}, jitter_factor={jitter_factor}"
-        )
+        super().__init__(**kwargs)
+        self.wait_time = wait_time
     
-    def should_retry(self, attempt: int, exception: Optional[Exception] = None) -> bool:
+    def _calculate_wait_time(self, attempt: int, elapsed_time: float) -> float:
         """
-        Determine if a retry should be attempted.
+        Calculate the wait time before the next retry attempt.
+        
+        For fixed strategy, this is always the fixed wait time.
         
         Args:
             attempt: The current attempt number (1-based)
-            exception: The exception that caused the failure, if any
+            elapsed_time: Time elapsed since the first attempt in seconds
             
         Returns:
-            True if a retry should be attempted, False otherwise
+            The wait time in seconds
         """
-        # If we have specific retryable exceptions and an exception was provided,
-        # only retry if the exception is in the list
-        if self.retryable_exceptions and exception:
-            should_retry = any(isinstance(exception, exc_type) for exc_type in self.retryable_exceptions)
-            if not should_retry:
-                logger.info(f"Not retrying due to non-retryable exception: {type(exception).__name__}")
-            return should_retry
-        
-        # Otherwise, always retry
-        return True
-    
-    def get_retry_interval(self, attempt: int) -> float:
-        """
-        Get the number of seconds to wait before the next retry.
-        
-        Args:
-            attempt: The current attempt number (1-based)
-            
-        Returns:
-            The number of seconds to wait
-        """
-        # Calculate the exponential delay: base_delay * multiplier^(attempt-1)
-        delay = self.base_delay * (self.multiplier ** (attempt - 1))
-        
-        # Apply a maximum delay cap
-        delay = min(delay, self.max_delay)
-        
-        # Apply jitter: delay * (1 ± jitter_factor * random)
-        if self.jitter_factor > 0:
-            jitter = delay * self.jitter_factor * random.random()
-            # Subtract or add jitter with equal probability
-            if random.random() < 0.5:
-                delay -= jitter
-            else:
-                delay += jitter
-        
-        return delay
+        return self.wait_time
     
     def get_metrics(self) -> Dict[str, Any]:
         """
-        Get metrics about the retry strategy.
+        Get metrics about the retry strategy's performance.
         
         Returns:
-            Dictionary with retry strategy metrics
+            Dictionary with retry metrics
         """
         metrics = super().get_metrics()
         metrics.update({
-            "base_delay": self.base_delay,
-            "max_delay": self.max_delay,
-            "multiplier": self.multiplier,
-            "jitter_factor": self.jitter_factor,
-            "active_since": self.start_time.isoformat() if self.start_time else None,
-            "retryable_exceptions": [exc.__name__ for exc in self.retryable_exceptions] if self.retryable_exceptions else []
+            "wait_time": self.wait_time
         })
         return metrics
 
 
-class LinearBackoffStrategy(RetryStrategy):
+class LinearRetryStrategy(BaseRetryStrategy):
     """
     Linear backoff retry strategy.
     
@@ -239,78 +260,216 @@ class LinearBackoffStrategy(RetryStrategy):
     
     def __init__(
         self,
-        base_delay: float = 1.0,
+        initial_wait_time: float = 1.0,
         increment: float = 1.0,
-        max_delay: float = 30.0,
-        jitter_factor: float = 0.0,
-        retryable_exceptions: Optional[List[type]] = None
+        **kwargs
     ):
         """
-        Initialize a new linear backoff strategy.
+        Initialize the linear retry strategy.
         
         Args:
-            base_delay: The base delay in seconds
-            increment: The increment to add for each retry
-            max_delay: The maximum delay in seconds
-            jitter_factor: The factor by which to apply random jitter (0.0 to 1.0)
-            retryable_exceptions: List of exception types that are retryable
+            initial_wait_time: Initial wait time for the first retry in seconds
+            increment: Amount to increase wait time for each subsequent retry in seconds
+            **kwargs: Additional arguments passed to BaseRetryStrategy
         """
-        self.base_delay = base_delay
+        super().__init__(**kwargs)
+        self.initial_wait_time = initial_wait_time
         self.increment = increment
-        self.max_delay = max_delay
-        self.jitter_factor = min(max(0.0, jitter_factor), 1.0)  # Clamp to [0.0, 1.0]
-        self.retryable_exceptions = retryable_exceptions or []
-        
-        logger.info(
-            f"Initialized LinearBackoffStrategy with base_delay={base_delay}, "
-            f"increment={increment}, max_delay={max_delay}, jitter_factor={jitter_factor}"
-        )
     
-    def should_retry(self, attempt: int, exception: Optional[Exception] = None) -> bool:
+    def _calculate_wait_time(self, attempt: int, elapsed_time: float) -> float:
         """
-        Determine if a retry should be attempted.
+        Calculate the wait time before the next retry attempt.
+        
+        For linear strategy, wait time increases linearly with each attempt:
+        wait_time = initial_wait_time + (attempt - 1) * increment
         
         Args:
             attempt: The current attempt number (1-based)
-            exception: The exception that caused the failure, if any
+            elapsed_time: Time elapsed since the first attempt in seconds
             
         Returns:
-            True if a retry should be attempted, False otherwise
+            The wait time in seconds
         """
-        # If we have specific retryable exceptions and an exception was provided,
-        # only retry if the exception is in the list
-        if self.retryable_exceptions and exception:
-            should_retry = any(isinstance(exception, exc_type) for exc_type in self.retryable_exceptions)
-            if not should_retry:
-                logger.info(f"Not retrying due to non-retryable exception: {type(exception).__name__}")
-            return should_retry
-        
-        # Otherwise, always retry
-        return True
+        return self.initial_wait_time + (attempt - 1) * self.increment
     
-    def get_retry_interval(self, attempt: int) -> float:
+    def get_metrics(self) -> Dict[str, Any]:
         """
-        Get the number of seconds to wait before the next retry.
+        Get metrics about the retry strategy's performance.
+        
+        Returns:
+            Dictionary with retry metrics
+        """
+        metrics = super().get_metrics()
+        metrics.update({
+            "initial_wait_time": self.initial_wait_time,
+            "increment": self.increment
+        })
+        return metrics
+
+
+class ExponentialRetryStrategy(BaseRetryStrategy):
+    """
+    Exponential backoff retry strategy.
+    
+    This strategy increases the wait time exponentially with each retry attempt.
+    """
+    
+    def __init__(
+        self,
+        initial_wait_time: float = 1.0,
+        base: float = 2.0,
+        max_wait_time: float = 60.0,  # 1 minute maximum wait time
+        **kwargs
+    ):
+        """
+        Initialize the exponential retry strategy.
+        
+        Args:
+            initial_wait_time: Initial wait time for the first retry in seconds
+            base: Base of the exponential function
+            max_wait_time: Maximum wait time between retries in seconds
+            **kwargs: Additional arguments passed to BaseRetryStrategy
+        """
+        super().__init__(**kwargs)
+        self.initial_wait_time = initial_wait_time
+        self.base = base
+        self.max_wait_time = max_wait_time
+    
+    def _calculate_wait_time(self, attempt: int, elapsed_time: float) -> float:
+        """
+        Calculate the wait time before the next retry attempt.
+        
+        For exponential strategy, wait time increases exponentially with each attempt:
+        wait_time = initial_wait_time * (base ^ (attempt - 1))
         
         Args:
             attempt: The current attempt number (1-based)
+            elapsed_time: Time elapsed since the first attempt in seconds
             
         Returns:
-            The number of seconds to wait
+            The wait time in seconds, capped at max_wait_time
         """
-        # Calculate the linear delay: base_delay + increment * (attempt-1)
-        delay = self.base_delay + self.increment * (attempt - 1)
+        wait_time = self.initial_wait_time * (self.base ** (attempt - 1))
+        return min(wait_time, self.max_wait_time)
+    
+    def get_metrics(self) -> Dict[str, Any]:
+        """
+        Get metrics about the retry strategy's performance.
         
-        # Apply a maximum delay cap
-        delay = min(delay, self.max_delay)
+        Returns:
+            Dictionary with retry metrics
+        """
+        metrics = super().get_metrics()
+        metrics.update({
+            "initial_wait_time": self.initial_wait_time,
+            "base": self.base,
+            "max_wait_time": self.max_wait_time
+        })
+        return metrics
+
+
+class ExponentialWithJitterRetryStrategy(ExponentialRetryStrategy):
+    """
+    Exponential backoff with jitter retry strategy.
+    
+    This strategy adds randomness to the exponential backoff to prevent thundering herd
+    problems when multiple clients are retrying simultaneously.
+    """
+    
+    def __init__(
+        self,
+        jitter_factor: float = 0.2,  # 20% jitter by default
+        **kwargs
+    ):
+        """
+        Initialize the exponential with jitter retry strategy.
         
-        # Apply jitter: delay * (1 ± jitter_factor * random)
-        if self.jitter_factor > 0:
-            jitter = delay * self.jitter_factor * random.random()
-            # Subtract or add jitter with equal probability
-            if random.random() < 0.5:
-                delay -= jitter
-            else:
-                delay += jitter
+        Args:
+            jitter_factor: Factor to determine the range of jitter (0.0 to 1.0)
+            **kwargs: Additional arguments passed to ExponentialRetryStrategy
+        """
+        super().__init__(**kwargs)
+        self.jitter_factor = max(0.0, min(1.0, jitter_factor))  # Clamp to [0.0, 1.0]
+    
+    def _calculate_wait_time(self, attempt: int, elapsed_time: float) -> float:
+        """
+        Calculate the wait time before the next retry attempt.
         
-        return delay
+        For exponential with jitter strategy, we calculate the base exponential wait time
+        and then add a random jitter based on the jitter factor.
+        
+        Args:
+            attempt: The current attempt number (1-based)
+            elapsed_time: Time elapsed since the first attempt in seconds
+            
+        Returns:
+            The wait time in seconds with added jitter, capped at max_wait_time
+        """
+        # Get the base exponential wait time
+        base_wait_time = super()._calculate_wait_time(attempt, elapsed_time)
+        
+        # Calculate the jitter range
+        jitter_range = base_wait_time * self.jitter_factor
+        
+        # Apply random jitter within the range [-jitter_range/2, +jitter_range/2]
+        jitter = random.uniform(-jitter_range/2, jitter_range/2)
+        
+        # Apply jitter to wait time but ensure it's not negative
+        wait_time = max(0.001, base_wait_time + jitter)
+        
+        # Cap at max_wait_time
+        return min(wait_time, self.max_wait_time)
+    
+    def get_metrics(self) -> Dict[str, Any]:
+        """
+        Get metrics about the retry strategy's performance.
+        
+        Returns:
+            Dictionary with retry metrics
+        """
+        metrics = super().get_metrics()
+        metrics.update({
+            "jitter_factor": self.jitter_factor
+        })
+        return metrics
+
+
+def create_retry_strategy(
+    strategy_type: Union[str, RetryStrategyType] = RetryStrategyType.EXPONENTIAL_WITH_JITTER,
+    **kwargs
+) -> BaseRetryStrategy:
+    """
+    Factory function to create retry strategies.
+    
+    Args:
+        strategy_type: Type of retry strategy to create
+        **kwargs: Additional arguments to pass to the strategy constructor
+        
+    Returns:
+        The created retry strategy instance
+        
+    Raises:
+        ValueError: If strategy_type is not recognized
+    """
+    # Convert string to enum if needed
+    if isinstance(strategy_type, str):
+        try:
+            strategy_type = RetryStrategyType[strategy_type.upper()]
+        except KeyError:
+            valid_types = ", ".join(s.name for s in RetryStrategyType)
+            raise ValueError(f"Unknown retry strategy type: {strategy_type}. "
+                            f"Valid types are: {valid_types}")
+    
+    # Create the appropriate strategy
+    if strategy_type == RetryStrategyType.FIXED:
+        return FixedRetryStrategy(**kwargs)
+    elif strategy_type == RetryStrategyType.LINEAR:
+        return LinearRetryStrategy(**kwargs)
+    elif strategy_type == RetryStrategyType.EXPONENTIAL:
+        return ExponentialRetryStrategy(**kwargs)
+    elif strategy_type == RetryStrategyType.EXPONENTIAL_WITH_JITTER:
+        return ExponentialWithJitterRetryStrategy(**kwargs)
+    else:
+        valid_types = ", ".join(s.name for s in RetryStrategyType)
+        raise ValueError(f"Unknown retry strategy type: {strategy_type}. "
+                        f"Valid types are: {valid_types}")

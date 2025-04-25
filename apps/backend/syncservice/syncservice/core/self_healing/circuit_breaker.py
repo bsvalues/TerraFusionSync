@@ -1,152 +1,90 @@
 """
-Circuit Breaker implementation for the TerraFusion SyncService platform.
+Circuit Breaker pattern implementation for TerraFusion SyncService platform.
 
-This module provides a circuit breaker pattern implementation to prevent
-cascading failures and allow the system to fail fast when external
-dependencies are unavailable.
+This module provides a robust circuit breaker implementation to prevent
+cascading failures, provide fast failure detection, and automatic recovery.
 """
 
-import time
 import logging
-from enum import Enum
-from typing import Callable, Any, Optional, Dict, List
+import time
 from datetime import datetime, timedelta
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional, TypeVar
 
+T = TypeVar('T')
 logger = logging.getLogger(__name__)
 
 
 class CircuitState(Enum):
-    """Enum for the possible states of a circuit breaker."""
-    CLOSED = "closed"  # Circuit is closed, operations are allowed
-    OPEN = "open"      # Circuit is open, operations are blocked
-    HALF_OPEN = "half_open"  # Circuit is half-open, testing if operations can be allowed again
+    """Possible states for the circuit breaker."""
+    CLOSED = "closed"  # Normal operation, requests are allowed
+    OPEN = "open"      # Circuit is open, requests are not allowed
+    HALF_OPEN = "half_open"  # Testing if service is healthy again
 
 
 class CircuitBreaker:
     """
-    Implementation of the Circuit Breaker pattern.
+    Circuit Breaker implementation to prevent cascading failures.
     
-    The circuit breaker monitors operations and trips open if failures exceed a threshold,
-    preventing further operations until a cooling period has passed.
+    This implementation follows the circuit breaker pattern:
+    - In CLOSED state, all operations execute normally.
+    - When failures exceed threshold, circuit opens (OPEN state).
+    - After reset_timeout, allows one test request (HALF_OPEN state).
+    - If test succeeds, circuit closes; if it fails, reset timeout restarts.
     """
     
     def __init__(
         self,
         name: str,
         failure_threshold: int = 5,
-        reset_timeout_seconds: int = 60,
-        half_open_max_calls: int = 1,
-        excluded_exceptions: Optional[List[type]] = None
+        reset_timeout: int = 30,
+        half_open_success_threshold: int = 1,
+        monitored_exceptions: List[type] = None,
+        on_open_callback: Optional[Callable[[str], None]] = None,
+        on_close_callback: Optional[Callable[[str], None]] = None
     ):
         """
-        Initialize a new circuit breaker.
+        Initialize the circuit breaker.
         
         Args:
-            name: Identifier for this circuit breaker
-            failure_threshold: Number of consecutive failures before opening the circuit
-            reset_timeout_seconds: Seconds to wait before attempting to close the circuit again
-            half_open_max_calls: Maximum number of calls to allow in half-open state
-            excluded_exceptions: Exceptions that should not count as failures
+            name: Name of the circuit breaker for identification
+            failure_threshold: Number of failures before opening circuit
+            reset_timeout: Seconds to wait before attempting to close circuit
+            half_open_success_threshold: Number of successes in half-open state
+                required to close the circuit
+            monitored_exceptions: List of exception types to monitor; any other
+                exceptions will be treated as unmonitored and always propagated
+            on_open_callback: Callback to execute when circuit transitions to open
+            on_close_callback: Callback to execute when circuit transitions to closed
         """
         self.name = name
         self.failure_threshold = failure_threshold
-        self.reset_timeout_seconds = reset_timeout_seconds
-        self.half_open_max_calls = half_open_max_calls
-        self.excluded_exceptions = excluded_exceptions or []
+        self.reset_timeout = reset_timeout
+        self.half_open_success_threshold = half_open_success_threshold
+        self.monitored_exceptions = monitored_exceptions or [Exception]
+        self.on_open_callback = on_open_callback
+        self.on_close_callback = on_close_callback
         
-        # Internal state
-        self._state = CircuitState.CLOSED
-        self._failure_count = 0
-        self._last_failure_time = None
-        self._successful_half_open_calls = 0
-        self._half_open_calls_remaining = half_open_max_calls
+        # Initialize state
+        self.state = CircuitState.CLOSED
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.successful_half_open_calls = 0
         
-        logger.info(f"Circuit breaker '{name}' initialized")
-    
-    @property
-    def state(self) -> CircuitState:
-        """Get the current state of the circuit breaker."""
-        # Check if we need to transition from OPEN to HALF_OPEN
-        if self._state == CircuitState.OPEN and self._last_failure_time:
-            cooling_period_end = self._last_failure_time + timedelta(seconds=self.reset_timeout_seconds)
-            if datetime.utcnow() >= cooling_period_end:
-                self._transition_to_half_open()
+        # Tracking metrics
+        self.total_successful_calls = 0
+        self.total_failed_calls = 0
+        self.consecutive_successful_calls = 0
+        self.last_state_change_time = datetime.utcnow()
         
-        return self._state
+        logger.info(f"Circuit breaker '{name}' initialized in {self.state.value} state")
     
-    def _transition_to_open(self):
-        """Transition the circuit breaker to the open state."""
-        if self._state != CircuitState.OPEN:
-            previous_state = self._state
-            self._state = CircuitState.OPEN
-            self._last_failure_time = datetime.utcnow()
-            logger.warning(f"Circuit breaker '{self.name}' transitioned from {previous_state.value} to OPEN")
-    
-    def _transition_to_half_open(self):
-        """Transition the circuit breaker to the half-open state."""
-        if self._state != CircuitState.HALF_OPEN:
-            previous_state = self._state
-            self._state = CircuitState.HALF_OPEN
-            self._half_open_calls_remaining = self.half_open_max_calls
-            self._successful_half_open_calls = 0
-            logger.info(f"Circuit breaker '{self.name}' transitioned from {previous_state.value} to HALF_OPEN")
-    
-    def _transition_to_closed(self):
-        """Transition the circuit breaker to the closed state."""
-        if self._state != CircuitState.CLOSED:
-            previous_state = self._state
-            self._state = CircuitState.CLOSED
-            self._failure_count = 0
-            self._last_failure_time = None
-            logger.info(f"Circuit breaker '{self.name}' transitioned from {previous_state.value} to CLOSED")
-    
-    def record_success(self):
-        """Record a successful operation."""
-        if self._state == CircuitState.CLOSED:
-            # Reset the failure count
-            self._failure_count = 0
-            
-        elif self._state == CircuitState.HALF_OPEN:
-            # Record successful call in half-open state
-            self._successful_half_open_calls += 1
-            
-            # If we've had enough successful calls, close the circuit
-            if self._successful_half_open_calls >= self.half_open_max_calls:
-                self._transition_to_closed()
-                logger.info(f"Circuit breaker '{self.name}' closed after {self._successful_half_open_calls} successful calls")
-    
-    def record_failure(self, exception: Optional[Exception] = None):
-        """
-        Record a failed operation.
-        
-        Args:
-            exception: The exception that caused the failure, if any
-        """
-        # If the exception is in the excluded list, don't count it as a failure
-        if exception and any(isinstance(exception, exc_type) for exc_type in self.excluded_exceptions):
-            logger.debug(f"Circuit breaker '{self.name}' ignoring excluded exception: {type(exception).__name__}")
-            return
-        
-        if self._state == CircuitState.CLOSED:
-            # Increment the failure count
-            self._failure_count += 1
-            
-            # If we've reached the threshold, open the circuit
-            if self._failure_count >= self.failure_threshold:
-                self._transition_to_open()
-                logger.warning(f"Circuit breaker '{self.name}' opened after {self._failure_count} consecutive failures")
-                
-        elif self._state == CircuitState.HALF_OPEN:
-            # Any failure in half-open state opens the circuit again
-            self._transition_to_open()
-            logger.warning(f"Circuit breaker '{self.name}' reopened after failure in half-open state")
-    
-    def execute(self, func: Callable, *args, **kwargs) -> Any:
+    def execute(self, function: Callable[..., T], *args: Any, **kwargs: Any) -> T:
         """
         Execute a function with circuit breaker protection.
         
         Args:
-            func: The function to execute
+            function: The function to execute
             *args: Arguments to pass to the function
             **kwargs: Keyword arguments to pass to the function
             
@@ -154,74 +92,184 @@ class CircuitBreaker:
             The result of the function
             
         Raises:
-            CircuitBreakerOpenError: If the circuit is open
-            Any exception raised by the function
+            Exception: Any exception raised by the function that's not handled
+            CircuitOpenError: If the circuit is open
         """
-        current_state = self.state
-        
-        # If the circuit is open, don't allow the call
-        if current_state == CircuitState.OPEN:
-            remaining_seconds = self._get_remaining_open_seconds()
-            raise CircuitBreakerOpenError(
-                f"Circuit breaker '{self.name}' is open. Will retry in {remaining_seconds} seconds."
-            )
-        
-        # If the circuit is half-open, only allow a limited number of calls
-        if current_state == CircuitState.HALF_OPEN:
-            if self._half_open_calls_remaining <= 0:
-                raise CircuitBreakerOpenError(
-                    f"Circuit breaker '{self.name}' is half-open but no more test calls are permitted at this time."
+        # Check if circuit is open
+        if self.state == CircuitState.OPEN:
+            # Check if enough time has passed to try half-open state
+            if self._should_attempt_reset():
+                logger.info(f"Circuit breaker '{self.name}' trying half-open state")
+                self._transition_to_half_open()
+            else:
+                # Still open with no reset attempt
+                reset_at = self.last_failure_time + timedelta(seconds=self.reset_timeout)
+                raise CircuitOpenError(
+                    f"Circuit '{self.name}' is open. Retry after {reset_at.isoformat()}",
+                    self.name,
+                    reset_at
                 )
-            self._half_open_calls_remaining -= 1
         
-        # Execute the function and record success or failure
+        # Execute function - both in CLOSED and HALF_OPEN states
         try:
-            result = func(*args, **kwargs)
-            self.record_success()
+            result = function(*args, **kwargs)
+            self._handle_success()
             return result
         except Exception as e:
-            self.record_failure(e)
+            # Handle failure based on exception type
+            if any(isinstance(e, exc_type) for exc_type in self.monitored_exceptions):
+                self._handle_failure(e)
+            
+            # Always re-raise the exception
             raise
     
-    def _get_remaining_open_seconds(self) -> int:
-        """Get the number of seconds remaining before the circuit can be half-open."""
-        if not self._last_failure_time:
-            return self.reset_timeout_seconds
+    def _handle_success(self) -> None:
+        """Handle a successful execution."""
+        self.total_successful_calls += 1
+        self.consecutive_successful_calls += 1
         
-        cooling_period_end = self._last_failure_time + timedelta(seconds=self.reset_timeout_seconds)
-        remaining = (cooling_period_end - datetime.utcnow()).total_seconds()
-        return max(0, int(remaining))
+        if self.state == CircuitState.HALF_OPEN:
+            self.successful_half_open_calls += 1
+            logger.info(f"Circuit '{self.name}' successful half-open call: "
+                       f"{self.successful_half_open_calls}/{self.half_open_success_threshold}")
+            
+            # If we've reached the required successes in half-open state, close the circuit
+            if self.successful_half_open_calls >= self.half_open_success_threshold:
+                self._transition_to_closed()
     
-    def get_metrics(self) -> Dict[str, Any]:
+    def _handle_failure(self, exception: Exception) -> None:
         """
-        Get metrics about the circuit breaker.
+        Handle a failed execution.
+        
+        Args:
+            exception: The exception that caused the failure
+        """
+        self.total_failed_calls += 1
+        self.consecutive_successful_calls = 0
+        self.last_failure_time = datetime.utcnow()
+        
+        if self.state == CircuitState.CLOSED:
+            self.failure_count += 1
+            logger.warning(f"Circuit '{self.name}' failure: {self.failure_count}/{self.failure_threshold}")
+            
+            # If we've reached the failure threshold, open the circuit
+            if self.failure_count >= self.failure_threshold:
+                self._transition_to_open()
+        
+        elif self.state == CircuitState.HALF_OPEN:
+            # Any failure in half-open state opens the circuit again
+            logger.warning(f"Circuit '{self.name}' failure in half-open state. Reopening circuit.")
+            self._transition_to_open()
+    
+    def _transition_to_open(self) -> None:
+        """Transition the circuit to the open state."""
+        self.state = CircuitState.OPEN
+        self.last_state_change_time = datetime.utcnow()
+        self.last_failure_time = datetime.utcnow()
+        
+        logger.warning(f"Circuit '{self.name}' opened due to consecutive failures")
+        
+        # Execute the on_open callback if provided
+        if self.on_open_callback:
+            try:
+                self.on_open_callback(self.name)
+            except Exception as e:
+                logger.error(f"Error in circuit breaker '{self.name}' on_open_callback: {str(e)}")
+    
+    def _transition_to_half_open(self) -> None:
+        """Transition the circuit to the half-open state."""
+        self.state = CircuitState.HALF_OPEN
+        self.last_state_change_time = datetime.utcnow()
+        self.successful_half_open_calls = 0
+        
+        logger.info(f"Circuit '{self.name}' transitioned to half-open state")
+    
+    def _transition_to_closed(self) -> None:
+        """Transition the circuit to the closed state."""
+        self.state = CircuitState.CLOSED
+        self.last_state_change_time = datetime.utcnow()
+        self.failure_count = 0
+        
+        logger.info(f"Circuit '{self.name}' closed after successful half-open calls")
+        
+        # Execute the on_close callback if provided
+        if self.on_close_callback:
+            try:
+                self.on_close_callback(self.name)
+            except Exception as e:
+                logger.error(f"Error in circuit breaker '{self.name}' on_close_callback: {str(e)}")
+    
+    def _should_attempt_reset(self) -> bool:
+        """
+        Check if enough time has passed to attempt a reset.
         
         Returns:
-            Dictionary with circuit breaker metrics
+            True if enough time has passed, False otherwise
         """
+        if not self.last_failure_time:
+            return True
+        
+        elapsed_time = (datetime.utcnow() - self.last_failure_time).total_seconds()
+        return elapsed_time >= self.reset_timeout
+    
+    def get_status(self) -> Dict[str, Any]:
+        """
+        Get the current status of the circuit breaker.
+        
+        Returns:
+            Dictionary with circuit breaker status
+        """
+        now = datetime.utcnow()
+        time_in_current_state = (now - self.last_state_change_time).total_seconds()
+        
         return {
             "name": self.name,
-            "state": self._state.value,
-            "failure_count": self._failure_count,
+            "state": self.state.value,
+            "failure_count": self.failure_count,
             "failure_threshold": self.failure_threshold,
-            "reset_timeout_seconds": self.reset_timeout_seconds,
-            "last_failure_time": self._last_failure_time.isoformat() if self._last_failure_time else None,
-            "remaining_open_seconds": self._get_remaining_open_seconds() if self._state == CircuitState.OPEN else 0,
-            "half_open_calls_remaining": self._half_open_calls_remaining if self._state == CircuitState.HALF_OPEN else None,
-            "successful_half_open_calls": self._successful_half_open_calls if self._state == CircuitState.HALF_OPEN else None
+            "reset_timeout": self.reset_timeout,
+            "time_in_current_state_seconds": time_in_current_state,
+            "total_successful_calls": self.total_successful_calls,
+            "total_failed_calls": self.total_failed_calls,
+            "consecutive_successful_calls": self.consecutive_successful_calls,
+            "last_state_change": self.last_state_change_time.isoformat() if self.last_state_change_time else None,
+            "last_failure_time": self.last_failure_time.isoformat() if self.last_failure_time else None,
         }
     
-    def reset(self):
-        """Reset the circuit breaker to its initial closed state."""
-        previous_state = self._state
-        self._state = CircuitState.CLOSED
-        self._failure_count = 0
-        self._last_failure_time = None
-        self._successful_half_open_calls = 0
-        self._half_open_calls_remaining = self.half_open_max_calls
-        logger.info(f"Circuit breaker '{self.name}' manually reset from {previous_state.value} to CLOSED")
+    def force_open(self) -> None:
+        """Force the circuit to open for testing or management purposes."""
+        if self.state != CircuitState.OPEN:
+            logger.warning(f"Circuit '{self.name}' manually forced open")
+            self._transition_to_open()
+    
+    def force_close(self) -> None:
+        """Force the circuit to close for testing or management purposes."""
+        if self.state != CircuitState.CLOSED:
+            logger.warning(f"Circuit '{self.name}' manually forced closed")
+            self._transition_to_closed()
+    
+    def reset(self) -> None:
+        """Reset the circuit breaker to its initial state."""
+        logger.info(f"Circuit '{self.name}' manually reset")
+        self.state = CircuitState.CLOSED
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.successful_half_open_calls = 0
+        self.last_state_change_time = datetime.utcnow()
 
 
-class CircuitBreakerOpenError(Exception):
-    """Exception raised when attempting to execute a function with an open circuit breaker."""
-    pass
+class CircuitOpenError(Exception):
+    """Exception raised when a circuit is open."""
+    
+    def __init__(self, message: str, circuit_name: str, reset_at: datetime):
+        """
+        Initialize CircuitOpenError.
+        
+        Args:
+            message: Error message
+            circuit_name: Name of the circuit that is open
+            reset_at: Datetime when the circuit will attempt to reset
+        """
+        super().__init__(message)
+        self.circuit_name = circuit_name
+        self.reset_at = reset_at
