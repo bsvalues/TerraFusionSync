@@ -1,0 +1,503 @@
+{% extends "base_new.html" %}
+
+{% block title %}System Logs - TerraFusion SyncService{% endblock %}
+
+{% block extra_head %}
+<style>
+    .log-entry {
+        font-family: monospace;
+        font-size: 0.9rem;
+        margin-bottom: 0.25rem;
+        padding: 0.5rem;
+        border-radius: 0.25rem;
+    }
+    
+    .log-entry.error {
+        background-color: rgba(244, 67, 54, 0.1);
+        border-left: 3px solid #f44336;
+    }
+    
+    .log-entry.warning {
+        background-color: rgba(255, 152, 0, 0.1);
+        border-left: 3px solid #ff9800;
+    }
+    
+    .log-entry.info {
+        background-color: rgba(33, 150, 243, 0.1);
+        border-left: 3px solid #2196f3;
+    }
+    
+    .log-entry.debug {
+        background-color: rgba(158, 158, 158, 0.1);
+        border-left: 3px solid #9e9e9e;
+    }
+    
+    .log-timestamp {
+        color: #757575;
+        font-size: 0.8rem;
+        margin-right: 0.5rem;
+    }
+    
+    .log-level {
+        font-weight: 600;
+        padding: 0.125rem 0.375rem;
+        border-radius: 0.25rem;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        margin-right: 0.5rem;
+    }
+    
+    .log-level.error {
+        background-color: #f44336;
+        color: white;
+    }
+    
+    .log-level.warning {
+        background-color: #ff9800;
+        color: white;
+    }
+    
+    .log-level.info {
+        background-color: #2196f3;
+        color: white;
+    }
+    
+    .log-level.debug {
+        background-color: #9e9e9e;
+        color: white;
+    }
+    
+    .log-message {
+        word-break: break-all;
+    }
+    
+    .log-source {
+        color: #757575;
+        font-size: 0.8rem;
+        margin-right: 0.5rem;
+        font-style: italic;
+    }
+    
+    .log-filter-btn {
+        margin-right: 0.25rem;
+        margin-bottom: 0.25rem;
+    }
+    
+    .log-search {
+        margin-bottom: 1rem;
+    }
+    
+    .log-actions {
+        margin-bottom: 1rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <h1 class="mb-0">System Logs</h1>
+                <div>
+                    <button id="refreshLogsBtn" class="btn btn-primary">
+                        <i class="fas fa-sync-alt me-2"></i> Refresh Logs
+                    </button>
+                    <div class="dropdown d-inline-block ms-2">
+                        <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="logActionsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-ellipsis-v"></i>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="logActionsDropdown">
+                            <li><a class="dropdown-item" href="#" id="downloadLogsBtn"><i class="fas fa-download me-2"></i> Download Logs</a></li>
+                            <li><a class="dropdown-item" href="#" id="clearLogsBtn"><i class="fas fa-trash-alt me-2"></i> Clear Console</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="#" id="configureLogsBtn"><i class="fas fa-cog me-2"></i> Configure</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <div class="input-group log-search">
+                <span class="input-group-text"><i class="fas fa-search"></i></span>
+                <input type="text" class="form-control" placeholder="Search logs..." id="logSearchInput">
+                <button class="btn btn-outline-secondary" type="button" id="clearSearchBtn">Clear</button>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="d-flex justify-content-md-end">
+                <div class="btn-group" role="group">
+                    <input type="radio" class="btn-check" name="logSource" id="allSourcesBtn" checked>
+                    <label class="btn btn-outline-secondary" for="allSourcesBtn">All</label>
+                    
+                    <input type="radio" class="btn-check" name="logSource" id="apiGatewayBtn">
+                    <label class="btn btn-outline-secondary" for="apiGatewayBtn">API Gateway</label>
+                    
+                    <input type="radio" class="btn-check" name="logSource" id="syncServiceBtn">
+                    <label class="btn btn-outline-secondary" for="syncServiceBtn">SyncService</label>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="log-actions">
+                <button class="btn btn-sm log-filter-btn" data-level="all">All Levels</button>
+                <button class="btn btn-sm btn-danger log-filter-btn" data-level="error">Errors</button>
+                <button class="btn btn-sm btn-warning log-filter-btn" data-level="warning">Warnings</button>
+                <button class="btn btn-sm btn-info log-filter-btn" data-level="info">Info</button>
+                <button class="btn btn-sm btn-secondary log-filter-btn" data-level="debug">Debug</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-12">
+            <div class="card log-console">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Log Console</h5>
+                    <span class="badge bg-primary" id="logCount">0 entries</span>
+                </div>
+                <div class="card-body p-0">
+                    <div class="log-entries p-3" id="logEntries" style="max-height: 600px; overflow-y: auto;">
+                        <!-- Log entries will be dynamically added here -->
+                        <div class="text-center p-5 text-muted">
+                            <i class="fas fa-spinner fa-spin fa-2x mb-3"></i>
+                            <p>Loading logs...</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <small class="text-muted">Last updated: <span id="lastUpdated">Never</span></small>
+                        <button class="btn btn-sm btn-outline-primary" id="loadMoreLogsBtn">Load More</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Log Configuration Modal -->
+<div class="modal fade" id="logConfigModal" tabindex="-1" aria-labelledby="logConfigModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="logConfigModalLabel">Log Configuration</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form>
+                    <div class="mb-3">
+                        <label class="form-label">Log Level</label>
+                        <select class="form-select" id="logLevelSelect">
+                            <option value="debug">Debug (All logs)</option>
+                            <option value="info" selected>Info</option>
+                            <option value="warning">Warning</option>
+                            <option value="error">Error</option>
+                        </select>
+                        <div class="form-text">Logs at this level and higher will be displayed</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Max Log Entries</label>
+                        <input type="number" class="form-control" id="maxLogEntries" value="500" min="50" max="10000">
+                        <div class="form-text">Maximum number of log entries to keep in memory</div>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="enableAutoRefresh" checked>
+                        <label class="form-check-label" for="enableAutoRefresh">Auto-refresh logs</label>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Refresh Interval (seconds)</label>
+                        <input type="number" class="form-control" id="refreshInterval" value="5" min="1" max="60">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveLogConfigBtn">Save Configuration</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Sample log data - would be replaced with API call
+    const sampleLogs = [
+        { timestamp: '2025-04-26T14:32:15.123Z', level: 'info', message: 'API Gateway started', source: 'api_gateway' },
+        { timestamp: '2025-04-26T14:32:16.234Z', level: 'info', message: 'Connected to database', source: 'api_gateway' },
+        { timestamp: '2025-04-26T14:32:17.345Z', level: 'info', message: 'SyncService started', source: 'sync_service' },
+        { timestamp: '2025-04-26T14:32:18.456Z', level: 'info', message: 'Authentication service initialized', source: 'api_gateway' },
+        { timestamp: '2025-04-26T14:32:25.567Z', level: 'warning', message: 'Slow database query detected (2.3s): SELECT * FROM sync_operations WHERE status = "running"', source: 'api_gateway' },
+        { timestamp: '2025-04-26T14:33:15.678Z', level: 'error', message: 'Failed to connect to external system PACS: Connection timed out', source: 'sync_service' },
+        { timestamp: '2025-04-26T14:34:10.789Z', level: 'info', message: 'Metrics collection completed', source: 'api_gateway' },
+        { timestamp: '2025-04-26T14:35:05.890Z', level: 'debug', message: 'Processing sync operation #1234 with 156 records', source: 'sync_service' },
+        { timestamp: '2025-04-26T14:36:20.901Z', level: 'info', message: 'Sync operation #1234 completed successfully', source: 'sync_service' },
+        { timestamp: '2025-04-26T14:37:30.012Z', level: 'warning', message: 'Rate limit approaching for CAMA system API (80% used)', source: 'sync_service' }
+    ];
+    
+    // Formatting functions
+    function formatLogTimestamp(isoTimestamp) {
+        const date = new Date(isoTimestamp);
+        return date.toLocaleTimeString('en-US', { hour12: false }) + '.' + date.getMilliseconds().toString().padStart(3, '0');
+    }
+    
+    function createLogEntry(log) {
+        const logEntry = document.createElement('div');
+        logEntry.className = `log-entry ${log.level}`;
+        logEntry.setAttribute('data-level', log.level);
+        logEntry.setAttribute('data-source', log.source);
+        
+        const timestamp = document.createElement('span');
+        timestamp.className = 'log-timestamp';
+        timestamp.textContent = formatLogTimestamp(log.timestamp);
+        
+        const level = document.createElement('span');
+        level.className = `log-level ${log.level}`;
+        level.textContent = log.level;
+        
+        const source = document.createElement('span');
+        source.className = 'log-source';
+        source.textContent = log.source;
+        
+        const message = document.createElement('span');
+        message.className = 'log-message';
+        message.textContent = log.message;
+        
+        logEntry.appendChild(timestamp);
+        logEntry.appendChild(level);
+        logEntry.appendChild(source);
+        logEntry.appendChild(message);
+        
+        return logEntry;
+    }
+    
+    // DOM elements
+    const logEntries = document.getElementById('logEntries');
+    const logCount = document.getElementById('logCount');
+    const lastUpdated = document.getElementById('lastUpdated');
+    const searchInput = document.getElementById('logSearchInput');
+    const clearSearchBtn = document.getElementById('clearSearchBtn');
+    const refreshLogsBtn = document.getElementById('refreshLogsBtn');
+    const downloadLogsBtn = document.getElementById('downloadLogsBtn');
+    const clearLogsBtn = document.getElementById('clearLogsBtn');
+    const configureLogsBtn = document.getElementById('configureLogsBtn');
+    const loadMoreLogsBtn = document.getElementById('loadMoreLogsBtn');
+    const filterButtons = document.querySelectorAll('.log-filter-btn');
+    const saveLogConfigBtn = document.getElementById('saveLogConfigBtn');
+    
+    // Initialize
+    document.addEventListener('DOMContentLoaded', function() {
+        // Load initial logs
+        loadLogs();
+        
+        // Setup event listeners
+        searchInput.addEventListener('input', filterLogs);
+        clearSearchBtn.addEventListener('click', clearSearch);
+        refreshLogsBtn.addEventListener('click', refreshLogs);
+        downloadLogsBtn.addEventListener('click', downloadLogs);
+        clearLogsBtn.addEventListener('click', clearLogs);
+        configureLogsBtn.addEventListener('click', openLogConfig);
+        loadMoreLogsBtn.addEventListener('click', loadMoreLogs);
+        saveLogConfigBtn.addEventListener('click', saveLogConfig);
+        
+        // Setup level filter buttons
+        filterButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const level = this.getAttribute('data-level');
+                filterLogsByLevel(level);
+                
+                // Update active state
+                filterButtons.forEach(btn => btn.classList.remove('active'));
+                this.classList.add('active');
+            });
+        });
+        
+        // Activate first filter button
+        filterButtons[0].classList.add('active');
+        
+        // Setup log source filter
+        document.querySelectorAll('input[name="logSource"]').forEach(radio => {
+            radio.addEventListener('change', filterBySource);
+        });
+    });
+    
+    // Load logs from API
+    function loadLogs() {
+        // In a real implementation, this would fetch from an API
+        logEntries.innerHTML = '';
+        
+        // For demo purposes, using sample logs
+        sampleLogs.forEach(log => {
+            logEntries.appendChild(createLogEntry(log));
+        });
+        
+        updateLogCount();
+        lastUpdated.textContent = new Date().toLocaleTimeString();
+    }
+    
+    function updateLogCount() {
+        const visibleLogs = document.querySelectorAll('.log-entry:not(.d-none)').length;
+        logCount.textContent = `${visibleLogs} entries`;
+    }
+    
+    function filterLogs() {
+        const searchTerm = searchInput.value.toLowerCase();
+        const logEntries = document.querySelectorAll('.log-entry');
+        
+        logEntries.forEach(entry => {
+            const message = entry.querySelector('.log-message').textContent.toLowerCase();
+            const source = entry.querySelector('.log-source').textContent.toLowerCase();
+            
+            if (message.includes(searchTerm) || source.includes(searchTerm)) {
+                entry.classList.remove('d-none');
+            } else {
+                entry.classList.add('d-none');
+            }
+        });
+        
+        updateLogCount();
+    }
+    
+    function clearSearch() {
+        searchInput.value = '';
+        filterLogs();
+    }
+    
+    function refreshLogs() {
+        refreshLogsBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Refreshing...';
+        refreshLogsBtn.disabled = true;
+        
+        // Simulate API call delay
+        setTimeout(() => {
+            loadLogs();
+            refreshLogsBtn.innerHTML = '<i class="fas fa-sync-alt me-2"></i> Refresh Logs';
+            refreshLogsBtn.disabled = false;
+        }, 1000);
+    }
+    
+    function downloadLogs() {
+        // Create a text representation of logs
+        let logText = '# TerraFusion SyncService Logs\n';
+        logText += `# Generated: ${new Date().toISOString()}\n\n`;
+        
+        document.querySelectorAll('.log-entry:not(.d-none)').forEach(entry => {
+            const timestamp = entry.querySelector('.log-timestamp').textContent;
+            const level = entry.querySelector('.log-level').textContent;
+            const source = entry.querySelector('.log-source').textContent;
+            const message = entry.querySelector('.log-message').textContent;
+            
+            logText += `[${timestamp}] [${level.toUpperCase()}] [${source}] ${message}\n`;
+        });
+        
+        // Create download link
+        const element = document.createElement('a');
+        element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(logText));
+        element.setAttribute('download', `terrafusion-logs-${new Date().toISOString().split('T')[0]}.txt`);
+        element.style.display = 'none';
+        
+        document.body.appendChild(element);
+        element.click();
+        document.body.removeChild(element);
+    }
+    
+    function clearLogs() {
+        if (confirm('Are you sure you want to clear the console? This won\'t delete actual logs.')) {
+            logEntries.innerHTML = '';
+            updateLogCount();
+        }
+    }
+    
+    function openLogConfig() {
+        const modal = new bootstrap.Modal(document.getElementById('logConfigModal'));
+        modal.show();
+    }
+    
+    function saveLogConfig() {
+        const logLevel = document.getElementById('logLevelSelect').value;
+        const maxEntries = document.getElementById('maxLogEntries').value;
+        const autoRefresh = document.getElementById('enableAutoRefresh').checked;
+        const refreshInterval = document.getElementById('refreshInterval').value;
+        
+        // Save configuration (would normally use API or localStorage)
+        console.log('Saving log configuration:', { logLevel, maxEntries, autoRefresh, refreshInterval });
+        
+        // Close modal
+        bootstrap.Modal.getInstance(document.getElementById('logConfigModal')).hide();
+        
+        // Show confirmation toast
+        showToast('Configuration Saved', 'Log preferences have been updated successfully', 'success');
+    }
+    
+    function loadMoreLogs() {
+        loadMoreLogsBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Loading...';
+        loadMoreLogsBtn.disabled = true;
+        
+        // Simulate loading older logs
+        setTimeout(() => {
+            // Add some older sample logs
+            const olderLogs = [
+                { timestamp: '2025-04-26T14:30:15.123Z', level: 'info', message: 'System startup initiated', source: 'api_gateway' },
+                { timestamp: '2025-04-26T14:30:18.234Z', level: 'debug', message: 'Loading configuration from environment variables', source: 'api_gateway' },
+                { timestamp: '2025-04-26T14:30:20.345Z', level: 'info', message: 'Database migration check completed', source: 'api_gateway' },
+                { timestamp: '2025-04-26T14:31:05.456Z', level: 'debug', message: 'HTTP server started on port 5000', source: 'api_gateway' },
+                { timestamp: '2025-04-26T14:31:15.567Z', level: 'debug', message: 'Initializing SyncService connection', source: 'api_gateway' }
+            ];
+            
+            olderLogs.forEach(log => {
+                logEntries.appendChild(createLogEntry(log));
+            });
+            
+            loadMoreLogsBtn.innerHTML = 'Load More';
+            loadMoreLogsBtn.disabled = false;
+            updateLogCount();
+        }, 1000);
+    }
+    
+    function filterLogsByLevel(level) {
+        const entries = document.querySelectorAll('.log-entry');
+        
+        if (level === 'all') {
+            entries.forEach(entry => {
+                entry.classList.remove('d-none');
+            });
+        } else {
+            entries.forEach(entry => {
+                const entryLevel = entry.getAttribute('data-level');
+                if (entryLevel === level) {
+                    entry.classList.remove('d-none');
+                } else {
+                    entry.classList.add('d-none');
+                }
+            });
+        }
+        
+        updateLogCount();
+    }
+    
+    function filterBySource() {
+        const selectedSource = document.querySelector('input[name="logSource"]:checked').id;
+        const entries = document.querySelectorAll('.log-entry');
+        
+        entries.forEach(entry => {
+            const source = entry.getAttribute('data-source');
+            
+            if (selectedSource === 'allSourcesBtn' || 
+                (selectedSource === 'apiGatewayBtn' && source === 'api_gateway') ||
+                (selectedSource === 'syncServiceBtn' && source === 'sync_service')) {
+                entry.classList.remove('d-none');
+            } else {
+                entry.classList.add('d-none');
+            }
+        });
+        
+        updateLogCount();
+    }
+</script>
+{% endblock %}

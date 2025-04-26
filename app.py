@@ -651,6 +651,16 @@ def architecture_visualization():
         return render_template('architecture_new.html', user=user)
     return render_template('architecture.html', user=user)
 
+@app.route('/logs')
+@requires_auth
+def view_logs():
+    """View system logs page."""
+    user = get_current_user()
+    # Check if the user has requested the new UI
+    if request.args.get('new_ui', '0') == '1':
+        return render_template('logs_new.html', user=user)
+    return render_template('logs.html', user=user)
+
 
 @app.route('/api/docs')
 def api_docs():
