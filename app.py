@@ -526,6 +526,9 @@ def root():
 def dashboard():
     """Main dashboard view."""
     user = get_current_user()
+    # Check if the user has requested the new UI
+    if request.args.get('new_ui', '0') == '1':
+        return render_template('dashboard_new.html', user=user)
     return render_template('dashboard.html', user=user)
 
 
@@ -539,6 +542,14 @@ def sync_dashboard():
                           sync_pairs=db.session.query(SyncPair).all(),
                           recent_operations=db.session.query(SyncOperation).order_by(
                               SyncOperation.started_at.desc()).limit(10).all())
+
+
+@app.route('/new-sync')
+@requires_auth
+def new_sync_wizard():
+    """New sync operation wizard."""
+    user = get_current_user()
+    return render_template('new_sync_wizard.html', user=user)
 
 
 @app.route('/dashboard/metrics')
@@ -635,6 +646,9 @@ def audit_dashboard():
 def architecture_visualization():
     """Interactive system architecture visualization."""
     user = get_current_user()
+    # Check if the user has requested the new UI
+    if request.args.get('new_ui', '0') == '1':
+        return render_template('architecture_new.html', user=user)
     return render_template('architecture.html', user=user)
 
 
