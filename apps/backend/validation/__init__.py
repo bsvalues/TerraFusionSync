@@ -53,5 +53,6 @@ __all__ = [
     'get_validation_engine',
     'validate',
     'validate_batch',
-    'register_schema'
+    'register_schema',
+    'add_schema'
 ]
