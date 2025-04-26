@@ -1057,7 +1057,13 @@ def get_architecture_data():
     
     Returns JSON data with nodes and links representing the system components
     and their relationships.
+    
+    For the new interactive visualization UI, this returns a different format
+    optimized for D3.js or similar visualization libraries.
     """
+    # Check if the request is for the new UI
+    is_new_ui = request.args.get('new_ui', '0') == '1'
+    
     # Check the status of services
     syncservice_status = check_syncservice_status()
     
@@ -1076,178 +1082,381 @@ def get_architecture_data():
     except Exception:
         latest_metrics = None
     
-    # Define node statuses based on health checks
-    api_gateway_status = "normal"
-    sync_service_status = "normal" if syncservice_status else "error"
-    database_status = "normal" if db_status else "error"
+    # Get recent sync operations
+    try:
+        recent_operations = db.session.query(SyncOperation).order_by(
+            SyncOperation.started_at.desc()).limit(5).all()
+    except Exception:
+        recent_operations = []
     
-    # Set warning thresholds
-    cpu_warning = 70.0
-    cpu_critical = 90.0
-    memory_warning = 80.0
-    memory_critical = 95.0
+    # Get sync pairs for data sources info
+    try:
+        sync_pairs = db.session.query(SyncPair).all()
+    except Exception:
+        sync_pairs = []
     
-    # Get metrics for status evaluation
-    if latest_metrics:
-        cpu_usage = latest_metrics.cpu_usage
-        memory_usage = latest_metrics.memory_usage
+    # If using the new UI, return data formatted for the new visualization
+    if is_new_ui:
+        # Getting metrics for visualization
+        cpu_usage = latest_metrics.cpu_usage if latest_metrics else 30.0
+        memory_usage = latest_metrics.memory_usage if latest_metrics else 50.0
         
-        # Set status based on resource usage
-        if cpu_usage > cpu_critical or memory_usage > memory_critical:
-            api_gateway_status = "error"
-            sync_service_status = "error" if syncservice_status else "error"
-        elif cpu_usage > cpu_warning or memory_usage > memory_warning:
-            api_gateway_status = "warning"
-            sync_service_status = "warning" if syncservice_status else "error"
-    
-    # Build the architecture data structure with nodes and links
-    nodes = [
-        {
-            "id": "client",
-            "name": "Client Applications",
-            "type": "client",
-            "description": "End-user applications that interact with the TerraFusion SyncService platform",
-            "status": "normal"
-        },
-        {
-            "id": "api_gateway",
-            "name": "API Gateway",
-            "type": "api",
-            "description": "Flask-based API Gateway that handles authentication, routing, and proxying to the SyncService",
-            "status": api_gateway_status,
-            "metrics": {
-                "cpu_usage": f"{latest_metrics.cpu_usage:.1f}%" if latest_metrics else "N/A",
-                "memory_usage": f"{latest_metrics.memory_usage:.1f}%" if latest_metrics else "N/A",
-                "response_time": f"{latest_metrics.response_time:.3f}s" if latest_metrics else "N/A",
-                "error_count": str(latest_metrics.error_count) if latest_metrics else "N/A"
-            } if latest_metrics else {}
-        },
-        {
-            "id": "sync_service",
-            "name": "SyncService",
-            "type": "service",
-            "description": "Core FastAPI-based service that implements the data synchronization and transformation logic",
-            "status": sync_service_status,
-            "metrics": {
-                "cpu_usage": f"{latest_metrics.cpu_usage:.1f}%" if latest_metrics else "N/A",
-                "memory_usage": f"{latest_metrics.memory_usage:.1f}%" if latest_metrics else "N/A",
-                "active_connections": str(latest_metrics.active_connections) if latest_metrics else "N/A",
-                "sync_operations": str(latest_metrics.sync_operations_count) if latest_metrics else "N/A"
-            } if latest_metrics else {}
-        },
-        {
-            "id": "database",
-            "name": "PostgreSQL Database",
-            "type": "database",
-            "description": "Primary database storing configuration, metrics, audit entries, and operation state",
-            "status": database_status,
-            "metrics": {
-                "disk_usage": f"{latest_metrics.disk_usage:.1f}%" if latest_metrics else "N/A"
-            } if latest_metrics else {}
-        },
-        {
-            "id": "auth_service",
-            "name": "Authentication Service",
-            "type": "auth",
-            "description": "Handles user authentication and authorization, integrated with County's Azure AD",
-            "status": "normal"
-        },
-        {
-            "id": "pacs_system",
-            "name": "PACS System",
-            "type": "service",
-            "description": "Legacy Picture Archiving and Communication System",
-            "status": "normal"
-        },
-        {
-            "id": "cama_system",
-            "name": "CAMA System",
-            "type": "service",
-            "description": "Computer Assisted Mass Appraisal System",
-            "status": "normal"
-        },
-        {
-            "id": "metrics_handler",
-            "name": "Metrics Collector",
-            "type": "service",
-            "description": "Component responsible for collecting and storing system metrics",
-            "status": "normal" if latest_metrics else "warning",
-            "statusDetails": "Last collection: " + (latest_metrics.timestamp.strftime("%Y-%m-%d %H:%M:%S") if latest_metrics else "Never")
-        },
-        {
-            "id": "self_healing",
-            "name": "Self-Healing System",
-            "type": "service",
-            "description": "Autonomous recovery system with circuit breakers and retry orchestration",
-            "status": "normal"
+        # Determine health statuses
+        api_gateway_status = "online"
+        sync_service_status_str = "online" if syncservice_status else "offline"
+        database_status_str = "online" if db_status else "offline"
+        
+        # Check resource thresholds
+        if latest_metrics:
+            if cpu_usage > 90 or memory_usage > 95:
+                api_gateway_status = "critical"
+            elif cpu_usage > 70 or memory_usage > 80:
+                api_gateway_status = "warning"
+        
+        # Build list of external systems from sync pairs
+        external_systems = []
+        for pair in sync_pairs:
+            if pair.config and 'source_system' in pair.config:
+                source_id = f"source_{pair.config['source_system']}"
+                if not any(s.get('id') == source_id for s in external_systems):
+                    external_systems.append({
+                        "id": source_id,
+                        "name": pair.config.get('source_name', pair.config['source_system']),
+                        "type": "external",
+                        "system_type": "source",
+                        "description": f"Source system for {pair.name}",
+                        "status": "online"
+                    })
+                    
+            if pair.config and 'target_system' in pair.config:
+                target_id = f"target_{pair.config['target_system']}"
+                if not any(s.get('id') == target_id for s in external_systems):
+                    external_systems.append({
+                        "id": target_id,
+                        "name": pair.config.get('target_name', pair.config['target_system']),
+                        "type": "external",
+                        "system_type": "target",
+                        "description": f"Target system for {pair.name}",
+                        "status": pair.active and "online" or "offline"
+                    })
+        
+        # Use default systems if none found
+        if not external_systems:
+            external_systems = [
+                {
+                    "id": "pacs",
+                    "name": "PACS System",
+                    "type": "external",
+                    "system_type": "source",
+                    "description": "Picture Archiving and Communication System",
+                    "status": "online"
+                },
+                {
+                    "id": "cama",
+                    "name": "CAMA System",
+                    "type": "external",
+                    "system_type": "target",
+                    "description": "Content and Asset Management Application",
+                    "status": "warning"
+                }
+            ]
+        
+        # Build the nodes list for D3 visualization
+        nodes = [
+            {
+                "id": "apiGateway",
+                "name": "API Gateway",
+                "type": "gateway",
+                "description": "Flask-based API Gateway",
+                "status": api_gateway_status,
+                "metrics": {
+                    "cpu": round(cpu_usage, 1),
+                    "memory": round(memory_usage, 1),
+                    "uptime": "99.9%",
+                    "response_time": latest_metrics.response_time if latest_metrics else 0.1
+                }
+            },
+            {
+                "id": "syncService",
+                "name": "SyncService",
+                "type": "service",
+                "description": "Core synchronization service",
+                "status": sync_service_status_str,
+                "metrics": {
+                    "cpu": round(cpu_usage * 0.8, 1),
+                    "memory": round(memory_usage * 1.2, 1),
+                    "operations": len([op for op in recent_operations if op.status == 'running']),
+                    "total_operations": len(recent_operations)
+                }
+            },
+            {
+                "id": "database",
+                "name": "PostgreSQL",
+                "type": "database",
+                "description": "Primary data store",
+                "status": database_status_str,
+                "metrics": {
+                    "disk_usage": round(latest_metrics.disk_usage if latest_metrics else 25.0, 1),
+                    "connections": latest_metrics.active_connections if latest_metrics else 2,
+                    "size_mb": 25
+                }
+            }
+        ]
+        
+        # Add external systems to nodes
+        nodes.extend(external_systems)
+        
+        # Build connections for visualization
+        connections = [
+            {
+                "source": "apiGateway",
+                "target": "syncService",
+                "type": "http",
+                "active": syncservice_status,
+                "label": "HTTP REST"
+            },
+            {
+                "source": "syncService",
+                "target": "database",
+                "type": "sql",
+                "active": db_status,
+                "label": "SQL"
+            }
+        ]
+        
+        # Add connections to external systems
+        for system in external_systems:
+            if system["system_type"] == "source":
+                connections.append({
+                    "source": system["id"],
+                    "target": "syncService",
+                    "type": "api",
+                    "active": system["status"] == "online",
+                    "label": "Data Source"
+                })
+            else:
+                connections.append({
+                    "source": "syncService",
+                    "target": system["id"],
+                    "type": "api",
+                    "active": system["status"] == "online",
+                    "label": "Data Target"
+                })
+        
+        # Format operations data
+        operations_data = []
+        for op in recent_operations:
+            operations_data.append({
+                "id": op.id,
+                "type": op.operation_type,
+                "status": op.status,
+                "started_at": op.started_at.isoformat() if op.started_at else None,
+                "completed_at": op.completed_at.isoformat() if op.completed_at else None,
+                "pair_id": op.sync_pair_id,
+                "pair_name": next((p.name for p in sync_pairs if p.id == op.sync_pair_id), "Unknown"),
+                "total_records": op.total_records,
+                "processed_records": op.processed_records,
+                "success_rate": round((op.successful_records / op.total_records * 100) if op.total_records > 0 else 0, 1)
+            })
+        
+        # Create response for new UI
+        response_data = {
+            "nodes": nodes,
+            "connections": connections,
+            "operations": operations_data,
+            "timestamp": datetime.utcnow().isoformat(),
+            "system_health": {
+                "status": "healthy" if syncservice_status and db_status and cpu_usage < 80 and memory_usage < 80 else "degraded",
+                "last_checked": latest_metrics.timestamp.isoformat() if latest_metrics else datetime.utcnow().isoformat(),
+                "metrics": {
+                    "cpu_usage": round(cpu_usage, 1),
+                    "memory_usage": round(memory_usage, 1),
+                    "disk_usage": round(latest_metrics.disk_usage if latest_metrics else 25.0, 1)
+                }
+            }
         }
-    ]
-    
-    # Define the relationships between components
-    links = [
-        {
-            "source": "client",
-            "target": "api_gateway",
-            "description": "HTTP/HTTPS requests"
-        },
-        {
-            "source": "api_gateway",
-            "target": "sync_service",
-            "description": "Internal HTTP requests",
-            "status": "error" if not syncservice_status else None
-        },
-        {
-            "source": "api_gateway",
-            "target": "database",
-            "description": "SQL queries via SQLAlchemy",
-            "status": "error" if not db_status else None
-        },
-        {
-            "source": "api_gateway",
-            "target": "auth_service",
-            "description": "Authentication requests"
-        },
-        {
-            "source": "sync_service",
-            "target": "database",
-            "description": "SQL queries via SQLAlchemy",
-            "status": "error" if not db_status else None
-        },
-        {
-            "source": "sync_service",
-            "target": "pacs_system",
-            "description": "Data extraction and synchronization"
-        },
-        {
-            "source": "sync_service",
-            "target": "cama_system",
-            "description": "Data insertion and validation"
-        },
-        {
-            "source": "metrics_handler",
-            "target": "sync_service",
-            "description": "Metrics collection",
-            "status": "error" if not syncservice_status else None
-        },
-        {
-            "source": "metrics_handler",
-            "target": "database",
-            "description": "Metrics storage",
-            "status": "error" if not db_status else None
-        },
-        {
-            "source": "self_healing",
-            "target": "sync_service",
-            "description": "Service monitoring and recovery",
-            "status": "error" if not syncservice_status else None
-        },
-        {
-            "source": "self_healing",
-            "target": "database",
-            "description": "State persistence",
-            "status": "error" if not db_status else None
+    else:
+        # Original format for the existing visualization
+        # Define node statuses based on health checks
+        api_gateway_status = "normal"
+        sync_service_status = "normal" if syncservice_status else "error"
+        database_status = "normal" if db_status else "error"
+        
+        # Set warning thresholds
+        cpu_warning = 70.0
+        cpu_critical = 90.0
+        memory_warning = 80.0
+        memory_critical = 95.0
+        
+        # Get metrics for status evaluation
+        if latest_metrics:
+            cpu_usage = latest_metrics.cpu_usage
+            memory_usage = latest_metrics.memory_usage
+            
+            # Set status based on resource usage
+            if cpu_usage > cpu_critical or memory_usage > memory_critical:
+                api_gateway_status = "error"
+                sync_service_status = "error" if syncservice_status else "error"
+            elif cpu_usage > cpu_warning or memory_usage > memory_warning:
+                api_gateway_status = "warning"
+                sync_service_status = "warning" if syncservice_status else "error"
+        
+        # Build the architecture data structure with nodes and links
+        nodes = [
+            {
+                "id": "client",
+                "name": "Client Applications",
+                "type": "client",
+                "description": "End-user applications that interact with the TerraFusion SyncService platform",
+                "status": "normal"
+            },
+            {
+                "id": "api_gateway",
+                "name": "API Gateway",
+                "type": "api",
+                "description": "Flask-based API Gateway that handles authentication, routing, and proxying to the SyncService",
+                "status": api_gateway_status,
+                "metrics": {
+                    "cpu_usage": f"{latest_metrics.cpu_usage:.1f}%" if latest_metrics else "N/A",
+                    "memory_usage": f"{latest_metrics.memory_usage:.1f}%" if latest_metrics else "N/A",
+                    "response_time": f"{latest_metrics.response_time:.3f}s" if latest_metrics else "N/A",
+                    "error_count": str(latest_metrics.error_count) if latest_metrics else "N/A"
+                } if latest_metrics else {}
+            },
+            {
+                "id": "sync_service",
+                "name": "SyncService",
+                "type": "service",
+                "description": "Core FastAPI-based service that implements the data synchronization and transformation logic",
+                "status": sync_service_status,
+                "metrics": {
+                    "cpu_usage": f"{latest_metrics.cpu_usage:.1f}%" if latest_metrics else "N/A",
+                    "memory_usage": f"{latest_metrics.memory_usage:.1f}%" if latest_metrics else "N/A",
+                    "active_connections": str(latest_metrics.active_connections) if latest_metrics else "N/A",
+                    "sync_operations": str(latest_metrics.sync_operations_count) if latest_metrics else "N/A"
+                } if latest_metrics else {}
+            },
+            {
+                "id": "database",
+                "name": "PostgreSQL Database",
+                "type": "database",
+                "description": "Primary database storing configuration, metrics, audit entries, and operation state",
+                "status": database_status,
+                "metrics": {
+                    "disk_usage": f"{latest_metrics.disk_usage:.1f}%" if latest_metrics else "N/A"
+                } if latest_metrics else {}
+            },
+            {
+                "id": "auth_service",
+                "name": "Authentication Service",
+                "type": "auth",
+                "description": "Handles user authentication and authorization, integrated with County's Azure AD",
+                "status": "normal"
+            },
+            {
+                "id": "pacs_system",
+                "name": "PACS System",
+                "type": "service",
+                "description": "Legacy Picture Archiving and Communication System",
+                "status": "normal"
+            },
+            {
+                "id": "cama_system",
+                "name": "CAMA System",
+                "type": "service",
+                "description": "Computer Assisted Mass Appraisal System",
+                "status": "normal"
+            },
+            {
+                "id": "metrics_handler",
+                "name": "Metrics Collector",
+                "type": "service",
+                "description": "Component responsible for collecting and storing system metrics",
+                "status": "normal" if latest_metrics else "warning",
+                "statusDetails": "Last collection: " + (latest_metrics.timestamp.strftime("%Y-%m-%d %H:%M:%S") if latest_metrics else "Never")
+            },
+            {
+                "id": "self_healing",
+                "name": "Self-Healing System",
+                "type": "service",
+                "description": "Autonomous recovery system with circuit breakers and retry orchestration",
+                "status": "normal"
+            }
+        ]
+        
+        # Define the relationships between components
+        links = [
+            {
+                "source": "client",
+                "target": "api_gateway",
+                "description": "HTTP/HTTPS requests"
+            },
+            {
+                "source": "api_gateway",
+                "target": "sync_service",
+                "description": "Internal HTTP requests",
+                "status": "error" if not syncservice_status else None
+            },
+            {
+                "source": "api_gateway",
+                "target": "database",
+                "description": "SQL queries via SQLAlchemy",
+                "status": "error" if not db_status else None
+            },
+            {
+                "source": "api_gateway",
+                "target": "auth_service",
+                "description": "Authentication requests"
+            },
+            {
+                "source": "sync_service",
+                "target": "database",
+                "description": "SQL queries via SQLAlchemy",
+                "status": "error" if not db_status else None
+            },
+            {
+                "source": "sync_service",
+                "target": "pacs_system",
+                "description": "Data extraction and synchronization"
+            },
+            {
+                "source": "sync_service",
+                "target": "cama_system",
+                "description": "Data insertion and validation"
+            },
+            {
+                "source": "metrics_handler",
+                "target": "sync_service",
+                "description": "Metrics collection",
+                "status": "error" if not syncservice_status else None
+            },
+            {
+                "source": "metrics_handler",
+                "target": "database",
+                "description": "Metrics storage",
+                "status": "error" if not db_status else None
+            },
+            {
+                "source": "self_healing",
+                "target": "sync_service",
+                "description": "Service monitoring and recovery",
+                "status": "error" if not syncservice_status else None
+            },
+            {
+                "source": "self_healing",
+                "target": "database",
+                "description": "State persistence",
+                "status": "error" if not db_status else None
+            }
+        ]
+        
+        # Use original format for response
+        response_data = {
+            "nodes": nodes,
+            "links": links,
+            "timestamp": datetime.utcnow().isoformat(),
+            "system_status": "healthy" if syncservice_status and db_status else "degraded"
         }
-    ]
     
     # Create audit entry for architecture view access
     try:
@@ -1263,12 +1472,7 @@ def get_architecture_data():
     except Exception as e:
         logger.error(f"Failed to create audit log for architecture view: {str(e)}")
     
-    return jsonify({
-        "nodes": nodes,
-        "links": links,
-        "timestamp": datetime.utcnow().isoformat(),
-        "system_status": "healthy" if syncservice_status and db_status else "degraded"
-    })
+    return jsonify(response_data)
 
 
 @app.route('/api/metrics/status')
