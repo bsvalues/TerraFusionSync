@@ -1,0 +1,373 @@
+{% extends "base_new.html" %}
+
+{% block title %}Dashboard - TerraFusion SyncService{% endblock %}
+
+{% block page_title %}System Dashboard{% endblock %}
+
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="/">Home</a></li>
+<li class="breadcrumb-item active" aria-current="page">Dashboard</li>
+{% endblock %}
+
+{% block content %}
+<p class="lead">Monitor your TerraFusion SyncService platform in real-time.</p>
+
+<div class="row">
+    <!-- System Health Overview -->
+    <div class="col-lg-4 col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="m-0">System Health</h5>
+                <button class="btn btn-sm btn-outline-primary refresh-btn" id="refreshSystemHealth">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="health-status-item d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <i class="fas fa-server text-primary me-2"></i>
+                        <span>API Gateway</span>
+                    </div>
+                    <span class="badge bg-success">Online</span>
+                </div>
+                <div class="health-status-item d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <i class="fas fa-sync text-info me-2"></i>
+                        <span>SyncService</span>
+                    </div>
+                    <span class="badge bg-success">Online</span>
+                </div>
+                <div class="health-status-item d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <i class="fas fa-database text-success me-2"></i>
+                        <span>Database</span>
+                    </div>
+                    <span class="badge bg-success">Connected</span>
+                </div>
+                <hr>
+                <h6 class="mb-2">Overall System Health</h6>
+                <div class="progress mb-1">
+                    <div class="progress-bar bg-success" id="system-health-indicator" role="progressbar" style="width: 85%;" aria-valuenow="85" aria-valuemin="0" aria-valuemax="100">85%</div>
+                </div>
+                <small class="text-muted">Last checked: <span id="last-health-check">2 minutes ago</span></small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Resource Usage -->
+    <div class="col-lg-4 col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="m-0">Resource Usage</h5>
+                <span class="badge bg-info">Live</span>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <label class="form-label">CPU Usage</label>
+                        <span id="cpu-usage-text">45%</span>
+                    </div>
+                    <div class="progress">
+                        <div class="progress-bar bg-warning" id="cpu-usage" role="progressbar" style="width: 45%;" aria-valuenow="45" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <label class="form-label">Memory Usage</label>
+                        <span id="memory-usage-text">60%</span>
+                    </div>
+                    <div class="progress">
+                        <div class="progress-bar bg-info" id="memory-usage" role="progressbar" style="width: 60%;" aria-valuenow="60" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <label class="form-label">Disk Usage</label>
+                        <span id="disk-usage-text">25%</span>
+                    </div>
+                    <div class="progress">
+                        <div class="progress-bar bg-success" id="disk-usage" role="progressbar" style="width: 25%;" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
+                </div>
+                <div class="mb-0">
+                    <div class="d-flex justify-content-between mb-1">
+                        <label class="form-label">Active Connections</label>
+                        <span id="connections-text">12</span>
+                    </div>
+                    <div class="progress">
+                        <div class="progress-bar bg-primary" id="connections" role="progressbar" style="width: 12%;" aria-valuenow="12" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="col-lg-4 col-md-12 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="m-0">Quick Actions</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button class="btn btn-primary" id="newSyncBtn">
+                        <i class="fas fa-plus-circle me-2"></i> New Sync Operation
+                    </button>
+                    <button class="btn btn-outline-success" id="triggerHealthCheckBtn">
+                        <i class="fas fa-heart-pulse me-2"></i> Trigger Health Check
+                    </button>
+                    <button class="btn btn-outline-info" id="refreshMetricsBtn">
+                        <i class="fas fa-chart-line me-2"></i> Refresh Metrics
+                    </button>
+                    <button class="btn btn-outline-warning" id="viewLogsBtn">
+                        <i class="fas fa-file-lines me-2"></i> View Logs
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Sync Operations Overview -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="m-0">Recent Sync Operations</h5>
+                <a href="/dashboard/sync" class="btn btn-sm btn-outline-primary">View All</a>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Type</th>
+                                <th>Status</th>
+                                <th>Started</th>
+                                <th>Records</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recent-operations">
+                            <tr>
+                                <td>1001</td>
+                                <td>Full</td>
+                                <td><span class="badge bg-success">Completed</span></td>
+                                <td>2 hours ago</td>
+                                <td>5000/5000</td>
+                            </tr>
+                            <tr>
+                                <td>1002</td>
+                                <td>Incremental</td>
+                                <td><span class="badge bg-warning">Running</span></td>
+                                <td>30 min ago</td>
+                                <td>150/500</td>
+                            </tr>
+                            <tr>
+                                <td>1003</td>
+                                <td>Validation</td>
+                                <td><span class="badge bg-danger">Failed</span></td>
+                                <td>1 hour ago</td>
+                                <td>50/1000</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Metrics Chart -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="m-0">Sync Performance</h5>
+                <div class="btn-group">
+                    <button class="btn btn-sm btn-outline-secondary active">Day</button>
+                    <button class="btn btn-sm btn-outline-secondary">Week</button>
+                    <button class="btn btn-sm btn-outline-secondary">Month</button>
+                </div>
+            </div>
+            <div class="card-body">
+                <canvas id="sync-performance-chart" height="250"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Active Sync Pairs -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="m-0">Active Sync Pairs</h5>
+            </div>
+            <div class="card-body p-0">
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge bg-primary me-2">PACS</span>
+                            <i class="fas fa-arrow-right text-muted mx-2"></i>
+                            <span class="badge bg-info">CAMA</span>
+                            <span class="ms-2">Healthcare Imaging System</span>
+                        </div>
+                        <span class="badge bg-success rounded-pill">Active</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge bg-secondary me-2">GIS</span>
+                            <i class="fas fa-arrow-right text-muted mx-2"></i>
+                            <span class="badge bg-warning">ERP</span>
+                            <span class="ms-2">Geographic Data Integration</span>
+                        </div>
+                        <span class="badge bg-success rounded-pill">Active</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge bg-danger me-2">CRM</span>
+                            <i class="fas fa-arrow-right text-muted mx-2"></i>
+                            <span class="badge bg-success">ERP</span>
+                            <span class="ms-2">Customer Relationship Management</span>
+                        </div>
+                        <span class="badge bg-warning rounded-pill">Scheduled</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alerts and Notifications -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="m-0">Alerts & Notifications</h5>
+                <button class="btn btn-sm btn-outline-secondary" id="markAllReadBtn">Mark All Read</button>
+            </div>
+            <div class="card-body p-0">
+                <div class="list-group list-group-flush" id="alerts-list">
+                    <div class="list-group-item list-group-item-action border-start border-4 border-success">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">Full Sync Completed</h6>
+                            <small class="text-muted">2 hours ago</small>
+                        </div>
+                        <p class="mb-1">Full sync operation completed for PACS-CAMA Integration.</p>
+                        <small class="text-success">5000 records processed, 4950 successful, 50 failed</small>
+                    </div>
+                    <div class="list-group-item list-group-item-action border-start border-4 border-info">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">Incremental Sync Scheduled</h6>
+                            <small class="text-muted">5 hours ago</small>
+                        </div>
+                        <p class="mb-1">Incremental sync scheduled for GIS-ERP Integration.</p>
+                        <small class="text-info">Next execution: Tomorrow, 08:00 AM</small>
+                    </div>
+                    <div class="list-group-item list-group-item-action border-start border-4 border-danger">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">Validation Failed</h6>
+                            <small class="text-muted">1 hour ago</small>
+                        </div>
+                        <p class="mb-1">Data validation failed for CRM-ERP Integration.</p>
+                        <small class="text-danger">50 records failed validation, check schema mapping</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize Sync Performance Chart
+        const ctx = document.getElementById('sync-performance-chart').getContext('2d');
+        const syncPerformanceChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['PACS-CAMA', 'GIS-ERP', 'CRM-ERP'],
+                datasets: [{
+                    label: 'Success Rate (%)',
+                    data: [99, 97.5, 100],
+                    backgroundColor: [
+                        'rgba(40, 167, 69, 0.7)',
+                        'rgba(23, 162, 184, 0.7)',
+                        'rgba(0, 123, 255, 0.7)'
+                    ],
+                    borderColor: [
+                        'rgba(40, 167, 69, 1)',
+                        'rgba(23, 162, 184, 1)',
+                        'rgba(0, 123, 255, 1)'
+                    ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100
+                    }
+                },
+                responsive: true,
+                maintainAspectRatio: false
+            }
+        });
+
+        // Set up event listeners for quick action buttons
+        document.getElementById('newSyncBtn').addEventListener('click', function() {
+            window.location.href = '/new-sync';
+        });
+
+        document.getElementById('triggerHealthCheckBtn').addEventListener('click', function() {
+            this.disabled = true;
+            this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Running...';
+            
+            // Call the health check API
+            fetch('/api/trigger-health-check')
+                .then(response => response.json())
+                .then(data => {
+                    showToast('Health Check', 'System health check completed successfully', 'success');
+                    this.disabled = false;
+                    this.innerHTML = '<i class="fas fa-heart-pulse me-2"></i> Trigger Health Check';
+                    
+                    // Update last health check time
+                    document.getElementById('last-health-check').textContent = 'just now';
+                })
+                .catch(error => {
+                    showToast('Error', 'Failed to trigger health check', 'error');
+                    this.disabled = false;
+                    this.innerHTML = '<i class="fas fa-heart-pulse me-2"></i> Trigger Health Check';
+                });
+        });
+
+        document.getElementById('refreshMetricsBtn').addEventListener('click', function() {
+            this.disabled = true;
+            this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Refreshing...';
+            
+            // Call the refresh metrics API
+            fetch('/api/refresh-metrics')
+                .then(response => response.json())
+                .then(data => {
+                    showToast('Metrics', 'System metrics refreshed successfully', 'success');
+                    this.disabled = false;
+                    this.innerHTML = '<i class="fas fa-chart-line me-2"></i> Refresh Metrics';
+                    
+                    // Update metrics displays
+                    updateResourceUsage(data);
+                })
+                .catch(error => {
+                    showToast('Error', 'Failed to refresh metrics', 'error');
+                    this.disabled = false;
+                    this.innerHTML = '<i class="fas fa-chart-line me-2"></i> Refresh Metrics';
+                });
+        });
+
+        document.getElementById('viewLogsBtn').addEventListener('click', function() {
+            // Toggle the log console
+            const logConsole = document.getElementById('logConsole');
+            const bsCollapse = new bootstrap.Collapse(logConsole);
+            bsCollapse.toggle();
+        });
+    });
+</script>
+{% endblock %}

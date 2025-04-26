@@ -1,0 +1,856 @@
+{% extends "base_new.html" %}
+
+{% block title %}System Architecture - TerraFusion SyncService{% endblock %}
+
+{% block page_title %}System Architecture Visualization{% endblock %}
+
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="/">Home</a></li>
+<li class="breadcrumb-item active" aria-current="page">Architecture</li>
+{% endblock %}
+
+{% block styles %}
+<style>
+    .architecture-container {
+        background-color: white;
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-sm);
+        padding: 2rem;
+        margin-bottom: 2rem;
+        min-height: 600px;
+        position: relative;
+    }
+    
+    .controls-panel {
+        background-color: #f8f9fa;
+        border-radius: var(--border-radius);
+        padding: 1rem;
+        margin-bottom: 1.5rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .control-group {
+        display: flex;
+        align-items: center;
+    }
+    
+    .control-group .form-select,
+    .control-group .btn {
+        margin-right: 0.5rem;
+    }
+    
+    .node {
+        padding: 1rem;
+        border-radius: 0.5rem;
+        background-color: #fff;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        position: absolute;
+        width: 180px;
+        text-align: center;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        z-index: 10;
+    }
+    
+    .node:hover {
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+        transform: translateY(-2px);
+    }
+    
+    .node-icon {
+        font-size: 2rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    .node-gateway {
+        background-color: #e3f2fd;
+        border: 2px solid #2196f3;
+    }
+    
+    .node-gateway .node-icon {
+        color: #2196f3;
+    }
+    
+    .node-service {
+        background-color: #e8f5e9;
+        border: 2px solid #4caf50;
+    }
+    
+    .node-service .node-icon {
+        color: #4caf50;
+    }
+    
+    .node-database {
+        background-color: #fff3e0;
+        border: 2px solid #ff9800;
+    }
+    
+    .node-database .node-icon {
+        color: #ff9800;
+    }
+    
+    .node-external {
+        background-color: #f3e5f5;
+        border: 2px solid #9c27b0;
+    }
+    
+    .node-external .node-icon {
+        color: #9c27b0;
+    }
+    
+    .node-title {
+        font-weight: 600;
+        margin-bottom: 0.25rem;
+    }
+    
+    .node-status {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 0.25rem;
+    }
+    
+    .node-status.online {
+        background-color: #4caf50;
+    }
+    
+    .node-status.offline {
+        background-color: #f44336;
+    }
+    
+    .node-status.warning {
+        background-color: #ff9800;
+    }
+    
+    .connector {
+        position: absolute;
+        height: 2px;
+        background-color: #e0e0e0;
+        transform-origin: left center;
+        z-index: 5;
+    }
+    
+    .connector.active {
+        background-color: #2196f3;
+        animation: pulse-connector 2s infinite;
+    }
+    
+    .connector-label {
+        position: absolute;
+        background-color: rgba(255, 255, 255, 0.8);
+        padding: 0.25rem 0.5rem;
+        border-radius: 0.25rem;
+        font-size: 0.75rem;
+        transform: translate(-50%, -50%);
+        z-index: 6;
+    }
+    
+    .data-flow-arrow {
+        position: absolute;
+        width: 0; 
+        height: 0; 
+        border-top: 6px solid transparent;
+        border-bottom: 6px solid transparent;
+        border-left: 10px solid #e0e0e0;
+        transform-origin: left center;
+        z-index: 6;
+    }
+    
+    .data-flow-arrow.active {
+        border-left-color: #2196f3;
+    }
+    
+    .component-details-panel {
+        background-color: white;
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-md);
+        padding: 1.5rem;
+        margin-top: 1.5rem;
+    }
+    
+    .metric-small {
+        text-align: center;
+        background-color: #f8f9fa;
+        border-radius: 0.5rem;
+        padding: 0.75rem;
+        margin-bottom: 1rem;
+    }
+    
+    .metric-small .metric-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+    }
+    
+    .metric-small .metric-label {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        color: #6c757d;
+    }
+    
+    @keyframes pulse-connector {
+        0% {
+            opacity: 0.6;
+        }
+        50% {
+            opacity: 1;
+        }
+        100% {
+            opacity: 0.6;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<p class="lead">Interactive visualization of the TerraFusion SyncService architecture and data flows.</p>
+
+<div class="controls-panel">
+    <div class="control-group">
+        <label class="me-2">View Mode:</label>
+        <select class="form-select form-select-sm" id="viewMode">
+            <option value="logical">Logical View</option>
+            <option value="physical">Physical View</option>
+            <option value="deployment">Deployment View</option>
+        </select>
+        <select class="form-select form-select-sm" id="dataPerspective">
+            <option value="structure">Component Structure</option>
+            <option value="flow">Data Flow</option>
+            <option value="health">System Health</option>
+        </select>
+    </div>
+    <div class="control-group">
+        <button class="btn btn-sm btn-outline-primary" id="autoLayoutBtn">
+            <i class="fas fa-magic me-1"></i> Auto Layout
+        </button>
+        <button class="btn btn-sm btn-outline-success" id="refreshBtn">
+            <i class="fas fa-sync-alt me-1"></i> Refresh
+        </button>
+        <button class="btn btn-sm btn-outline-secondary" id="exportBtn">
+            <i class="fas fa-download me-1"></i> Export
+        </button>
+    </div>
+</div>
+
+<div class="architecture-container" id="architectureContainer">
+    <!-- Nodes will be dynamically added here -->
+    <!-- API Gateway Node -->
+    <div class="node node-gateway" id="node-apiGateway" style="left: 100px; top: 50px;">
+        <div class="node-icon">
+            <i class="fas fa-door-open"></i>
+        </div>
+        <div class="node-title">API Gateway</div>
+        <div>
+            <span class="node-status online"></span>
+            <small>Online</small>
+        </div>
+    </div>
+    
+    <!-- SyncService Node -->
+    <div class="node node-service" id="node-syncService" style="left: 400px; top: 50px;">
+        <div class="node-icon">
+            <i class="fas fa-sync"></i>
+        </div>
+        <div class="node-title">SyncService</div>
+        <div>
+            <span class="node-status online"></span>
+            <small>Online</small>
+        </div>
+    </div>
+    
+    <!-- Database Node -->
+    <div class="node node-database" id="node-database" style="left: 400px; top: 250px;">
+        <div class="node-icon">
+            <i class="fas fa-database"></i>
+        </div>
+        <div class="node-title">PostgreSQL</div>
+        <div>
+            <span class="node-status online"></span>
+            <small>Connected</small>
+        </div>
+    </div>
+    
+    <!-- External System 1 -->
+    <div class="node node-external" id="node-pacs" style="left: 700px; top: 150px;">
+        <div class="node-icon">
+            <i class="fas fa-hospital"></i>
+        </div>
+        <div class="node-title">PACS System</div>
+        <div>
+            <span class="node-status online"></span>
+            <small>Connected</small>
+        </div>
+    </div>
+    
+    <!-- External System 2 -->
+    <div class="node node-external" id="node-cama" style="left: 700px; top: 350px;">
+        <div class="node-icon">
+            <i class="fas fa-file-medical"></i>
+        </div>
+        <div class="node-title">CAMA System</div>
+        <div>
+            <span class="node-status warning"></span>
+            <small>Degraded</small>
+        </div>
+    </div>
+    
+    <!-- Connectors -->
+    <div class="connector" id="connector-gateway-service" style="left: 280px; top: 85px; width: 120px;"></div>
+    <div class="connector active" id="connector-service-db" style="left: 430px; top: 150px; width: 100px; transform: rotate(90deg);"></div>
+    <div class="connector" id="connector-service-pacs" style="left: 580px; top: 85px; width: 140px; transform: rotate(15deg);"></div>
+    <div class="connector active" id="connector-service-cama" style="left: 550px; top: 150px; width: 200px; transform: rotate(45deg);"></div>
+    
+    <!-- Data Flow Arrows -->
+    <div class="data-flow-arrow" id="arrow-gateway-service" style="left: 390px; top: 85px; transform: rotate(0deg);"></div>
+    <div class="data-flow-arrow active" id="arrow-service-db" style="left: 490px; top: 240px; transform: rotate(90deg);"></div>
+    <div class="data-flow-arrow" id="arrow-service-pacs" style="left: 690px; top: 130px; transform: rotate(15deg);"></div>
+    <div class="data-flow-arrow active" id="arrow-service-cama" style="left: 680px; top: 330px; transform: rotate(45deg);"></div>
+    
+    <!-- Connector Labels -->
+    <div class="connector-label" id="label-gateway-service" style="left: 300px; top: 65px;">HTTP REST</div>
+    <div class="connector-label" id="label-service-db" style="left: 450px; top: 180px;">SQL</div>
+    <div class="connector-label" id="label-service-pacs" style="left: 600px; top: 100px;">HL7/FHIR</div>
+    <div class="connector-label" id="label-service-cama" style="left: 580px; top: 220px;">REST API</div>
+</div>
+
+<div class="component-details-panel" id="componentDetails">
+    <h4 id="selectedComponentName">SyncService</h4>
+    <p class="text-muted" id="selectedComponentDesc">Core service responsible for data synchronization between systems.</p>
+    
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="metric-small">
+                <div class="metric-value" id="detail-uptime">99.9%</div>
+                <div class="metric-label">Uptime</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-small">
+                <div class="metric-value" id="detail-health">Good</div>
+                <div class="metric-label">Health</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-small">
+                <div class="metric-value" id="detail-load">34.2%</div>
+                <div class="metric-label">Load</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-small">
+                <div class="metric-value" id="detail-latency">124ms</div>
+                <div class="metric-label">Avg Latency</div>
+            </div>
+        </div>
+    </div>
+    
+    <ul class="nav nav-tabs" id="componentDetailTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="metrics-tab" data-bs-toggle="tab" data-bs-target="#metrics" type="button" role="tab" aria-controls="metrics" aria-selected="true">Metrics</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="logs-tab" data-bs-toggle="tab" data-bs-target="#logs" type="button" role="tab" aria-controls="logs" aria-selected="false">Logs</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="info-tab" data-bs-toggle="tab" data-bs-target="#info" type="button" role="tab" aria-controls="info" aria-selected="false">Info</button>
+        </li>
+    </ul>
+    
+    <div class="tab-content pt-3" id="componentDetailTabsContent">
+        <div class="tab-pane fade show active" id="metrics" role="tabpanel" aria-labelledby="metrics-tab">
+            <div style="height: 300px;">
+                <canvas id="componentMetricsChart"></canvas>
+            </div>
+        </div>
+        <div class="tab-pane fade" id="logs" role="tabpanel" aria-labelledby="logs-tab">
+            <div class="log-console" style="max-height: 300px;">
+                <div class="log-entry info">
+                    <span class="log-time">10:25:15</span>
+                    <span class="log-level">INFO</span>
+                    <span class="log-message">SyncService initialized successfully</span>
+                </div>
+                <div class="log-entry info">
+                    <span class="log-time">10:25:10</span>
+                    <span class="log-level">INFO</span>
+                    <span class="log-message">Connected to database</span>
+                </div>
+                <div class="log-entry info">
+                    <span class="log-time">10:25:05</span>
+                    <span class="log-level">INFO</span>
+                    <span class="log-message">Loading configuration from environment</span>
+                </div>
+                <div class="log-entry info">
+                    <span class="log-time">10:25:00</span>
+                    <span class="log-level">INFO</span>
+                    <span class="log-message">SyncService starting up</span>
+                </div>
+            </div>
+        </div>
+        <div class="tab-pane fade" id="info" role="tabpanel" aria-labelledby="info-tab">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5>Component Details</h5>
+                    <table class="table table-sm">
+                        <tbody>
+                            <tr>
+                                <th>Type</th>
+                                <td>Microservice</td>
+                            </tr>
+                            <tr>
+                                <th>Technology</th>
+                                <td>FastAPI (Python)</td>
+                            </tr>
+                            <tr>
+                                <th>Port</th>
+                                <td>8080</td>
+                            </tr>
+                            <tr>
+                                <th>Version</th>
+                                <td>1.5.2</td>
+                            </tr>
+                            <tr>
+                                <th>Last Updated</th>
+                                <td>2 days ago</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="col-md-6">
+                    <h5>Dependencies</h5>
+                    <table class="table table-sm">
+                        <tbody>
+                            <tr>
+                                <th>Database</th>
+                                <td><span class="badge bg-success">Connected</span></td>
+                            </tr>
+                            <tr>
+                                <th>API Gateway</th>
+                                <td><span class="badge bg-success">Connected</span></td>
+                            </tr>
+                            <tr>
+                                <th>PACS System</th>
+                                <td><span class="badge bg-success">Connected</span></td>
+                            </tr>
+                            <tr>
+                                <th>CAMA System</th>
+                                <td><span class="badge bg-warning">Degraded</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let architectureData;
+    let metricsChart;
+    let selectedComponent = 'syncService';
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize the architecture visualization
+        initializeArchitecture();
+        
+        // Set up node click handlers
+        setupNodeInteractions();
+        
+        // Initialize the component metrics chart
+        initializeMetricsChart();
+        
+        // Set up control panel handlers
+        document.getElementById('viewMode').addEventListener('change', updateVisualization);
+        document.getElementById('dataPerspective').addEventListener('change', updateVisualization);
+        document.getElementById('autoLayoutBtn').addEventListener('click', autoLayout);
+        document.getElementById('refreshBtn').addEventListener('click', refreshData);
+        document.getElementById('exportBtn').addEventListener('click', exportVisualization);
+    });
+    
+    // Initialize the architecture visualization
+    function initializeArchitecture() {
+        // Fetch architecture data
+        fetch('/api/architecture')
+            .then(response => response.json())
+            .catch(error => {
+                console.error('Error fetching architecture data:', error);
+                // Use fallback data in case of error
+                return {
+                    nodes: [
+                        { id: 'apiGateway', type: 'gateway', name: 'API Gateway', status: 'online' },
+                        { id: 'syncService', type: 'service', name: 'SyncService', status: 'online' },
+                        { id: 'database', type: 'database', name: 'PostgreSQL', status: 'online' },
+                        { id: 'pacs', type: 'external', name: 'PACS System', status: 'online' },
+                        { id: 'cama', type: 'external', name: 'CAMA System', status: 'warning' }
+                    ],
+                    connections: [
+                        { source: 'apiGateway', target: 'syncService', type: 'http', active: false },
+                        { source: 'syncService', target: 'database', type: 'sql', active: true },
+                        { source: 'syncService', target: 'pacs', type: 'api', active: false },
+                        { source: 'syncService', target: 'cama', type: 'api', active: true }
+                    ]
+                };
+            })
+            .then(data => {
+                architectureData = data;
+                renderArchitecture(data);
+            });
+    }
+    
+    // Render the architecture visualization
+    function renderArchitecture(data) {
+        // In a real application, this would use D3.js or a similar library
+        // to render a dynamic visualization based on the data
+        console.log('Rendering architecture with data:', data);
+    }
+    
+    // Set up node click interactions
+    function setupNodeInteractions() {
+        // Add click event listeners to nodes
+        document.querySelectorAll('.node').forEach(node => {
+            node.addEventListener('click', function() {
+                // Get the node ID
+                const nodeId = this.id.split('-')[1];
+                
+                // Update selected component
+                selectComponent(nodeId);
+            });
+        });
+    }
+    
+    // Select a component and update the details panel
+    function selectComponent(nodeId) {
+        // Remove selected class from all nodes
+        document.querySelectorAll('.node').forEach(node => {
+            node.classList.remove('selected');
+        });
+        
+        // Add selected class to the clicked node
+        const selectedNode = document.getElementById(`node-${nodeId}`);
+        if (selectedNode) {
+            selectedNode.classList.add('selected');
+        }
+        
+        // Update selected component
+        selectedComponent = nodeId;
+        
+        // Update component details
+        updateComponentDetails(nodeId);
+        
+        // Update metrics chart
+        updateMetricsChart(nodeId);
+    }
+    
+    // Update the component details panel
+    function updateComponentDetails(nodeId) {
+        // Component names and descriptions
+        const componentInfo = {
+            apiGateway: {
+                name: 'API Gateway',
+                desc: 'Main entry point for all client requests, handles routing and authentication.'
+            },
+            syncService: {
+                name: 'SyncService',
+                desc: 'Core service responsible for data synchronization between systems.'
+            },
+            database: {
+                name: 'PostgreSQL Database',
+                desc: 'Central database for storing configuration, operations and audit logs.'
+            },
+            pacs: {
+                name: 'PACS System',
+                desc: 'Picture Archiving and Communication System for medical imaging.'
+            },
+            cama: {
+                name: 'CAMA System',
+                desc: 'Content Access and Management Application for clinical documents.'
+            }
+        };
+        
+        // Update component name and description
+        document.getElementById('selectedComponentName').textContent = componentInfo[nodeId]?.name || nodeId;
+        document.getElementById('selectedComponentDesc').textContent = componentInfo[nodeId]?.desc || '';
+        
+        // Update metrics based on node
+        const metrics = {
+            apiGateway: { uptime: '99.8%', health: 'Good', load: '45.2%', latency: '89ms' },
+            syncService: { uptime: '99.9%', health: 'Good', load: '34.2%', latency: '124ms' },
+            database: { uptime: '100%', health: 'Good', load: '22.6%', latency: '15ms' },
+            pacs: { uptime: '98.5%', health: 'Good', load: '67.1%', latency: '210ms' },
+            cama: { uptime: '97.2%', health: 'Warning', load: '78.3%', latency: '350ms' }
+        };
+        
+        // Fill in the metrics
+        document.getElementById('detail-uptime').textContent = metrics[nodeId]?.uptime || 'N/A';
+        document.getElementById('detail-health').textContent = metrics[nodeId]?.health || 'N/A';
+        document.getElementById('detail-load').textContent = metrics[nodeId]?.load || 'N/A';
+        document.getElementById('detail-latency').textContent = metrics[nodeId]?.latency || 'N/A';
+        
+        // Fetch and update the logs
+        fetchComponentLogs(nodeId);
+    }
+    
+    // Fetch component logs
+    function fetchComponentLogs(nodeId) {
+        // In a real application, this would fetch logs from the server
+        console.log(`Fetching logs for component: ${nodeId}`);
+    }
+    
+    // Initialize the metrics chart
+    function initializeMetricsChart() {
+        const ctx = document.getElementById('componentMetricsChart').getContext('2d');
+        metricsChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['10:00', '10:05', '10:10', '10:15', '10:20', '10:25', '10:30'],
+                datasets: [{
+                    label: 'CPU Usage (%)',
+                    data: [25, 30, 45, 40, 35, 55, 40],
+                    borderColor: '#2196f3',
+                    backgroundColor: 'rgba(33, 150, 243, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }, {
+                    label: 'Memory Usage (%)',
+                    data: [40, 45, 50, 55, 60, 58, 65],
+                    borderColor: '#4caf50',
+                    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }, {
+                    label: 'Response Time (ms)',
+                    data: [80, 95, 110, 125, 150, 130, 120],
+                    borderColor: '#ff9800',
+                    backgroundColor: 'rgba(255, 152, 0, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    }
+    
+    // Update the metrics chart for the selected component
+    function updateMetricsChart(nodeId) {
+        // In a real application, this would fetch specific metrics for the node
+        // For now, just simulate different data for each component
+        
+        const getRandomData = (base, variance, count) => {
+            return Array.from({length: count}, () => base + Math.random() * variance - variance/2);
+        };
+        
+        let cpuData, memoryData, responseData;
+        
+        switch(nodeId) {
+            case 'apiGateway':
+                cpuData = getRandomData(40, 20, 7);
+                memoryData = getRandomData(50, 15, 7);
+                responseData = getRandomData(90, 30, 7);
+                break;
+            case 'syncService':
+                cpuData = getRandomData(35, 25, 7);
+                memoryData = getRandomData(60, 10, 7);
+                responseData = getRandomData(120, 40, 7);
+                break;
+            case 'database':
+                cpuData = getRandomData(20, 10, 7);
+                memoryData = getRandomData(70, 20, 7);
+                responseData = getRandomData(15, 10, 7);
+                break;
+            case 'pacs':
+                cpuData = getRandomData(65, 15, 7);
+                memoryData = getRandomData(45, 20, 7);
+                responseData = getRandomData(200, 50, 7);
+                break;
+            case 'cama':
+                cpuData = getRandomData(75, 20, 7);
+                memoryData = getRandomData(80, 15, 7);
+                responseData = getRandomData(350, 100, 7);
+                break;
+            default:
+                cpuData = getRandomData(30, 20, 7);
+                memoryData = getRandomData(50, 15, 7);
+                responseData = getRandomData(100, 30, 7);
+        }
+        
+        // Update chart data
+        metricsChart.data.datasets[0].data = cpuData;
+        metricsChart.data.datasets[1].data = memoryData;
+        metricsChart.data.datasets[2].data = responseData;
+        
+        // Update chart title based on component
+        metricsChart.options.plugins = metricsChart.options.plugins || {};
+        metricsChart.options.plugins.title = {
+            display: true,
+            text: `${document.getElementById('selectedComponentName').textContent} - Performance Metrics`,
+            font: {
+                size: 16
+            }
+        };
+        
+        // Refresh the chart
+        metricsChart.update();
+    }
+    
+    // Update visualization based on selected view mode and perspective
+    function updateVisualization() {
+        const viewMode = document.getElementById('viewMode').value;
+        const dataPerspective = document.getElementById('dataPerspective').value;
+        
+        console.log(`Updating visualization: ViewMode=${viewMode}, Perspective=${dataPerspective}`);
+        
+        // In a real application, this would update the visualization
+        // For now, just add a class to the container for demonstration
+        const container = document.getElementById('architectureContainer');
+        container.className = 'architecture-container';
+        container.classList.add(`view-${viewMode}`, `perspective-${dataPerspective}`);
+        
+        // Update data flow indicators based on perspective
+        const connectors = document.querySelectorAll('.connector');
+        const arrows = document.querySelectorAll('.data-flow-arrow');
+        
+        if (dataPerspective === 'flow') {
+            // Highlight data flows
+            connectors.forEach(conn => conn.classList.add('highlight'));
+            arrows.forEach(arrow => arrow.style.display = 'block');
+        } else {
+            // Hide flow highlights
+            connectors.forEach(conn => conn.classList.remove('highlight'));
+            if (dataPerspective !== 'health') {
+                arrows.forEach(arrow => arrow.style.display = 'none');
+            }
+        }
+        
+        // Update node status indicators based on perspective
+        if (dataPerspective === 'health') {
+            document.querySelectorAll('.node-status').forEach(status => {
+                status.style.display = 'inline-block';
+            });
+        } else {
+            document.querySelectorAll('.node-status').forEach(status => {
+                status.style.display = 'none';
+            });
+        }
+    }
+    
+    // Auto-layout the visualization
+    function autoLayout() {
+        // In a real application, this would use a layout algorithm
+        // For now, just add a simple animation
+        
+        document.getElementById('autoLayoutBtn').disabled = true;
+        document.getElementById('autoLayoutBtn').innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Arranging...';
+        
+        setTimeout(() => {
+            // Reset to original positions for demo
+            const positions = {
+                'apiGateway': { left: 100, top: 50 },
+                'syncService': { left: 400, top: 50 },
+                'database': { left: 400, top: 250 },
+                'pacs': { left: 700, top: 150 },
+                'cama': { left: 700, top: 350 }
+            };
+            
+            // Animate nodes to new positions
+            Object.keys(positions).forEach(id => {
+                const node = document.getElementById(`node-${id}`);
+                if (node) {
+                    node.style.transition = 'left 0.5s ease, top 0.5s ease';
+                    node.style.left = `${positions[id].left}px`;
+                    node.style.top = `${positions[id].top}px`;
+                }
+            });
+            
+            // Re-enable button
+            setTimeout(() => {
+                document.getElementById('autoLayoutBtn').disabled = false;
+                document.getElementById('autoLayoutBtn').innerHTML = '<i class="fas fa-magic me-1"></i> Auto Layout';
+                
+                // Update connectors (in a real app, this would be more sophisticated)
+                updateConnectors();
+            }, 600);
+        }, 1000);
+    }
+    
+    // Update connector positions based on node positions
+    function updateConnectors() {
+        // In a real application, this would calculate connector positions
+        // based on the positions of connected nodes
+        console.log('Updating connector positions');
+    }
+    
+    // Refresh data from the server
+    function refreshData() {
+        // Show refresh button spinner
+        document.getElementById('refreshBtn').disabled = true;
+        document.getElementById('refreshBtn').innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Refreshing...';
+        
+        // Fetch updated architecture data
+        setTimeout(() => {
+            // In a real application, this would fetch fresh data
+            // For now, just simulate a refresh
+            
+            // Update node statuses randomly for demo
+            document.querySelectorAll('.node').forEach(node => {
+                const statusIndicator = node.querySelector('.node-status');
+                const statusText = node.querySelector('.node-status + small');
+                
+                if (Math.random() > 0.7) {
+                    // Change status randomly
+                    const statuses = ['online', 'warning', 'offline'];
+                    const statusTexts = ['Online', 'Degraded', 'Offline'];
+                    const randomIndex = Math.floor(Math.random() * statuses.length);
+                    
+                    statusIndicator.className = `node-status ${statuses[randomIndex]}`;
+                    statusText.textContent = statusTexts[randomIndex];
+                }
+            });
+            
+            // Update connector activity randomly
+            document.querySelectorAll('.connector').forEach(conn => {
+                if (Math.random() > 0.5) {
+                    conn.classList.toggle('active');
+                    
+                    // Update corresponding arrow
+                    const connId = conn.id;
+                    const arrowId = connId.replace('connector', 'arrow');
+                    const arrow = document.getElementById(arrowId);
+                    if (arrow) {
+                        arrow.classList.toggle('active');
+                    }
+                }
+            });
+            
+            // Re-enable button
+            document.getElementById('refreshBtn').disabled = false;
+            document.getElementById('refreshBtn').innerHTML = '<i class="fas fa-sync-alt me-1"></i> Refresh';
+            
+            // Show refresh notification
+            showToast('Data Refreshed', 'Architecture data has been updated', 'info');
+            
+            // Update component details if one is selected
+            if (selectedComponent) {
+                updateComponentDetails(selectedComponent);
+                updateMetricsChart(selectedComponent);
+            }
+        }, 1500);
+    }
+    
+    // Export the visualization
+    function exportVisualization() {
+        // In a real application, this would generate an image or PDF
+        showToast('Export', 'Architecture diagram exported successfully', 'success');
+    }
+</script>
+{% endblock %}
