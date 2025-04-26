@@ -234,12 +234,103 @@
         <div class="col-md-12">
             <div class="card">
                 <div class="card-header bg-primary text-white">
-                    <h5 class="card-title mb-0">Available Schemas</h5>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">Available Schemas</h5>
+                        <button type="button" class="btn btn-light btn-sm" data-bs-toggle="modal" data-bs-target="#createSchemaModal">
+                            <i class="fas fa-plus"></i> Create Schema
+                        </button>
+                    </div>
                 </div>
                 <div class="card-body">
                     <div id="schemaContainer" class="row">
                         <!-- Schema cards will be populated via JavaScript -->
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Create Schema Modal -->
+    <div class="modal fade" id="createSchemaModal" tabindex="-1" aria-labelledby="createSchemaModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title" id="createSchemaModalLabel">Create Custom Schema</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="createSchemaForm">
+                        <div class="mb-3">
+                            <label for="schemaName" class="form-label">Schema Name</label>
+                            <input type="text" class="form-control" id="schemaName" placeholder="e.g., custom_schema" required>
+                            <div class="form-text">Unique identifier for the schema (no spaces, use underscores)</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="schemaDescription" class="form-label">Description</label>
+                            <input type="text" class="form-control" id="schemaDescription" placeholder="e.g., Custom schema for XYZ data" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="schemaLevel" class="form-label">Validation Level</label>
+                            <select class="form-control" id="schemaLevel" required>
+                                <option value="strict">Strict</option>
+                                <option value="moderate">Moderate</option>
+                                <option value="relaxed">Relaxed</option>
+                            </select>
+                        </div>
+                        
+                        <h5 class="mt-4">Rules</h5>
+                        <div id="rulesContainer">
+                            <!-- Rules will be added here -->
+                            <div class="rule-item mb-3 p-3 border rounded">
+                                <div class="row mb-2">
+                                    <div class="col-md-5">
+                                        <label class="form-label">Field Name</label>
+                                        <input type="text" class="form-control rule-field-name" placeholder="e.g., user_id" required>
+                                    </div>
+                                    <div class="col-md-5">
+                                        <label class="form-label">Rule Type</label>
+                                        <select class="form-control rule-type">
+                                            <option value="RequiredFieldRule">Required Field</option>
+                                            <option value="TypeRule">Type Check</option>
+                                            <option value="RangeRule">Value Range</option>
+                                            <option value="PatternRule">Pattern Match</option>
+                                            <option value="EnumRule">Enumeration</option>
+                                            <option value="DateFormatRule">Date Format</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label">Severity</label>
+                                        <select class="form-control rule-severity">
+                                            <option value="error">Error</option>
+                                            <option value="warning">Warning</option>
+                                            <option value="info">Info</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="row mb-2">
+                                    <div class="col-md-12">
+                                        <label class="form-label">Description</label>
+                                        <input type="text" class="form-control rule-description" placeholder="e.g., User ID must be provided">
+                                    </div>
+                                </div>
+                                <div class="rule-specific-fields">
+                                    <!-- Dynamic rule-specific fields will be added here via JavaScript -->
+                                </div>
+                                <div class="text-end mt-2">
+                                    <button type="button" class="btn btn-sm btn-danger remove-rule-btn">Remove</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="text-center mt-3">
+                            <button type="button" class="btn btn-success" id="addRuleBtn">
+                                <i class="fas fa-plus"></i> Add Rule
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="createSchemaBtn">Create Schema</button>
                 </div>
             </div>
         </div>
@@ -300,6 +391,29 @@
         // Set up clear history button
         document.getElementById('clearHistoryBtn').addEventListener('click', function() {
             clearValidationHistory();
+        });
+        
+        // Set up rule type change handler for the initial rule
+        setupRuleTypeChangeHandler(document.querySelector('.rule-type'));
+        
+        // Set up add rule button
+        document.getElementById('addRuleBtn').addEventListener('click', function() {
+            addRuleItem();
+        });
+        
+        // Set up remove rule button for the initial rule
+        document.querySelector('.remove-rule-btn').addEventListener('click', function() {
+            const rulesContainer = document.getElementById('rulesContainer');
+            if (rulesContainer.children.length > 1) {
+                this.closest('.rule-item').remove();
+            } else {
+                showError('At least one rule is required');
+            }
+        });
+        
+        // Set up create schema button
+        document.getElementById('createSchemaBtn').addEventListener('click', function() {
+            createCustomSchema();
         });
     });
     
@@ -753,6 +867,280 @@
         .catch(error => {
             console.error('Error clearing validation history:', error);
             showError('Failed to clear validation history');
+        });
+    }
+    
+    // Add a new rule item to the rules container
+    function addRuleItem() {
+        const rulesContainer = document.getElementById('rulesContainer');
+        const newRuleItem = document.createElement('div');
+        newRuleItem.className = 'rule-item mb-3 p-3 border rounded';
+        newRuleItem.innerHTML = `
+            <div class="row mb-2">
+                <div class="col-md-5">
+                    <label class="form-label">Field Name</label>
+                    <input type="text" class="form-control rule-field-name" placeholder="e.g., user_id" required>
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label">Rule Type</label>
+                    <select class="form-control rule-type">
+                        <option value="RequiredFieldRule">Required Field</option>
+                        <option value="TypeRule">Type Check</option>
+                        <option value="RangeRule">Value Range</option>
+                        <option value="PatternRule">Pattern Match</option>
+                        <option value="EnumRule">Enumeration</option>
+                        <option value="DateFormatRule">Date Format</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Severity</label>
+                    <select class="form-control rule-severity">
+                        <option value="error">Error</option>
+                        <option value="warning">Warning</option>
+                        <option value="info">Info</option>
+                    </select>
+                </div>
+            </div>
+            <div class="row mb-2">
+                <div class="col-md-12">
+                    <label class="form-label">Description</label>
+                    <input type="text" class="form-control rule-description" placeholder="e.g., User ID must be provided">
+                </div>
+            </div>
+            <div class="rule-specific-fields">
+                <!-- Dynamic rule-specific fields will be added here via JavaScript -->
+            </div>
+            <div class="text-end mt-2">
+                <button type="button" class="btn btn-sm btn-danger remove-rule-btn">Remove</button>
+            </div>
+        `;
+        rulesContainer.appendChild(newRuleItem);
+        
+        // Add event listeners to the new rule item
+        const ruleTypeSelect = newRuleItem.querySelector('.rule-type');
+        setupRuleTypeChangeHandler(ruleTypeSelect);
+        
+        // Add event listener to the remove button
+        newRuleItem.querySelector('.remove-rule-btn').addEventListener('click', function() {
+            if (rulesContainer.children.length > 1) {
+                this.closest('.rule-item').remove();
+            } else {
+                showError('At least one rule is required');
+            }
+        });
+    }
+    
+    // Set up rule type change handler
+    function setupRuleTypeChangeHandler(ruleTypeSelect) {
+        // Trigger initial setup
+        updateRuleSpecificFields(ruleTypeSelect);
+        
+        // Add change event listener
+        ruleTypeSelect.addEventListener('change', function() {
+            updateRuleSpecificFields(this);
+        });
+    }
+    
+    // Update rule-specific fields based on rule type
+    function updateRuleSpecificFields(ruleTypeSelect) {
+        const ruleType = ruleTypeSelect.value;
+        const ruleItem = ruleTypeSelect.closest('.rule-item');
+        const ruleSpecificFields = ruleItem.querySelector('.rule-specific-fields');
+        
+        // Clear existing fields
+        ruleSpecificFields.innerHTML = '';
+        
+        // Add fields based on rule type
+        if (ruleType === 'TypeRule') {
+            ruleSpecificFields.innerHTML = `
+                <div class="row mb-2">
+                    <div class="col-md-12">
+                        <label class="form-label">Expected Type</label>
+                        <select class="form-control rule-expected-type">
+                            <option value="str">String</option>
+                            <option value="int">Integer</option>
+                            <option value="float">Float</option>
+                            <option value="bool">Boolean</option>
+                            <option value="dict">Dictionary</option>
+                            <option value="list">List</option>
+                        </select>
+                    </div>
+                </div>
+            `;
+        } else if (ruleType === 'RangeRule') {
+            ruleSpecificFields.innerHTML = `
+                <div class="row mb-2">
+                    <div class="col-md-6">
+                        <label class="form-label">Minimum Value</label>
+                        <input type="number" class="form-control rule-min-value" placeholder="Min value">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Maximum Value</label>
+                        <input type="number" class="form-control rule-max-value" placeholder="Max value">
+                    </div>
+                </div>
+            `;
+        } else if (ruleType === 'PatternRule') {
+            ruleSpecificFields.innerHTML = `
+                <div class="row mb-2">
+                    <div class="col-md-12">
+                        <label class="form-label">Pattern (Regex)</label>
+                        <input type="text" class="form-control rule-pattern" placeholder="e.g., ^[A-Za-z0-9]+$">
+                        <div class="form-text">Regular expression pattern the field must match</div>
+                    </div>
+                </div>
+            `;
+        } else if (ruleType === 'EnumRule') {
+            ruleSpecificFields.innerHTML = `
+                <div class="row mb-2">
+                    <div class="col-md-12">
+                        <label class="form-label">Allowed Values</label>
+                        <input type="text" class="form-control rule-allowed-values" placeholder="e.g., value1,value2,value3">
+                        <div class="form-text">Comma-separated list of allowed values</div>
+                    </div>
+                </div>
+            `;
+        } else if (ruleType === 'DateFormatRule') {
+            ruleSpecificFields.innerHTML = `
+                <div class="row mb-2">
+                    <div class="col-md-12">
+                        <label class="form-label">Date Format</label>
+                        <input type="text" class="form-control rule-date-format" placeholder="e.g., %Y-%m-%d">
+                        <div class="form-text">Python's strftime format (e.g., %Y-%m-%d for YYYY-MM-DD)</div>
+                    </div>
+                </div>
+            `;
+        }
+    }
+    
+    // Create a custom validation schema
+    function createCustomSchema() {
+        const schemaName = document.getElementById('schemaName').value;
+        const schemaDescription = document.getElementById('schemaDescription').value;
+        const schemaLevel = document.getElementById('schemaLevel').value;
+        
+        if (!schemaName || !schemaDescription) {
+            showError('Schema name and description are required');
+            return;
+        }
+        
+        // Validate schema name format
+        if (!/^[a-z0-9_]+$/.test(schemaName)) {
+            showError('Schema name must contain only lowercase letters, numbers, and underscores');
+            return;
+        }
+        
+        // Collect rules
+        const rules = [];
+        const ruleItems = document.querySelectorAll('.rule-item');
+        
+        for (const ruleItem of ruleItems) {
+            const fieldName = ruleItem.querySelector('.rule-field-name').value;
+            const ruleType = ruleItem.querySelector('.rule-type').value;
+            const severity = ruleItem.querySelector('.rule-severity').value;
+            const description = ruleItem.querySelector('.rule-description').value;
+            
+            if (!fieldName) {
+                showError('Field name is required for all rules');
+                return;
+            }
+            
+            const rule = {
+                field_name: fieldName,
+                rule_type: ruleType,
+                severity: severity,
+                description: description || `Validation rule for ${fieldName}`
+            };
+            
+            // Add rule-specific properties
+            if (ruleType === 'TypeRule') {
+                rule.expected_type = ruleItem.querySelector('.rule-expected-type').value;
+            } else if (ruleType === 'RangeRule') {
+                const minValue = ruleItem.querySelector('.rule-min-value').value;
+                const maxValue = ruleItem.querySelector('.rule-max-value').value;
+                
+                if (minValue) rule.min_value = parseFloat(minValue);
+                if (maxValue) rule.max_value = parseFloat(maxValue);
+                
+                if (!minValue && !maxValue) {
+                    showError('At least one of min_value or max_value is required for RangeRule');
+                    return;
+                }
+            } else if (ruleType === 'PatternRule') {
+                const pattern = ruleItem.querySelector('.rule-pattern').value;
+                
+                if (!pattern) {
+                    showError('Pattern is required for PatternRule');
+                    return;
+                }
+                
+                rule.pattern = pattern;
+            } else if (ruleType === 'EnumRule') {
+                const allowedValuesStr = ruleItem.querySelector('.rule-allowed-values').value;
+                
+                if (!allowedValuesStr) {
+                    showError('Allowed values are required for EnumRule');
+                    return;
+                }
+                
+                rule.allowed_values = allowedValuesStr.split(',').map(val => val.trim());
+            } else if (ruleType === 'DateFormatRule') {
+                const dateFormat = ruleItem.querySelector('.rule-date-format').value;
+                
+                if (!dateFormat) {
+                    showError('Date format is required for DateFormatRule');
+                    return;
+                }
+                
+                rule.date_format = dateFormat;
+            }
+            
+            rules.push(rule);
+        }
+        
+        if (rules.length === 0) {
+            showError('At least one rule is required');
+            return;
+        }
+        
+        // Create schema object
+        const schema = {
+            name: schemaName,
+            description: schemaDescription,
+            validation_level: schemaLevel,
+            rules: rules
+        };
+        
+        // Send request to create schema
+        fetch('/api/validation/schemas', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(schema)
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            // Close modal
+            document.querySelector('[data-bs-dismiss="modal"]').click();
+            
+            // Show success message
+            alert('Schema created successfully!');
+            
+            // Refresh schemas
+            fetchSchemas();
+            
+            // Reset form
+            document.getElementById('createSchemaForm').reset();
+        })
+        .catch(error => {
+            console.error('Error creating schema:', error);
+            showError('Failed to create schema: ' + error.message);
         });
     }
     

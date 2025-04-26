@@ -27,7 +27,8 @@ from apps.backend.validation.engine import (
     get_validation_engine,
     validate,
     validate_batch,
-    register_schema
+    register_schema,
+    add_schema
 )
 
 __all__ = [

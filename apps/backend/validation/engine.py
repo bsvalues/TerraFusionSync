@@ -55,6 +55,17 @@ class ValidationEngine:
         """
         self.schemas[schema.schema_name] = schema
         logger.info(f"Registered validation schema: {schema.schema_name}")
+        
+    def add_schema(self, schema: ValidationSchema):
+        """
+        Add a validation schema to the engine.
+        
+        This is an alias for register_schema to maintain API compatibility.
+        
+        Args:
+            schema: The validation schema to add
+        """
+        self.register_schema(schema)
     
     def validate(self, data: Dict[str, Any], schema_name: str) -> Dict[str, Any]:
         """
@@ -353,3 +364,14 @@ def register_schema(schema: ValidationSchema):
     """
     engine = get_validation_engine()
     engine.register_schema(schema)
+    
+def add_schema(schema: ValidationSchema):
+    """
+    Add a validation schema to the engine.
+    
+    This is an alias for register_schema to maintain API compatibility.
+    
+    Args:
+        schema: The validation schema to add
+    """
+    register_schema(schema)
