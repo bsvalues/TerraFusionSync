@@ -1,39 +1,33 @@
 import React from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
-import { MainLayout } from '@/layouts/MainLayout';
-import { Dashboard } from '@/pages/Dashboard';
-import { getPluginRoutes } from '@/utils/pluginRegistry';
-import { getComponentByName } from '@/utils/componentMapping';
+import { Routes, Route } from 'react-router-dom';
+import { MainLayout } from './layouts/MainLayout';
+import { Dashboard } from './pages/Dashboard';
+import NotFound from './pages/NotFound';
+import { getAllPluginRoutes } from '@/utils/pluginRegistry';
+import { getComponentForRoute } from '@/utils/componentMapping';
 
 const App: React.FC = () => {
-  const pluginRoutes = getPluginRoutes();
+  // Get all plugin routes for our router
+  const pluginRoutes = getAllPluginRoutes();
 
   return (
-    <MainLayout>
-      <Routes>
-        <Route path="/" element={<Dashboard />} />
+    <Routes>
+      <Route path="/" element={<MainLayout />}>
+        <Route index element={<Dashboard />} />
         
         {/* Dynamically generated routes from plugins */}
-        {pluginRoutes.map((route) => {
-          const Component = getComponentByName(route.component);
-          if (!Component) {
-            console.warn(`Component ${route.component} not found for route ${route.path}`);
-            return null;
-          }
-          
-          return (
-            <Route 
-              key={route.path} 
-              path={route.path} 
-              element={<Component />} 
-            />
-          );
-        })}
+        {pluginRoutes.map((route) => (
+          <Route 
+            key={route.path}
+            path={route.path}
+            element={React.createElement(getComponentForRoute(route))}
+          />
+        ))}
         
-        {/* Fallback route */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </MainLayout>
+        {/* Fallback routes */}
+        <Route path="*" element={<NotFound />} />
+      </Route>
+    </Routes>
   );
 };
 
