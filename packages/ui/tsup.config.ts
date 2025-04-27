@@ -4,8 +4,8 @@ export default defineConfig({
   entry: ['src/index.ts'],
   format: ['cjs', 'esm'],
   dts: true,
-  minify: true,
-  external: ['react', 'react-dom'],
+  splitting: false,
   sourcemap: true,
   clean: true,
+  external: ['react'],
 });

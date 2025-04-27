@@ -1,4 +1,4 @@
-import { pluginInfo as marketplaceSync } from '@terrafusion/marketplace-sync';
+import { pluginInfo as marketplaceSyncPlugin } from '@terrafusion/marketplace-sync';
 
 export interface PluginRoute {
   path: string;
@@ -17,25 +17,31 @@ export interface Plugin {
   routes: PluginRoute[];
 }
 
-// This registry holds references to all available plugins
-const pluginRegistry: Record<string, Plugin> = {
-  'marketplace-sync': marketplaceSync as unknown as Plugin,
+// Registry of all available plugins
+export const plugins: Plugin[] = [
+  marketplaceSyncPlugin,
+  // Additional plugins would be registered here
+];
+
+// Get all available plugin routes
+export const getAllPluginRoutes = (): PluginRoute[] => {
+  return plugins.flatMap(plugin => plugin.routes);
 };
 
-export const getPlugins = (): Plugin[] => {
-  return Object.values(pluginRegistry);
-};
-
-export const getPluginByName = (name: string): Plugin | undefined => {
-  return pluginRegistry[name];
-};
-
-export const getPluginRoutes = (): PluginRoute[] => {
-  return getPlugins().flatMap(plugin => plugin.routes);
-};
-
+// Get all menu items from plugin routes
 export const getMenuItems = (): PluginRoute[] => {
-  return getPluginRoutes().filter(route => route.menuItem);
+  return getAllPluginRoutes().filter(route => route.menuItem);
 };
 
-export default pluginRegistry;
+// Get menu items grouped by their menu group
+export const getMenuItemsByGroup = (): Record<string, PluginRoute[]> => {
+  const menuItems = getMenuItems();
+  return menuItems.reduce((acc, route) => {
+    const group = route.menuGroup || 'Other';
+    if (!acc[group]) {
+      acc[group] = [];
+    }
+    acc[group].push(route);
+    return acc;
+  }, {} as Record<string, PluginRoute[]>);
+};
