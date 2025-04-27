@@ -1,5 +1,7 @@
-// Export all components from the UI package
-export * from './Button';
-export * from './ProgressBar';
-export * from './Modal';
-export * from './Toast';
+export * from './components/Button';
+export * from './components/Card';
+export * from './components/Modal';
+export * from './components/ProgressBar';
+export * from './components/TabGroup';
+export * from './components/Toast';
+export * from './components/Badge';
