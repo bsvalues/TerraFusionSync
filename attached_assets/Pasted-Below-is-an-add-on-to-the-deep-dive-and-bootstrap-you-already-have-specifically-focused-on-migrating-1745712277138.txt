@@ -1,0 +1,90 @@
+Below is an add-on to the deep-dive and bootstrap you already have—specifically focused on migrating your new React front-end into your Turborepo-backed monorepo (TerraFusionPlayground) and wiring up the “marketplace” plugin architecture.
+
+---
+
+## 1. Monorepo Migration & Marketplace Integration
+
+### A. Monorepo Structure (pnpm + Turborepo)  
+1. **Workspace config** (`pnpm-workspace.yaml`): ensure it includes  
+   ```yaml
+   packages:
+     - 'apps/**'
+     - 'packages/**'
+   ```  
+    ([Building a Monorepo with pnpm and Turborepo - Vinayak Hegde](https://vinayak-hegde.medium.com/building-a-monorepo-with-pnpm-and-turborepo-a-journey-to-efficiency-cfeec5d182f5?utm_source=chatgpt.com))  
+2. **Turbo config** (`turbo.json`): define build/test pipelines across apps and packages.  
+   ```json
+   {
+     "pipeline": {
+       "build": { "dependsOn": ["^build"], "outputs": ["dist/**"] },
+       "lint": {},
+       "test": {}
+     }
+   }
+   ```  
+    ([Structuring a repository - Turborepo](https://turbo.build/docs/crafting-your-repository/structuring-a-repository?utm_source=chatgpt.com))  
+
+### B. Migrating Front-End into `apps/frontend`  
+- Move your Vite/React scaffold into `apps/frontend`.  
+- Update `package.json` scripts to use workspace relative paths.  
+- Share your design-system package: create `packages/ui` for Buttons, Toasts, etc., and have `apps/frontend` depend on it.
+
+### C. Marketplace Plugin Architecture  
+1. **Plugin package**: under `packages/plugins/marketplace-sync`, scaffold as a self-contained package that exports:  
+   - A React route (`/marketplace/sync`)  
+   - A manifest (name, version, entry-point)  
+2. **Plugin registry**: in `apps/frontend/src/plugins.ts`, dynamically import all packages matching `packages/plugins/*` and register their routes.  
+3. **Runtime loading**: use React-Router’s `<Routes>` to map plugin manifests to UI.
+
+---
+
+## 2. Updated Bootstrap Prompt for Replit AI Agent
+
+```text
+As Senior PM/DevOps and Front-End Specialist, migrate the new React+TS+Tailwind front-end into the TerraFusionPlayground monorepo and wire up a marketplace-style plugin:
+
+1. In root, update pnpm-workspace.yaml to include:
+   - apps/frontend
+   - packages/ui
+   - packages/plugins/**
+
+2. Create `apps/frontend`:
+   - Vite React+TS scaffold
+   - Depend on `packages/ui` and `packages/plugins/*`
+   - Update tailwind.config.js to include UI package styles
+
+3. Create `packages/ui`:
+   - Button, ProgressBar, Toast, Modal components
+   - Export a design system
+
+4. Create `packages/plugins/marketplace-sync`:
+   - `src/index.tsx` exporting `<SyncDashboard>` route
+   - `manifest.json` with plugin metadata
+
+5. In `apps/frontend/src/plugins.ts`:
+   - Dynamically import all `packages/plugins/*/manifest.json`
+   - Register plugin routes with React Router
+
+6. Update `apps/frontend/src/main.tsx`:
+   - Load `plugins.ts`
+   - Render `<Routes>` for core and plugin paths
+
+7. Update `turbo.json`:
+   - Ensure `build`, `lint`, `test` pipelines include apps/frontend and packages/**
+
+8. Add GitHub Actions:
+   - CI: workspace install, turbo lint/test
+   - CD: turbo build → deploy `apps/frontend` static into Flask gateway
+
+9. Write tests:
+   - Unit for UI components in `packages/ui`
+   - E2E: launch `apps/frontend`, navigate to `/marketplace/sync`, simulate “Start Sync”
+
+10. Document in root README:
+    - How to add new plugins (drop into `packages/plugins`)
+    - How to run, build, and deploy monorepo
+
+Focus on a seamless developer DX, shared styles, and a pluggable marketplace so future features live in their own packages.
+```
+
+You can paste that prompt into your Replit AI Agent in the TerraFusionPlayground workspace to spin up the migration, monorepo wiring, and marketplace plugin architecture all at once.
