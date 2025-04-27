@@ -1,12 +1,38 @@
-// Export all components
-export { SyncDashboard } from './components/SyncDashboard';
-export { NewSyncWizard } from './components/NewSyncWizard';
-export { SyncDetails } from './components/SyncDetails';
+import { SyncDashboard } from './components/SyncDashboard';
+import { NewSyncWizard } from './components/NewSyncWizard';
+import { SyncDetails } from './components/SyncDetails';
 
-// Import the plugin manifest
-import manifest from '../manifest.json';
+// Export components
+export { SyncDashboard, NewSyncWizard, SyncDetails };
 
-// Export plugin information
+// Plugin information including routes
 export const pluginInfo = {
-  ...manifest
+  name: 'Marketplace Sync',
+  version: '0.1.0',
+  description: 'Synchronize data across marketplace systems.',
+  routes: [
+    {
+      path: '/sync-dashboard',
+      component: 'SyncDashboard',
+      exact: true,
+      name: 'Sync Dashboard',
+      menuItem: true,
+      menuGroup: 'Data Operations',
+      menuIcon: 'sync-alt'
+    },
+    {
+      path: '/sync-new',
+      component: 'NewSyncWizard',
+      exact: true,
+      name: 'New Sync Operation',
+      menuItem: false
+    },
+    {
+      path: '/sync-details/:id',
+      component: 'SyncDetails',
+      exact: true,
+      name: 'Sync Details',
+      menuItem: false
+    }
+  ]
 };
