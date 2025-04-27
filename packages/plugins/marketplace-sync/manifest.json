@@ -1,0 +1,38 @@
+{
+  "name": "marketplace-sync",
+  "displayName": "Marketplace Sync",
+  "version": "0.1.0",
+  "description": "Marketplace-style sync wizard for TerraFusion",
+  "icon": "sync-alt",
+  "routes": [
+    {
+      "path": "/marketplace/sync",
+      "component": "SyncDashboard",
+      "exact": true,
+      "name": "Sync Marketplace",
+      "menuItem": true,
+      "menuGroup": "Sync",
+      "menuIcon": "sync-alt"
+    },
+    {
+      "path": "/marketplace/sync/new",
+      "component": "NewSyncWizard",
+      "exact": true,
+      "name": "New Sync",
+      "menuItem": false
+    },
+    {
+      "path": "/marketplace/sync/:id",
+      "component": "SyncDetails",
+      "exact": true,
+      "name": "Sync Details",
+      "menuItem": false
+    }
+  ],
+  "permissions": [
+    "read:sync",
+    "write:sync"
+  ],
+  "apiPrefix": "/api/marketplace-sync",
+  "entryPoint": "./src/index.tsx"
+}
