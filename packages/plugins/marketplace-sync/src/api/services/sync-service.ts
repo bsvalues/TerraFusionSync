@@ -1,663 +1,677 @@
-import { v4 as uuidv4 } from 'uuid';
+/**
+ * Sync Service
+ * Handles business logic for sync operations
+ */
 
 // Type definitions
-export type SyncStatus = 'active' | 'completed' | 'failed' | 'pending' | 'scheduled';
-
 export interface SyncOperation {
   id: string;
   name: string;
-  status: SyncStatus;
+  description?: string;
   source: string;
   target: string;
   dataType: string;
   fields: string[];
   fieldMapping: Record<string, string>;
-  filters?: string;
-  progress: number;
-  recordsTotal: number;
-  recordsProcessed: number;
-  recordsFailed: number;
-  startTime: string;
-  endTime?: string;
-  scheduledTime?: string;
-  frequency?: string;
-  isRecurring: boolean;
-  lastRunStatus?: string;
+  filters?: Record<string, any>;
+  status: SyncStatus;
+  schedule?: {
+    frequency: 'once' | 'daily' | 'weekly' | 'monthly';
+    startDate: string;
+    startTime: string;
+    isRecurring: boolean;
+    daysOfWeek?: number[];
+    dayOfMonth?: number;
+  };
+  lastRunAt?: string;
+  nextRunAt?: string;
   createdAt: string;
   updatedAt: string;
+  totalRecords?: number;
+  processedRecords?: number;
+  failedRecords?: number;
+  errorMessage?: string;
+  createdBy?: string;
 }
+
+export type SyncStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'scheduled';
 
 export interface SyncHistoryEntry {
   id: string;
-  syncId: string;
-  timestamp: string;
-  event: string;
-  status: string;
-  details?: string;
-  recordsProcessed?: number;
-  recordsTotal?: number;
-  duration?: number;
+  syncOperationId: string;
+  startTime: string;
+  endTime?: string;
+  status: SyncStatus;
+  totalRecords: number;
+  processedRecords: number;
+  failedRecords: number;
+  errorDetails?: Record<string, any>;
 }
 
 export interface SystemInfo {
   id: string;
   name: string;
   type: string;
-  connectionDetails: Record<string, any>;
+  description: string;
+  connectionDetails: {
+    url?: string;
+    apiKey?: boolean;
+    oauth?: boolean;
+    useCredentials?: boolean;
+  };
 }
 
 export interface DataTypeInfo {
   id: string;
   name: string;
-  fields: string[];
+  description: string;
+  fields: Array<{
+    name: string;
+    type: string;
+    required: boolean;
+    description?: string;
+  }>;
+  sourceSystemId?: string;
 }
 
-export interface MetricsData {
-  totalOperations: number;
-  activeOperations: number;
-  completedOperations: number;
-  failedOperations: number;
-  averageDuration: number;
-  totalRecordsProcessed: number;
-  successRate: number;
-  operationsBySystem: Record<string, number>;
-  operationsByDataType: Record<string, number>;
+export interface PaginatedResult<T> {
+  items: T[];
+  total: number;
 }
 
-export interface FilterOptions {
-  page: number;
-  limit: number;
-  status?: string;
-  source?: string;
-  target?: string;
-  dataType?: string;
-  fromDate?: string;
-  toDate?: string;
-}
-
-// Systems and data types
-const availableSystems: SystemInfo[] = [
-  {
-    id: 'erp',
-    name: 'ERP System',
-    type: 'enterprise',
-    connectionDetails: {
-      url: 'https://api.erp-example.com',
-      authType: 'OAuth2',
-    },
-  },
-  {
-    id: 'crm',
-    name: 'CRM Platform',
-    type: 'enterprise',
-    connectionDetails: {
-      url: 'https://api.crm-example.com',
-      authType: 'Basic',
-    },
-  },
-  {
-    id: 'ecommerce',
-    name: 'E-commerce Platform',
-    type: 'ecommerce',
-    connectionDetails: {
-      url: 'https://api.ecommerce-example.com',
-      authType: 'API Key',
-    },
-  },
-  {
-    id: 'warehouse',
-    name: 'Warehouse Management',
-    type: 'logistics',
-    connectionDetails: {
-      url: 'https://api.warehouse-example.com',
-      authType: 'API Key',
-    },
-  },
-  {
-    id: 'marketplace',
-    name: 'Online Marketplace',
-    type: 'ecommerce',
-    connectionDetails: {
-      url: 'https://api.marketplace-example.com',
-      authType: 'OAuth2',
-    },
-  },
-  {
-    id: 'accounting',
-    name: 'Accounting System',
-    type: 'finance',
-    connectionDetails: {
-      url: 'https://api.accounting-example.com',
-      authType: 'Basic',
-    },
-  },
-];
-
-const dataTypes: DataTypeInfo[] = [
-  {
-    id: 'products',
-    name: 'Products',
-    fields: ['sku', 'name', 'description', 'price', 'inventory', 'category'],
-  },
-  {
-    id: 'customers',
-    name: 'Customers',
-    fields: ['id', 'name', 'email', 'phone', 'address', 'segment'],
-  },
-  {
-    id: 'orders',
-    name: 'Orders',
-    fields: ['id', 'customer_id', 'date', 'total', 'status', 'items'],
-  },
-  {
-    id: 'inventory',
-    name: 'Inventory',
-    fields: ['sku', 'quantity', 'location', 'status', 'last_updated'],
-  },
-  {
-    id: 'pricing',
-    name: 'Pricing',
-    fields: ['sku', 'base_price', 'discount', 'special_price', 'effective_date'],
-  },
-];
-
-// In-memory data storage (in a real app, this would be a database)
+// In-memory storage for development
 let syncOperations: SyncOperation[] = [];
 let syncHistory: SyncHistoryEntry[] = [];
 
-// SyncService implementation
-export class SyncService {
-  /**
-   * Get all sync operations with optional filtering
-   */
-  static async list(filters: FilterOptions): Promise<SyncOperation[]> {
-    let result = [...syncOperations];
-    
-    // Apply filters
-    if (filters.status) {
-      result = result.filter(op => op.status === filters.status);
-    }
-    
-    if (filters.source) {
-      result = result.filter(op => op.source === filters.source);
-    }
-    
-    if (filters.target) {
-      result = result.filter(op => op.target === filters.target);
-    }
-    
-    if (filters.dataType) {
-      result = result.filter(op => op.dataType === filters.dataType);
-    }
-    
-    if (filters.fromDate) {
-      const fromDate = new Date(filters.fromDate);
-      result = result.filter(op => new Date(op.createdAt) >= fromDate);
-    }
-    
-    if (filters.toDate) {
-      const toDate = new Date(filters.toDate);
-      result = result.filter(op => new Date(op.createdAt) <= toDate);
-    }
-    
-    // Sort by creation date descending
-    result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    
-    // Apply pagination
-    const startIndex = (filters.page - 1) * filters.limit;
-    return result.slice(startIndex, startIndex + filters.limit);
+// Initialize with sample data
+initializeSampleData();
+
+/**
+ * Get all sync operations with optional filtering and pagination
+ */
+export async function getSyncOperations(
+  page: number = 1,
+  limit: number = 20,
+  filters: Record<string, any> = {}
+): Promise<PaginatedResult<SyncOperation>> {
+  let filteredOperations = [...syncOperations];
+  
+  // Apply filters
+  if (filters.status) {
+    filteredOperations = filteredOperations.filter(op => op.status === filters.status);
   }
   
-  /**
-   * Count total number of sync operations matching filters
-   */
-  static async count(filters: FilterOptions): Promise<number> {
-    let result = [...syncOperations];
-    
-    if (filters.status) {
-      result = result.filter(op => op.status === filters.status);
-    }
-    
-    if (filters.source) {
-      result = result.filter(op => op.source === filters.source);
-    }
-    
-    if (filters.target) {
-      result = result.filter(op => op.target === filters.target);
-    }
-    
-    if (filters.dataType) {
-      result = result.filter(op => op.dataType === filters.dataType);
-    }
-    
-    if (filters.fromDate) {
-      const fromDate = new Date(filters.fromDate);
-      result = result.filter(op => new Date(op.createdAt) >= fromDate);
-    }
-    
-    if (filters.toDate) {
-      const toDate = new Date(filters.toDate);
-      result = result.filter(op => new Date(op.createdAt) <= toDate);
-    }
-    
-    return result.length;
+  if (filters.source) {
+    filteredOperations = filteredOperations.filter(op => op.source === filters.source);
   }
   
-  /**
-   * Get a specific sync operation by ID
-   */
-  static async get(id: string): Promise<SyncOperation | null> {
-    const operation = syncOperations.find(op => op.id === id);
-    return operation || null;
+  if (filters.target) {
+    filteredOperations = filteredOperations.filter(op => op.target === filters.target);
   }
   
-  /**
-   * Create a new sync operation
-   */
-  static async create(data: any): Promise<SyncOperation> {
-    const id = uuidv4();
-    const now = new Date().toISOString();
-    
-    // Determine initial status based on schedule
-    let status: SyncStatus = 'pending';
-    const scheduledTime = `${data.schedule.startDate}T${data.schedule.startTime}:00.000Z`;
-    const scheduledDate = new Date(scheduledTime);
-    
-    if (scheduledDate > new Date()) {
-      status = 'scheduled';
-    }
-    
-    const newOperation: SyncOperation = {
-      id,
-      name: data.name,
-      status,
-      source: data.source,
-      target: data.target,
-      dataType: data.dataType,
-      fields: data.fields,
-      fieldMapping: data.fieldMapping,
-      filters: data.filters,
-      progress: 0,
-      recordsTotal: 0,
-      recordsProcessed: 0,
-      recordsFailed: 0,
-      startTime: scheduledTime,
-      isRecurring: data.schedule.isRecurring,
-      frequency: data.schedule.frequency,
-      createdAt: now,
-      updatedAt: now
-    };
-    
-    syncOperations.push(newOperation);
-    
-    // Create initial history entry
-    const historyEntry: SyncHistoryEntry = {
-      id: uuidv4(),
-      syncId: id,
-      timestamp: now,
-      event: 'sync_created',
-      status: 'info',
-      details: 'Sync operation created'
-    };
-    
-    syncHistory.push(historyEntry);
-    
-    // Simulate starting a scheduled sync process
-    if (status === 'pending') {
-      setTimeout(() => {
-        this.simulateSync(id);
-      }, 1000);
-    }
-    
-    return newOperation;
+  if (filters.dataType) {
+    filteredOperations = filteredOperations.filter(op => op.dataType === filters.dataType);
   }
   
-  /**
-   * Update a sync operation
-   */
-  static async update(id: string, data: any): Promise<SyncOperation> {
-    const index = syncOperations.findIndex(op => op.id === id);
-    if (index === -1) {
-      throw new Error('Sync operation not found');
-    }
-    
-    const operation = syncOperations[index];
-    const now = new Date().toISOString();
-    
-    const updatedOperation = {
-      ...operation,
-      ...data,
-      updatedAt: now
-    };
-    
-    syncOperations[index] = updatedOperation;
-    
-    // Create history entry for the update
-    const historyEntry: SyncHistoryEntry = {
-      id: uuidv4(),
-      syncId: id,
-      timestamp: now,
-      event: 'sync_updated',
-      status: 'info',
-      details: 'Sync operation updated'
-    };
-    
-    syncHistory.push(historyEntry);
-    
-    return updatedOperation;
+  // Sort by updated date (most recent first)
+  filteredOperations.sort((a, b) => 
+    new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  );
+  
+  // Calculate pagination
+  const startIndex = (page - 1) * limit;
+  const endIndex = startIndex + limit;
+  const paginatedOperations = filteredOperations.slice(startIndex, endIndex);
+  
+  return {
+    items: paginatedOperations,
+    total: filteredOperations.length
+  };
+}
+
+/**
+ * Get a specific sync operation by ID
+ */
+export async function getSyncOperation(id: string): Promise<SyncOperation | null> {
+  const operation = syncOperations.find(op => op.id === id);
+  return operation || null;
+}
+
+/**
+ * Create a new sync operation
+ */
+export async function createSyncOperation(operation: SyncOperation): Promise<SyncOperation> {
+  // Set default next run time if scheduled
+  if (operation.schedule?.isRecurring) {
+    operation.nextRunAt = calculateNextRunTime(operation.schedule);
   }
   
-  /**
-   * Retry a failed sync operation
-   */
-  static async retry(id: string): Promise<SyncOperation> {
-    const index = syncOperations.findIndex(op => op.id === id);
-    if (index === -1) {
-      throw new Error('Sync operation not found');
-    }
-    
-    const operation = syncOperations[index];
-    if (operation.status !== 'failed') {
-      throw new Error('Only failed operations can be retried');
-    }
-    
-    const now = new Date().toISOString();
-    
-    const updatedOperation = {
-      ...operation,
-      status: 'pending' as SyncStatus,
-      progress: 0,
-      recordsProcessed: 0,
-      recordsFailed: 0,
-      startTime: now,
-      endTime: undefined,
-      lastRunStatus: undefined,
-      updatedAt: now
-    };
-    
-    syncOperations[index] = updatedOperation;
-    
-    // Create history entry for retry
-    const historyEntry: SyncHistoryEntry = {
-      id: uuidv4(),
-      syncId: id,
-      timestamp: now,
-      event: 'sync_retried',
-      status: 'info',
-      details: 'Sync operation retried'
-    };
-    
-    syncHistory.push(historyEntry);
-    
-    // Simulate the retried sync process
-    setTimeout(() => {
-      this.simulateSync(id);
-    }, 1000);
-    
-    return updatedOperation;
+  syncOperations.push(operation);
+  return operation;
+}
+
+/**
+ * Update an existing sync operation
+ */
+export async function updateSyncOperation(
+  id: string,
+  updates: Partial<SyncOperation>
+): Promise<SyncOperation> {
+  const index = syncOperations.findIndex(op => op.id === id);
+  
+  if (index === -1) {
+    throw new Error(`Sync operation with ID ${id} not found`);
   }
   
-  /**
-   * Cancel an active sync operation
-   */
-  static async cancel(id: string): Promise<SyncOperation> {
-    const index = syncOperations.findIndex(op => op.id === id);
-    if (index === -1) {
-      throw new Error('Sync operation not found');
+  // Update schedule-related fields
+  if (updates.schedule) {
+    updates.nextRunAt = calculateNextRunTime(updates.schedule);
+  }
+  
+  // Merge with existing operation
+  syncOperations[index] = {
+    ...syncOperations[index],
+    ...updates,
+    updatedAt: new Date().toISOString()
+  };
+  
+  return syncOperations[index];
+}
+
+/**
+ * Delete a sync operation
+ */
+export async function deleteSyncOperation(id: string): Promise<void> {
+  const index = syncOperations.findIndex(op => op.id === id);
+  
+  if (index === -1) {
+    throw new Error(`Sync operation with ID ${id} not found`);
+  }
+  
+  syncOperations.splice(index, 1);
+  
+  // Also remove history entries
+  syncHistory = syncHistory.filter(h => h.syncOperationId !== id);
+}
+
+/**
+ * Run a sync operation manually
+ */
+export async function runSyncOperation(id: string): Promise<SyncOperation> {
+  const operation = await getSyncOperation(id);
+  
+  if (!operation) {
+    throw new Error(`Sync operation with ID ${id} not found`);
+  }
+  
+  if (operation.status === 'running') {
+    throw new Error('This operation is already running');
+  }
+  
+  // Update operation status to running
+  await updateSyncOperation(id, { 
+    status: 'running',
+    lastRunAt: new Date().toISOString()
+  });
+  
+  // Create history entry
+  const historyEntry: SyncHistoryEntry = {
+    id: Math.random().toString(36).substring(2, 15),
+    syncOperationId: id,
+    startTime: new Date().toISOString(),
+    status: 'running',
+    totalRecords: 0,
+    processedRecords: 0,
+    failedRecords: 0
+  };
+  
+  syncHistory.push(historyEntry);
+  
+  // Simulate sync process
+  setTimeout(() => {
+    simulateSyncCompletion(id, historyEntry.id);
+  }, 2000);
+  
+  return await getSyncOperation(id) as SyncOperation;
+}
+
+/**
+ * Retry a failed sync operation
+ */
+export async function retrySyncOperation(id: string): Promise<SyncOperation> {
+  const operation = await getSyncOperation(id);
+  
+  if (!operation) {
+    throw new Error(`Sync operation with ID ${id} not found`);
+  }
+  
+  if (operation.status !== 'failed') {
+    throw new Error('Only failed operations can be retried');
+  }
+  
+  // Reset error info
+  await updateSyncOperation(id, {
+    status: 'pending',
+    errorMessage: undefined
+  });
+  
+  // Run the operation
+  return runSyncOperation(id);
+}
+
+/**
+ * Get history entries for a sync operation
+ */
+export async function getSyncHistory(operationId: string): Promise<SyncHistoryEntry[]> {
+  return syncHistory
+    .filter(h => h.syncOperationId === operationId)
+    .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+}
+
+/**
+ * Get all available systems
+ */
+export async function getAvailableSystems(): Promise<SystemInfo[]> {
+  return [
+    {
+      id: 'erp',
+      name: 'Enterprise Resource Planning',
+      type: 'ERP',
+      description: 'Core business management system',
+      connectionDetails: {
+        url: true,
+        apiKey: true,
+        useCredentials: false
+      }
+    },
+    {
+      id: 'crm',
+      name: 'Customer Relationship Management',
+      type: 'CRM',
+      description: 'Customer management system',
+      connectionDetails: {
+        url: true,
+        oauth: true,
+        useCredentials: false
+      }
+    },
+    {
+      id: 'ecommerce',
+      name: 'E-Commerce Platform',
+      type: 'E-Commerce',
+      description: 'Online store and product management',
+      connectionDetails: {
+        url: true,
+        apiKey: true,
+        useCredentials: false
+      }
+    },
+    {
+      id: 'warehouse',
+      name: 'Warehouse Management System',
+      type: 'WMS',
+      description: 'Inventory and warehouse management',
+      connectionDetails: {
+        url: true,
+        apiKey: false,
+        useCredentials: true
+      }
+    },
+    {
+      id: 'marketplace',
+      name: 'Marketplace Integration',
+      type: 'Marketplace',
+      description: 'Third-party marketplace connector',
+      connectionDetails: {
+        url: false,
+        apiKey: true,
+        oauth: false
+      }
     }
-    
-    const operation = syncOperations[index];
-    if (operation.status !== 'active' && operation.status !== 'scheduled') {
-      throw new Error('Only active or scheduled operations can be cancelled');
+  ];
+}
+
+/**
+ * Get all available data types
+ */
+export async function getAvailableDataTypes(): Promise<DataTypeInfo[]> {
+  return [
+    {
+      id: 'products',
+      name: 'Products',
+      description: 'Product catalog data',
+      fields: [
+        { name: 'sku', type: 'string', required: true, description: 'Unique product identifier' },
+        { name: 'name', type: 'string', required: true, description: 'Product name' },
+        { name: 'description', type: 'string', required: false, description: 'Product description' },
+        { name: 'price', type: 'number', required: true, description: 'Product price' },
+        { name: 'category', type: 'string', required: false, description: 'Product category' },
+        { name: 'imageUrl', type: 'string', required: false, description: 'Product image URL' },
+        { name: 'inStock', type: 'boolean', required: false, description: 'Product availability' }
+      ]
+    },
+    {
+      id: 'orders',
+      name: 'Orders',
+      description: 'Customer order data',
+      fields: [
+        { name: 'orderId', type: 'string', required: true, description: 'Unique order identifier' },
+        { name: 'customerId', type: 'string', required: true, description: 'Customer identifier' },
+        { name: 'orderDate', type: 'date', required: true, description: 'Order date' },
+        { name: 'status', type: 'string', required: true, description: 'Order status' },
+        { name: 'total', type: 'number', required: true, description: 'Order total' },
+        { name: 'items', type: 'array', required: true, description: 'Order line items' },
+        { name: 'shippingAddress', type: 'object', required: false, description: 'Shipping address' }
+      ]
+    },
+    {
+      id: 'customers',
+      name: 'Customers',
+      description: 'Customer profile data',
+      fields: [
+        { name: 'id', type: 'string', required: true, description: 'Unique customer identifier' },
+        { name: 'name', type: 'string', required: true, description: 'Customer name' },
+        { name: 'email', type: 'string', required: true, description: 'Customer email' },
+        { name: 'phone', type: 'string', required: false, description: 'Customer phone' },
+        { name: 'addresses', type: 'array', required: false, description: 'Customer addresses' },
+        { name: 'createdAt', type: 'date', required: false, description: 'Customer creation date' },
+        { name: 'lastOrderDate', type: 'date', required: false, description: 'Last order date' }
+      ]
+    },
+    {
+      id: 'inventory',
+      name: 'Inventory',
+      description: 'Inventory and stock data',
+      fields: [
+        { name: 'sku', type: 'string', required: true, description: 'Product SKU' },
+        { name: 'quantity', type: 'number', required: true, description: 'Available quantity' },
+        { name: 'warehouseId', type: 'string', required: false, description: 'Warehouse identifier' },
+        { name: 'location', type: 'string', required: false, description: 'Storage location' },
+        { name: 'lastUpdated', type: 'date', required: false, description: 'Last update timestamp' },
+        { name: 'minStockLevel', type: 'number', required: false, description: 'Minimum stock level' },
+        { name: 'onOrder', type: 'number', required: false, description: 'Quantity on order' }
+      ]
     }
-    
-    const now = new Date().toISOString();
-    
-    const updatedOperation = {
-      ...operation,
-      status: 'pending' as SyncStatus,
-      updatedAt: now
-    };
-    
-    syncOperations[index] = updatedOperation;
-    
-    // Create history entry for cancellation
-    const historyEntry: SyncHistoryEntry = {
-      id: uuidv4(),
-      syncId: id,
-      timestamp: now,
-      event: 'sync_cancelled',
-      status: 'warning',
-      details: 'Sync operation cancelled by user'
-    };
-    
-    syncHistory.push(historyEntry);
-    
-    return updatedOperation;
-  }
-  
-  /**
-   * Get history for a sync operation
-   */
-  static async getHistory(id: string): Promise<SyncHistoryEntry[]> {
-    return syncHistory
-      .filter(entry => entry.syncId === id)
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }
-  
-  /**
-   * Get available systems
-   */
-  static async getSystems(): Promise<SystemInfo[]> {
-    return availableSystems;
-  }
-  
-  /**
-   * Get available data types
-   */
-  static async getDataTypes(): Promise<DataTypeInfo[]> {
-    return dataTypes;
-  }
-  
-  /**
-   * Get metrics for sync operations
-   */
-  static async getMetrics(): Promise<MetricsData> {
-    const totalOperations = syncOperations.length;
-    const activeOperations = syncOperations.filter(op => op.status === 'active').length;
-    const completedOperations = syncOperations.filter(op => op.status === 'completed').length;
-    const failedOperations = syncOperations.filter(op => op.status === 'failed').length;
-    
-    // Calculate average duration for completed operations
-    const completedOps = syncOperations.filter(op => op.status === 'completed' && op.endTime);
-    let averageDuration = 0;
-    
-    if (completedOps.length > 0) {
-      const totalDuration = completedOps.reduce((sum, op) => {
-        const start = new Date(op.startTime).getTime();
-        const end = new Date(op.endTime!).getTime();
-        return sum + (end - start);
-      }, 0);
-      
-      averageDuration = totalDuration / completedOps.length / 1000; // in seconds
+  ];
+}
+
+/**
+ * Initialize sample data for development
+ */
+function initializeSampleData() {
+  // Sample sync operations
+  syncOperations = [
+    {
+      id: 'sync-1',
+      name: 'Product Catalog Sync',
+      description: 'Sync products from ERP to E-Commerce platform',
+      source: 'erp',
+      target: 'ecommerce',
+      dataType: 'products',
+      fields: ['sku', 'name', 'description', 'price', 'category', 'imageUrl'],
+      fieldMapping: {
+        sku: 'product_id',
+        name: 'title',
+        description: 'description',
+        price: 'price',
+        category: 'category',
+        imageUrl: 'image'
+      },
+      status: 'completed',
+      schedule: {
+        frequency: 'daily',
+        startDate: '2025-04-01',
+        startTime: '01:00',
+        isRecurring: true
+      },
+      lastRunAt: '2025-04-26T01:00:00Z',
+      nextRunAt: '2025-04-27T01:00:00Z',
+      createdAt: '2025-03-15T14:22:10Z',
+      updatedAt: '2025-04-26T01:15:23Z',
+      totalRecords: 1250,
+      processedRecords: 1250,
+      failedRecords: 0
+    },
+    {
+      id: 'sync-2',
+      name: 'Customer Data Integration',
+      description: 'Sync customer data from CRM to E-Commerce',
+      source: 'crm',
+      target: 'ecommerce',
+      dataType: 'customers',
+      fields: ['id', 'name', 'email', 'phone', 'addresses'],
+      fieldMapping: {
+        id: 'customer_id',
+        name: 'full_name',
+        email: 'email_address',
+        phone: 'phone_number',
+        addresses: 'addresses'
+      },
+      status: 'failed',
+      schedule: {
+        frequency: 'weekly',
+        startDate: '2025-04-05',
+        startTime: '02:30',
+        isRecurring: true,
+        daysOfWeek: [6] // Saturday
+      },
+      lastRunAt: '2025-04-26T02:30:00Z',
+      nextRunAt: '2025-05-03T02:30:00Z',
+      createdAt: '2025-03-20T09:45:33Z',
+      updatedAt: '2025-04-26T02:42:18Z',
+      totalRecords: 3500,
+      processedRecords: 2980,
+      failedRecords: 520,
+      errorMessage: 'Invalid email format for 520 customer records'
+    },
+    {
+      id: 'sync-3',
+      name: 'Inventory Update',
+      description: 'Sync inventory data from Warehouse to Marketplace',
+      source: 'warehouse',
+      target: 'marketplace',
+      dataType: 'inventory',
+      fields: ['sku', 'quantity'],
+      fieldMapping: {
+        sku: 'product_id',
+        quantity: 'stock'
+      },
+      status: 'scheduled',
+      schedule: {
+        frequency: 'daily',
+        startDate: '2025-04-01',
+        startTime: '04:00',
+        isRecurring: true
+      },
+      nextRunAt: '2025-04-27T04:00:00Z',
+      createdAt: '2025-04-01T15:30:00Z',
+      updatedAt: '2025-04-26T04:15:12Z'
     }
-    
-    // Calculate total records processed
-    const totalRecordsProcessed = syncOperations.reduce((sum, op) => sum + op.recordsProcessed, 0);
-    
-    // Calculate success rate
-    const totalRecords = syncOperations.reduce((sum, op) => sum + op.recordsProcessed + op.recordsFailed, 0);
-    const successRate = totalRecords > 0 ? (totalRecordsProcessed / totalRecords) * 100 : 100;
-    
-    // Operations by system
-    const operationsBySystem: Record<string, number> = {};
-    syncOperations.forEach(op => {
-      operationsBySystem[op.source] = (operationsBySystem[op.source] || 0) + 1;
-      operationsBySystem[op.target] = (operationsBySystem[op.target] || 0) + 1;
+  ];
+  
+  // Sample sync history
+  syncHistory = [
+    {
+      id: 'history-1',
+      syncOperationId: 'sync-1',
+      startTime: '2025-04-26T01:00:00Z',
+      endTime: '2025-04-26T01:15:23Z',
+      status: 'completed',
+      totalRecords: 1250,
+      processedRecords: 1250,
+      failedRecords: 0
+    },
+    {
+      id: 'history-2',
+      syncOperationId: 'sync-1',
+      startTime: '2025-04-25T01:00:00Z',
+      endTime: '2025-04-25T01:14:48Z',
+      status: 'completed',
+      totalRecords: 1245,
+      processedRecords: 1245,
+      failedRecords: 0
+    },
+    {
+      id: 'history-3',
+      syncOperationId: 'sync-2',
+      startTime: '2025-04-26T02:30:00Z',
+      endTime: '2025-04-26T02:42:18Z',
+      status: 'failed',
+      totalRecords: 3500,
+      processedRecords: 2980,
+      failedRecords: 520,
+      errorDetails: {
+        message: 'Invalid email format for 520 customer records',
+        failedRecords: [
+          { id: 'cust-1001', error: 'Invalid email format' },
+          { id: 'cust-1002', error: 'Invalid email format' },
+          // More records would be here
+        ]
+      }
+    }
+  ];
+}
+
+/**
+ * Simulate completion of a sync operation
+ * This would be replaced with actual sync logic in production
+ */
+async function simulateSyncCompletion(operationId: string, historyId: string) {
+  // Get the current operation
+  const operation = await getSyncOperation(operationId);
+  if (!operation) return;
+  
+  // Find the history entry
+  const historyIndex = syncHistory.findIndex(h => h.id === historyId);
+  if (historyIndex === -1) return;
+  
+  // Randomly decide if operation succeeds or fails (80% success rate)
+  const isSuccess = Math.random() > 0.2;
+  
+  // Update total records
+  const totalRecords = Math.floor(Math.random() * 1000) + 100;
+  
+  if (isSuccess) {
+    // Success case
+    await updateSyncOperation(operationId, {
+      status: 'completed',
+      totalRecords,
+      processedRecords: totalRecords,
+      failedRecords: 0,
+      errorMessage: undefined
     });
     
-    // Operations by data type
-    const operationsByDataType: Record<string, number> = {};
-    syncOperations.forEach(op => {
-      operationsByDataType[op.dataType] = (operationsByDataType[op.dataType] || 0) + 1;
+    // Update history
+    syncHistory[historyIndex] = {
+      ...syncHistory[historyIndex],
+      endTime: new Date().toISOString(),
+      status: 'completed',
+      totalRecords,
+      processedRecords: totalRecords,
+      failedRecords: 0
+    };
+  } else {
+    // Failure case
+    const failedRecords = Math.floor(totalRecords * Math.random() * 0.5);
+    const processedRecords = totalRecords - failedRecords;
+    const errorMessage = 'Sync operation partially failed';
+    
+    await updateSyncOperation(operationId, {
+      status: 'failed',
+      totalRecords,
+      processedRecords,
+      failedRecords,
+      errorMessage
     });
     
-    return {
-      totalOperations,
-      activeOperations,
-      completedOperations,
-      failedOperations,
-      averageDuration,
-      totalRecordsProcessed,
-      successRate,
-      operationsBySystem,
-      operationsByDataType
+    // Update history
+    syncHistory[historyIndex] = {
+      ...syncHistory[historyIndex],
+      endTime: new Date().toISOString(),
+      status: 'failed',
+      totalRecords,
+      processedRecords,
+      failedRecords,
+      errorDetails: {
+        message: errorMessage,
+        failedRecords: [
+          { id: 'sample-1', error: 'Processing error' },
+          { id: 'sample-2', error: 'Validation failed' }
+        ]
+      }
     };
   }
   
-  /**
-   * Simulate a sync process (for demo purposes)
-   */
-  private static simulateSync(id: string) {
-    const index = syncOperations.findIndex(op => op.id === id);
-    if (index === -1) return;
-    
-    const operation = syncOperations[index];
-    const now = new Date().toISOString();
-    
-    // Set operation to active
-    syncOperations[index] = {
-      ...operation,
-      status: 'active',
-      progress: 0,
-      updatedAt: now
-    };
-    
-    // Create history entry for sync start
-    syncHistory.push({
-      id: uuidv4(),
-      syncId: id,
-      timestamp: now,
-      event: 'sync_started',
-      status: 'info',
-      details: 'Sync operation started'
+  // If operation is recurring, update next run time
+  if (operation.schedule?.isRecurring) {
+    await updateSyncOperation(operationId, {
+      nextRunAt: calculateNextRunTime(operation.schedule)
     });
-    
-    // Simulate a random number of total records
-    const totalRecords = Math.floor(Math.random() * 1000) + 500;
-    
-    // Update total records
-    syncOperations[index] = {
-      ...syncOperations[index],
-      recordsTotal: totalRecords
-    };
-    
-    // Simulate progress updates
-    let currentProgress = 0;
-    let processedRecords = 0;
-    let failedRecords = 0;
-    
-    const progressInterval = setInterval(() => {
-      // Check if the operation still exists and is active
-      const currentIndex = syncOperations.findIndex(op => op.id === id);
-      if (currentIndex === -1 || syncOperations[currentIndex].status !== 'active') {
-        clearInterval(progressInterval);
-        return;
-      }
+  }
+}
+
+/**
+ * Calculate the next run time based on schedule configuration
+ */
+function calculateNextRunTime(schedule: SyncOperation['schedule']): string {
+  if (!schedule || !schedule.isRecurring) return '';
+  
+  const now = new Date();
+  const [hour, minute] = schedule.startTime.split(':').map(part => parseInt(part, 10));
+  let nextRun = new Date(now);
+  
+  // Set the time part
+  nextRun.setHours(hour, minute, 0, 0);
+  
+  // If this time has already passed today, start from tomorrow
+  if (nextRun <= now) {
+    nextRun.setDate(nextRun.getDate() + 1);
+  }
+  
+  switch (schedule.frequency) {
+    case 'daily':
+      // Already set for the next day above
+      break;
       
-      // Random progress increment (5-15%)
-      const increment = Math.random() * 10 + 5;
-      currentProgress = Math.min(currentProgress + increment, 100);
-      
-      // Calculate processed records based on progress
-      const newProcessedRecords = Math.floor((currentProgress / 100) * totalRecords);
-      
-      // Simulate some failed records
-      const newFailedRecords = Math.floor(Math.random() * 0.05 * (newProcessedRecords - processedRecords));
-      
-      processedRecords = newProcessedRecords - newFailedRecords;
-      failedRecords += newFailedRecords;
-      
-      // Update operation
-      syncOperations[currentIndex] = {
-        ...syncOperations[currentIndex],
-        progress: Math.round(currentProgress),
-        recordsProcessed: processedRecords,
-        recordsFailed: failedRecords,
-        updatedAt: new Date().toISOString()
-      };
-      
-      // Add progress history entry (but not too frequently)
-      if (Math.random() > 0.7) {
-        syncHistory.push({
-          id: uuidv4(),
-          syncId: id,
-          timestamp: new Date().toISOString(),
-          event: 'processing',
-          status: 'info',
-          details: `Processed ${Math.round(currentProgress)}% of records`,
-          recordsProcessed: processedRecords,
-          recordsTotal: totalRecords
-        });
-      }
-      
-      // Randomly add error entries
-      if (newFailedRecords > 0 && Math.random() > 0.7) {
-        syncHistory.push({
-          id: uuidv4(),
-          syncId: id,
-          timestamp: new Date().toISOString(),
-          event: 'error',
-          status: 'warning',
-          details: `Failed to process ${newFailedRecords} records due to validation errors`
-        });
-      }
-      
-      // When progress reaches 100%, complete the operation or fail it
-      if (currentProgress >= 100) {
-        clearInterval(progressInterval);
+    case 'weekly':
+      if (schedule.daysOfWeek && schedule.daysOfWeek.length > 0) {
+        // Find the next day that matches one in daysOfWeek
+        // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+        const currentDay = nextRun.getDay();
+        const validDays = schedule.daysOfWeek.sort();
         
-        // 10% chance of failing the operation
-        const shouldFail = Math.random() < 0.1;
+        let daysToAdd = 0;
+        let found = false;
         
-        if (shouldFail) {
-          syncOperations[currentIndex] = {
-            ...syncOperations[currentIndex],
-            status: 'failed',
-            endTime: new Date().toISOString(),
-            lastRunStatus: 'Error: Connection to target system lost',
-            updatedAt: new Date().toISOString()
-          };
-          
-          syncHistory.push({
-            id: uuidv4(),
-            syncId: id,
-            timestamp: new Date().toISOString(),
-            event: 'sync_failed',
-            status: 'error',
-            details: 'Sync operation failed: Connection to target system lost'
-          });
-        } else {
-          syncOperations[currentIndex] = {
-            ...syncOperations[currentIndex],
-            status: 'completed',
-            progress: 100,
-            endTime: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          };
-          
-          syncHistory.push({
-            id: uuidv4(),
-            syncId: id,
-            timestamp: new Date().toISOString(),
-            event: 'sync_completed',
-            status: 'info',
-            details: 'Sync operation completed successfully',
-            recordsProcessed: processedRecords,
-            recordsTotal: totalRecords
-          });
+        for (let i = 0; i < 7; i++) {
+          const checkDay = (currentDay + i) % 7;
+          if (validDays.includes(checkDay)) {
+            daysToAdd = i;
+            found = true;
+            break;
+          }
         }
+        
+        if (found) {
+          nextRun.setDate(nextRun.getDate() + daysToAdd);
+        }
+      } else {
+        // Default to same day next week
+        nextRun.setDate(nextRun.getDate() + 7);
       }
-    }, 1000);
+      break;
+      
+    case 'monthly':
+      const targetDay = schedule.dayOfMonth || now.getDate();
+      
+      // Move to the next month
+      nextRun.setMonth(nextRun.getMonth() + 1);
+      
+      // Set the target day, clamping to the last day of the month if needed
+      const daysInMonth = new Date(nextRun.getFullYear(), nextRun.getMonth() + 1, 0).getDate();
+      nextRun.setDate(Math.min(targetDay, daysInMonth));
+      break;
   }
+  
+  return nextRun.toISOString();
 }

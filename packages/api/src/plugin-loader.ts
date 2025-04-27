@@ -1,48 +1,84 @@
-import express, { Router } from 'express';
-import { existsSync } from 'fs';
+import { Express } from 'express';
+import fs from 'fs';
 import path from 'path';
 
 /**
- * Loads API routes from plugins dynamically.
- * 
- * This function looks for api routes in the plugin folders and registers them.
- * 
- * @param app Express application instance
+ * Plugin manifest interface
+ * Structure of a plugin's manifest.json file that defines its metadata and configuration
  */
-export function loadPluginRoutes(app: express.Application): void {
+interface PluginManifest {
+  name: string;
+  version: string;
+  description: string;
+  apiBasePath: string;
+  entryPoint: string;
+  dependencies?: string[];
+  permissions?: string[];
+}
+
+/**
+ * Load plugin manifest file
+ * Reads and parses a plugin's manifest.json file
+ */
+function loadPluginManifest(pluginDir: string): PluginManifest | null {
   try {
-    // Define the path to the plugins directory
-    const pluginsDir = path.resolve(__dirname, '../../plugins');
-    
-    console.log(`Loading plugin routes from: ${pluginsDir}`);
-    
-    // Look for marketplace-sync plugin first (our main plugin)
-    const syncPluginPath = path.join(pluginsDir, 'marketplace-sync');
-    
-    // Check if the plugin exists
-    if (existsSync(syncPluginPath)) {
-      try {
-        // Import the plugin's API router
-        const { apiRouter } = require(path.join(syncPluginPath, 'src'));
-        
-        if (apiRouter && typeof apiRouter === 'function') {
-          // Mount the router at the plugin-specific path
-          app.use('/api/plugins/marketplace-sync', apiRouter);
-          console.log('Mounted marketplace-sync plugin API at /api/plugins/marketplace-sync');
-        } else {
-          console.warn('Plugin marketplace-sync does not export a valid apiRouter');
-        }
-      } catch (err) {
-        console.error(`Error loading marketplace-sync plugin routes:`, err);
-      }
-    } else {
-      console.warn(`Plugin directory not found: ${syncPluginPath}`);
+    const manifestPath = path.join(pluginDir, 'manifest.json');
+    if (!fs.existsSync(manifestPath)) {
+      console.warn(`No manifest.json found in plugin directory: ${pluginDir}`);
+      return null;
     }
-    
-    // This could be expanded to scan all plugin folders and mount their apiRouters
-    // For now, we're just handling the marketplace-sync plugin
-    
+
+    const manifestContent = fs.readFileSync(manifestPath, 'utf8');
+    return JSON.parse(manifestContent) as PluginManifest;
   } catch (error) {
-    console.error('Error in loadPluginRoutes:', error);
+    console.error(`Error loading plugin manifest from ${pluginDir}:`, error);
+    return null;
   }
 }
+
+/**
+ * Load a plugin's routes
+ * Dynamically imports a plugin's routes and registers them with the Express app
+ */
+function loadPluginRoutes(app: Express): void {
+  try {
+    // Hardcoded for marketplace-sync plugin during development
+    // In a production system, this would scan the plugins directory
+    const pluginDir = path.resolve(__dirname, '../../plugins/marketplace-sync');
+    const manifest = loadPluginManifest(pluginDir);
+    
+    if (!manifest) {
+      console.warn('Could not load marketplace-sync plugin manifest');
+      return;
+    }
+    
+    // Import the plugin's router
+    // Note: In a more flexible setup, this would use the entryPoint from the manifest
+    const pluginRouterPath = '../../plugins/marketplace-sync/src/api/routes';
+    
+    try {
+      // Dynamic import
+      import(pluginRouterPath)
+        .then(module => {
+          const pluginRouter = module.pluginRouter;
+          if (!pluginRouter) {
+            console.error(`Plugin ${manifest.name} does not export a 'pluginRouter'`);
+            return;
+          }
+          
+          // Register the router under the plugin's API base path
+          app.use(`/api/plugins/${manifest.name}`, pluginRouter);
+          console.log(`Loaded plugin routes for: ${manifest.name} at /api/plugins/${manifest.name}`);
+        })
+        .catch(importError => {
+          console.error(`Failed to import plugin router from ${pluginRouterPath}:`, importError);
+        });
+    } catch (importError) {
+      console.error(`Failed to import plugin router from ${pluginRouterPath}:`, importError);
+    }
+  } catch (error) {
+    console.error('Error loading plugin routes:', error);
+  }
+}
+
+export { loadPluginRoutes };

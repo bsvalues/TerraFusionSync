@@ -1,311 +1,402 @@
-import { Router } from 'express';
-import { z } from 'zod';
-import { SyncService } from './services/sync-service';
+import express, { Request, Response } from 'express';
+import { v4 as uuidv4 } from 'uuid';
+import * as syncService from './services/sync-service';
+import { validateSyncOperation } from './validators/sync-validator';
 
-export const pluginRouter = Router();
+// Create router instance with mergeParams option
+const pluginRouter = express.Router({ mergeParams: true });
 
-// Validation schemas
-const CreateSyncSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
-  source: z.string().min(1, 'Source system is required'),
-  target: z.string().min(1, 'Target system is required'),
-  dataType: z.string().min(1, 'Data type is required'),
-  fields: z.array(z.string()).min(1, 'At least one field must be selected'),
-  fieldMapping: z.record(z.string()),
-  filters: z.string().optional(),
-  schedule: z.object({
-    frequency: z.enum(['once', 'hourly', 'daily', 'weekly', 'monthly']),
-    startDate: z.string(),
-    startTime: z.string(),
-    endDate: z.string().optional(),
-    isRecurring: z.boolean()
-  })
-});
+/**
+ * Standard API response format for consistent responses across endpoints
+ */
+interface ApiResponse<T> {
+  data: T;
+  error: {
+    code: string;
+    message: string;
+    details?: any;
+  } | null;
+  meta: Record<string, any>;
+}
 
-const UpdateSyncSchema = z.object({
-  name: z.string().optional(),
-  status: z.enum(['active', 'paused', 'cancelled']).optional(),
-  schedule: z.object({
-    frequency: z.enum(['once', 'hourly', 'daily', 'weekly', 'monthly']),
-    startDate: z.string(),
-    startTime: z.string(),
-    endDate: z.string().optional(),
-    isRecurring: z.boolean()
-  }).optional()
-});
+/**
+ * Return a standardized API response
+ */
+function apiResponse<T>(
+  data: T,
+  error: { code: string; message: string; details?: any } | null = null,
+  meta: Record<string, any> = {}
+): ApiResponse<T> {
+  return { data, error, meta };
+}
 
-const FilterSyncSchema = z.object({
-  page: z.number().optional().default(1),
-  limit: z.number().optional().default(20),
-  status: z.enum(['active', 'completed', 'failed', 'pending', 'scheduled']).optional(),
-  source: z.string().optional(),
-  target: z.string().optional(),
-  dataType: z.string().optional(),
-  fromDate: z.string().optional(),
-  toDate: z.string().optional()
-});
-
-// Standard response wrapper
-const createResponse = (data: any, error: any = null, meta: any = {}) => {
+/**
+ * Format API error response
+ */
+function errorResponse(
+  code: string,
+  message: string,
+  details?: any,
+  statusCode: number = 500
+): { statusCode: number; response: ApiResponse<null> } {
   return {
-    data,
-    error,
-    meta
+    statusCode,
+    response: {
+      data: null,
+      error: { code, message, details },
+      meta: {}
+    }
   };
-};
+}
 
-// Routes
-// GET /api/plugins/marketplace-sync/v1/syncs - List all sync operations with filtering
-pluginRouter.get('/v1/syncs', async (req, res) => {
+// Configure base path prefix for all routes in this plugin
+pluginRouter.use('/v1', (req, res, next) => {
+  console.log(`[marketplace-sync] ${req.method} ${req.path}`);
+  next();
+});
+
+/**
+ * GET /api/plugins/marketplace-sync/v1/syncs
+ * List all sync operations with optional filtering and pagination
+ */
+pluginRouter.get('/v1/syncs', async (req: Request, res: Response) => {
   try {
-    const { page = '1', limit = '20', status, source, target, dataType, fromDate, toDate } = req.query;
-    
-    const filters = {
-      page: parseInt(page as string),
-      limit: parseInt(limit as string),
-      status: status as string,
-      source: source as string,
-      target: target as string,
-      dataType: dataType as string,
-      fromDate: fromDate as string,
-      toDate: toDate as string
-    };
+    // Parse query parameters for filtering and pagination
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const status = req.query.status as string;
+    const source = req.query.source as string;
+    const target = req.query.target as string;
+    const dataType = req.query.dataType as string;
 
-    const validatedFilters = FilterSyncSchema.parse(filters);
-    
-    const result = await SyncService.list(validatedFilters);
-    
-    const totalCount = await SyncService.count(validatedFilters);
-    const totalPages = Math.ceil(totalCount / validatedFilters.limit);
-    
-    res.json(createResponse(result, null, {
+    // Construct filter options
+    const filters: any = {};
+    if (status) filters.status = status;
+    if (source) filters.source = source;
+    if (target) filters.target = target;
+    if (dataType) filters.dataType = dataType;
+
+    // Get sync operations from service
+    const { items, total } = await syncService.getSyncOperations(page, limit, filters);
+
+    // Return paginated response
+    return res.json(apiResponse(items, null, {
       pagination: {
-        page: validatedFilters.page,
-        limit: validatedFilters.limit,
-        totalCount,
-        totalPages
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit)
       }
     }));
-  } catch (error) {
-    console.error('Error listing sync operations:', error);
-    res.status(500).json(createResponse(null, {
-      code: 'INTERNAL_SERVER_ERROR',
-      message: 'Failed to retrieve sync operations'
-    }));
+  } catch (error: any) {
+    console.error('Error fetching sync operations:', error);
+    const { statusCode, response } = errorResponse(
+      'FETCH_ERROR',
+      'Failed to fetch sync operations',
+      error.message,
+      500
+    );
+    return res.status(statusCode).json(response);
   }
 });
 
-// GET /api/plugins/marketplace-sync/v1/syncs/:id - Get a specific sync operation
-pluginRouter.get('/v1/syncs/:id', async (req, res) => {
+/**
+ * GET /api/plugins/marketplace-sync/v1/syncs/:id
+ * Get a specific sync operation by ID
+ */
+pluginRouter.get('/v1/syncs/:id', async (req: Request<{ id: string }>, res: Response) => {
   try {
-    const { id } = req.params;
-    const syncOperation = await SyncService.get(id);
-    
+    const syncId = req.params.id;
+    const syncOperation = await syncService.getSyncOperation(syncId);
+
     if (!syncOperation) {
-      return res.status(404).json(createResponse(null, {
-        code: 'NOT_FOUND',
-        message: 'Sync operation not found'
-      }));
+      const { statusCode, response } = errorResponse(
+        'NOT_FOUND',
+        `Sync operation with ID ${syncId} not found`,
+        null,
+        404
+      );
+      return res.status(statusCode).json(response);
     }
-    
-    res.json(createResponse(syncOperation));
-  } catch (error) {
-    console.error('Error retrieving sync operation:', error);
-    res.status(500).json(createResponse(null, {
-      code: 'INTERNAL_SERVER_ERROR',
-      message: 'Failed to retrieve sync operation'
-    }));
+
+    return res.json(apiResponse(syncOperation));
+  } catch (error: any) {
+    console.error(`Error fetching sync operation ${req.params.id}:`, error);
+    const { statusCode, response } = errorResponse(
+      'FETCH_ERROR',
+      'Failed to fetch sync operation',
+      error.message,
+      500
+    );
+    return res.status(statusCode).json(response);
   }
 });
 
-// POST /api/plugins/marketplace-sync/v1/syncs - Create a new sync operation
-pluginRouter.post('/v1/syncs', async (req, res) => {
+/**
+ * POST /api/plugins/marketplace-sync/v1/syncs
+ * Create a new sync operation
+ */
+pluginRouter.post('/v1/syncs', async (req: Request, res: Response) => {
   try {
-    const parseResult = CreateSyncSchema.safeParse(req.body);
-    
-    if (!parseResult.success) {
-      return res.status(400).json(createResponse(null, {
-        code: 'VALIDATION_ERROR',
-        message: 'Invalid sync operation data',
-        details: parseResult.error.format()
-      }));
+    // Validate request body
+    const validationResult = validateSyncOperation(req.body);
+    if (!validationResult.valid) {
+      const { statusCode, response } = errorResponse(
+        'VALIDATION_ERROR',
+        'Invalid sync operation data',
+        validationResult.errors,
+        400
+      );
+      return res.status(statusCode).json(response);
     }
-    
-    const syncData = parseResult.data;
-    const newSync = await SyncService.create(syncData);
-    
-    res.status(201).json(createResponse(newSync));
-  } catch (error) {
+
+    // Create new sync operation with generated ID
+    const newSyncOperation = {
+      id: uuidv4(),
+      ...req.body,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Save through service
+    const createdSync = await syncService.createSyncOperation(newSyncOperation);
+
+    // Return created entity
+    return res.status(201).json(apiResponse(createdSync));
+  } catch (error: any) {
     console.error('Error creating sync operation:', error);
-    res.status(500).json(createResponse(null, {
-      code: 'INTERNAL_SERVER_ERROR',
-      message: 'Failed to create sync operation'
-    }));
+    const { statusCode, response } = errorResponse(
+      'CREATE_ERROR',
+      'Failed to create sync operation',
+      error.message,
+      500
+    );
+    return res.status(statusCode).json(response);
   }
 });
 
-// PATCH /api/plugins/marketplace-sync/v1/syncs/:id - Update a sync operation
-pluginRouter.patch('/v1/syncs/:id', async (req, res) => {
+/**
+ * PATCH /api/plugins/marketplace-sync/v1/syncs/:id
+ * Update an existing sync operation
+ */
+pluginRouter.patch('/v1/syncs/:id', async (req: Request<{ id: string }>, res: Response) => {
   try {
-    const { id } = req.params;
-    const parseResult = UpdateSyncSchema.safeParse(req.body);
-    
-    if (!parseResult.success) {
-      return res.status(400).json(createResponse(null, {
-        code: 'VALIDATION_ERROR',
-        message: 'Invalid update data',
-        details: parseResult.error.format()
-      }));
+    const syncId = req.params.id;
+    const existingSync = await syncService.getSyncOperation(syncId);
+
+    if (!existingSync) {
+      const { statusCode, response } = errorResponse(
+        'NOT_FOUND',
+        `Sync operation with ID ${syncId} not found`,
+        null,
+        404
+      );
+      return res.status(statusCode).json(response);
     }
-    
-    const syncOperation = await SyncService.get(id);
-    
-    if (!syncOperation) {
-      return res.status(404).json(createResponse(null, {
-        code: 'NOT_FOUND',
-        message: 'Sync operation not found'
-      }));
-    }
-    
-    const updatedSync = await SyncService.update(id, parseResult.data);
-    
-    res.json(createResponse(updatedSync));
-  } catch (error) {
-    console.error('Error updating sync operation:', error);
-    res.status(500).json(createResponse(null, {
-      code: 'INTERNAL_SERVER_ERROR',
-      message: 'Failed to update sync operation'
-    }));
+
+    // Don't allow updating certain fields
+    const { id, createdAt, ...updateableFields } = req.body;
+
+    // Merge with existing and update timestamp
+    const updatedSync = {
+      ...existingSync,
+      ...updateableFields,
+      updatedAt: new Date().toISOString()
+    };
+
+    // Save through service
+    const result = await syncService.updateSyncOperation(syncId, updatedSync);
+
+    return res.json(apiResponse(result));
+  } catch (error: any) {
+    console.error(`Error updating sync operation ${req.params.id}:`, error);
+    const { statusCode, response } = errorResponse(
+      'UPDATE_ERROR',
+      'Failed to update sync operation',
+      error.message,
+      500
+    );
+    return res.status(statusCode).json(response);
   }
 });
 
-// POST /api/plugins/marketplace-sync/v1/syncs/:id/actions/retry - Retry a failed sync operation
-pluginRouter.post('/v1/syncs/:id/actions/retry', async (req, res) => {
+/**
+ * DELETE /api/plugins/marketplace-sync/v1/syncs/:id
+ * Delete a sync operation
+ */
+pluginRouter.delete('/v1/syncs/:id', async (req: Request<{ id: string }>, res: Response) => {
   try {
-    const { id } = req.params;
-    const syncOperation = await SyncService.get(id);
-    
-    if (!syncOperation) {
-      return res.status(404).json(createResponse(null, {
-        code: 'NOT_FOUND',
-        message: 'Sync operation not found'
-      }));
+    const syncId = req.params.id;
+    const existingSync = await syncService.getSyncOperation(syncId);
+
+    if (!existingSync) {
+      const { statusCode, response } = errorResponse(
+        'NOT_FOUND',
+        `Sync operation with ID ${syncId} not found`,
+        null,
+        404
+      );
+      return res.status(statusCode).json(response);
     }
-    
-    if (syncOperation.status !== 'failed') {
-      return res.status(400).json(createResponse(null, {
-        code: 'INVALID_OPERATION',
-        message: 'Only failed operations can be retried'
-      }));
-    }
-    
-    const retriedSync = await SyncService.retry(id);
-    
-    res.json(createResponse(retriedSync));
-  } catch (error) {
-    console.error('Error retrying sync operation:', error);
-    res.status(500).json(createResponse(null, {
-      code: 'INTERNAL_SERVER_ERROR',
-      message: 'Failed to retry sync operation'
-    }));
+
+    // Delete through service
+    await syncService.deleteSyncOperation(syncId);
+
+    // Return success with no content
+    return res.status(204).end();
+  } catch (error: any) {
+    console.error(`Error deleting sync operation ${req.params.id}:`, error);
+    const { statusCode, response } = errorResponse(
+      'DELETE_ERROR',
+      'Failed to delete sync operation',
+      error.message,
+      500
+    );
+    return res.status(statusCode).json(response);
   }
 });
 
-// POST /api/plugins/marketplace-sync/v1/syncs/:id/actions/cancel - Cancel an active sync operation
-pluginRouter.post('/v1/syncs/:id/actions/cancel', async (req, res) => {
+/**
+ * POST /api/plugins/marketplace-sync/v1/syncs/:id/actions/run
+ * Run a sync operation manually
+ */
+pluginRouter.post('/v1/syncs/:id/actions/run', async (req: Request<{ id: string }>, res: Response) => {
   try {
-    const { id } = req.params;
-    const syncOperation = await SyncService.get(id);
-    
-    if (!syncOperation) {
-      return res.status(404).json(createResponse(null, {
-        code: 'NOT_FOUND',
-        message: 'Sync operation not found'
-      }));
+    const syncId = req.params.id;
+    const existingSync = await syncService.getSyncOperation(syncId);
+
+    if (!existingSync) {
+      const { statusCode, response } = errorResponse(
+        'NOT_FOUND',
+        `Sync operation with ID ${syncId} not found`,
+        null,
+        404
+      );
+      return res.status(statusCode).json(response);
     }
-    
-    if (syncOperation.status !== 'active' && syncOperation.status !== 'scheduled') {
-      return res.status(400).json(createResponse(null, {
-        code: 'INVALID_OPERATION',
-        message: 'Only active or scheduled operations can be cancelled'
-      }));
-    }
-    
-    const cancelledSync = await SyncService.cancel(id);
-    
-    res.json(createResponse(cancelledSync));
-  } catch (error) {
-    console.error('Error cancelling sync operation:', error);
-    res.status(500).json(createResponse(null, {
-      code: 'INTERNAL_SERVER_ERROR',
-      message: 'Failed to cancel sync operation'
-    }));
+
+    // Trigger sync run through service
+    const result = await syncService.runSyncOperation(syncId);
+
+    return res.json(apiResponse(result));
+  } catch (error: any) {
+    console.error(`Error running sync operation ${req.params.id}:`, error);
+    const { statusCode, response } = errorResponse(
+      'RUN_ERROR',
+      'Failed to run sync operation',
+      error.message,
+      500
+    );
+    return res.status(statusCode).json(response);
   }
 });
 
-// GET /api/plugins/marketplace-sync/v1/syncs/:id/history - Get the history of a sync operation
-pluginRouter.get('/v1/syncs/:id/history', async (req, res) => {
+/**
+ * POST /api/plugins/marketplace-sync/v1/syncs/:id/actions/retry
+ * Retry a failed sync operation
+ */
+pluginRouter.post('/v1/syncs/:id/actions/retry', async (req: Request<{ id: string }>, res: Response) => {
   try {
-    const { id } = req.params;
-    const syncOperation = await SyncService.get(id);
-    
-    if (!syncOperation) {
-      return res.status(404).json(createResponse(null, {
-        code: 'NOT_FOUND',
-        message: 'Sync operation not found'
-      }));
+    const syncId = req.params.id;
+    const existingSync = await syncService.getSyncOperation(syncId);
+
+    if (!existingSync) {
+      const { statusCode, response } = errorResponse(
+        'NOT_FOUND',
+        `Sync operation with ID ${syncId} not found`,
+        null,
+        404
+      );
+      return res.status(statusCode).json(response);
     }
-    
-    const history = await SyncService.getHistory(id);
-    
-    res.json(createResponse(history));
-  } catch (error) {
-    console.error('Error retrieving sync history:', error);
-    res.status(500).json(createResponse(null, {
-      code: 'INTERNAL_SERVER_ERROR',
-      message: 'Failed to retrieve sync history'
-    }));
+
+    if (existingSync.status !== 'failed') {
+      const { statusCode, response } = errorResponse(
+        'INVALID_OPERATION',
+        'Only failed sync operations can be retried',
+        null,
+        400
+      );
+      return res.status(statusCode).json(response);
+    }
+
+    // Retry sync through service
+    const result = await syncService.retrySyncOperation(syncId);
+
+    return res.json(apiResponse(result));
+  } catch (error: any) {
+    console.error(`Error retrying sync operation ${req.params.id}:`, error);
+    const { statusCode, response } = errorResponse(
+      'RETRY_ERROR',
+      'Failed to retry sync operation',
+      error.message,
+      500
+    );
+    return res.status(statusCode).json(response);
   }
 });
 
-// GET /api/plugins/marketplace-sync/v1/systems - Get available systems
+/**
+ * GET /api/plugins/marketplace-sync/v1/systems
+ * Get all available systems
+ */
 pluginRouter.get('/v1/systems', async (req, res) => {
   try {
-    const systems = await SyncService.getSystems();
-    res.json(createResponse(systems));
-  } catch (error) {
-    console.error('Error retrieving systems:', error);
-    res.status(500).json(createResponse(null, {
-      code: 'INTERNAL_SERVER_ERROR',
-      message: 'Failed to retrieve systems'
-    }));
+    const systems = await syncService.getAvailableSystems();
+    return res.json(apiResponse(systems));
+  } catch (error: any) {
+    console.error('Error fetching available systems:', error);
+    const { statusCode, response } = errorResponse(
+      'SYSTEMS_ERROR',
+      'Failed to fetch available systems',
+      error.message,
+      500
+    );
+    return res.status(statusCode).json(response);
   }
 });
 
-// GET /api/plugins/marketplace-sync/v1/datatypes - Get available data types
+/**
+ * GET /api/plugins/marketplace-sync/v1/datatypes
+ * Get all available data types
+ */
 pluginRouter.get('/v1/datatypes', async (req, res) => {
   try {
-    const dataTypes = await SyncService.getDataTypes();
-    res.json(createResponse(dataTypes));
-  } catch (error) {
-    console.error('Error retrieving data types:', error);
-    res.status(500).json(createResponse(null, {
-      code: 'INTERNAL_SERVER_ERROR',
-      message: 'Failed to retrieve data types'
-    }));
+    const dataTypes = await syncService.getAvailableDataTypes();
+    return res.json(apiResponse(dataTypes));
+  } catch (error: any) {
+    console.error('Error fetching available data types:', error);
+    const { statusCode, response } = errorResponse(
+      'DATATYPES_ERROR',
+      'Failed to fetch available data types',
+      error.message,
+      500
+    );
+    return res.status(statusCode).json(response);
   }
 });
 
-// GET /api/plugins/marketplace-sync/v1/metrics - Get sync operation metrics
-pluginRouter.get('/v1/metrics', async (req, res) => {
+/**
+ * GET /api/plugins/marketplace-sync/v1/syncs/:id/history
+ * Get history entries for a specific sync operation
+ */
+pluginRouter.get('/v1/syncs/:id/history', async (req: Request<{ id: string }>, res: Response) => {
   try {
-    const metrics = await SyncService.getMetrics();
-    res.json(createResponse(metrics));
-  } catch (error) {
-    console.error('Error retrieving metrics:', error);
-    res.status(500).json(createResponse(null, {
-      code: 'INTERNAL_SERVER_ERROR',
-      message: 'Failed to retrieve metrics'
-    }));
+    const syncId = req.params.id;
+    const history = await syncService.getSyncHistory(syncId);
+    
+    return res.json(apiResponse(history));
+  } catch (error: any) {
+    console.error(`Error fetching history for sync operation ${req.params.id}:`, error);
+    const { statusCode, response } = errorResponse(
+      'HISTORY_ERROR',
+      'Failed to fetch sync operation history',
+      error.message,
+      500
+    );
+    return res.status(statusCode).json(response);
   }
 });
+
+export { pluginRouter };
