@@ -2,10 +2,8 @@ import { defineConfig } from 'tsup';
 
 export default defineConfig({
   entry: ['src/index.ts'],
-  format: ['cjs', 'esm'],
-  dts: true,
-  splitting: false,
-  sourcemap: true,
   clean: true,
-  external: ['react', 'react-router-dom', '@terrafusion/ui'],
+  dts: true,
+  format: ['cjs', 'esm'],
+  external: ['react', 'react-dom', 'react-router-dom', '@terrafusion/ui'],
 });
