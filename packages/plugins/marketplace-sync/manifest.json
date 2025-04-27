@@ -1,30 +1,37 @@
 {
-  "name": "marketplace-sync",
+  "name": "Marketplace Sync",
   "version": "0.1.0",
-  "description": "Marketplace data synchronization plugin",
+  "description": "Synchronize and migrate data between marketplace systems",
+  "author": "TerraFusion",
+  "tags": ["sync", "marketplace", "data", "migration"],
+  "dependencies": ["@terrafusion/ui"],
   "routes": [
     {
-      "path": "/marketplace/sync",
+      "path": "/sync-dashboard",
       "component": "SyncDashboard",
       "exact": true,
       "name": "Sync Dashboard",
       "menuItem": true,
-      "menuGroup": "Marketplace",
+      "menuGroup": "Data Operations",
       "menuIcon": "sync-alt"
     },
     {
-      "path": "/marketplace/sync/new",
+      "path": "/sync-new",
       "component": "NewSyncWizard",
       "exact": true,
-      "name": "New Sync",
+      "name": "New Sync Operation",
       "menuItem": false
     },
     {
-      "path": "/marketplace/sync/:id",
-      "component": "SyncDetails",
+      "path": "/sync-details/:id",
+      "component": "SyncDetails", 
       "exact": true,
       "name": "Sync Details",
       "menuItem": false
     }
+  ],
+  "apis": [
+    "/api/sync/operations",
+    "/api/sync/operations/:id"
   ]
 }

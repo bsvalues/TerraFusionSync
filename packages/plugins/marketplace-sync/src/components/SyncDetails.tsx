@@ -1,61 +1,168 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Button, ProgressBar, Modal, ModalFooter } from '@terrafusion/ui';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Button, Card, Badge, ProgressBar, TabGroup, Modal } from '@terrafusion/ui';
+
+// Sync operation types
+type SyncStatus = 'active' | 'completed' | 'failed' | 'pending' | 'scheduled';
 
 interface SyncOperation {
   id: string;
   name: string;
-  description: string;
-  type: string;
-  status: string;
-  source: string;
-  target: string;
-  created: string;
-  lastUpdated: string;
-  progress: number;
-  records: {
-    total: number;
-    processed: number;
-    successful: number;
-    failed: number;
+  status: SyncStatus;
+  source: {
+    id: string;
+    name: string;
+    connectionDetails: Record<string, string>;
   };
-  logs: {
-    timestamp: string;
-    level: string;
-    message: string;
-  }[];
+  target: {
+    id: string;
+    name: string;
+    connectionDetails: Record<string, string>;
+  };
+  dataType: {
+    id: string;
+    name: string;
+  };
+  fields: string[];
+  fieldMapping: Record<string, string>;
+  filters: string;
+  progress: number;
+  recordsTotal: number;
+  recordsProcessed: number;
+  recordsFailed: number;
+  startTime: string;
+  endTime?: string;
+  scheduledTime?: string;
+  frequency?: string;
+  isRecurring: boolean;
+  lastRunStatus?: string;
+  history: SyncHistoryEntry[];
+}
+
+interface SyncHistoryEntry {
+  id: string;
+  timestamp: string;
+  event: string;
+  status: string;
+  details?: string;
+  recordsProcessed?: number;
+  recordsTotal?: number;
+  duration?: number;
 }
 
 export const SyncDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   
-  // State
-  const [syncOperation, setSyncOperation] = useState<SyncOperation | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'logs' | 'data'>('overview');
-  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<'cancel' | 'restart' | 'delete' | null>(null);
-  const [actionInProgress, setActionInProgress] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [operation, setOperation] = useState<SyncOperation | null>(null);
+  const [activeTab, setActiveTab] = useState('overview');
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editName, setEditName] = useState('');
   
-  // Fetch sync operation details
+  // Fetch sync operation data
   useEffect(() => {
     const fetchSyncOperation = async () => {
       try {
-        setIsLoading(true);
-        const response = await fetch(`/api/marketplace-sync/operations/${id}`);
+        setLoading(true);
+        // In a real implementation, this would fetch from API
+        const response = await fetch(`/api/sync/operations/${id}`);
         if (!response.ok) {
-          throw new Error(`Failed to fetch sync operation: ${response.status} ${response.statusText}`);
+          throw new Error('Failed to fetch sync operation');
         }
         const data = await response.json();
-        setSyncOperation(data);
-        setError(null);
-      } catch (err) {
-        console.error('Error fetching sync operation:', err);
-        setError(err instanceof Error ? err.message : 'An unknown error occurred');
+        setOperation(data);
+      } catch (error) {
+        console.error('Error fetching sync operation:', error);
+        // Simulate data for development
+        setOperation({
+          id: id || '1',
+          name: 'Products Synchronization',
+          status: 'active',
+          source: {
+            id: 'erp',
+            name: 'ERP System',
+            connectionDetails: {
+              url: 'https://api.erp-example.com',
+              authType: 'OAuth2',
+            },
+          },
+          target: {
+            id: 'ecommerce',
+            name: 'E-commerce Platform',
+            connectionDetails: {
+              url: 'https://api.ecommerce-example.com',
+              authType: 'API Key',
+            },
+          },
+          dataType: {
+            id: 'products',
+            name: 'Products',
+          },
+          fields: ['sku', 'name', 'description', 'price', 'inventory', 'category'],
+          fieldMapping: {
+            sku: 'product_id',
+            name: 'title',
+            description: 'description',
+            price: 'price',
+            inventory: 'stock_level',
+            category: 'category',
+          },
+          filters: 'category = "electronics" AND inventory > 0',
+          progress: 65,
+          recordsTotal: 1250,
+          recordsProcessed: 812,
+          recordsFailed: 15,
+          startTime: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
+          isRecurring: true,
+          frequency: 'daily',
+          history: [
+            {
+              id: 'h1',
+              timestamp: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
+              event: 'sync_started',
+              status: 'info',
+              details: 'Sync operation started',
+            },
+            {
+              id: 'h2',
+              timestamp: new Date(Date.now() - 40 * 60 * 1000).toISOString(),
+              event: 'processing',
+              status: 'info',
+              details: 'Processed 10% of records',
+              recordsProcessed: 125,
+              recordsTotal: 1250,
+            },
+            {
+              id: 'h3',
+              timestamp: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+              event: 'processing',
+              status: 'info',
+              details: 'Processed 25% of records',
+              recordsProcessed: 312,
+              recordsTotal: 1250,
+            },
+            {
+              id: 'h4',
+              timestamp: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
+              event: 'error',
+              status: 'warning',
+              details: 'Failed to process 8 records due to validation errors',
+            },
+            {
+              id: 'h5',
+              timestamp: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+              event: 'processing',
+              status: 'info',
+              details: 'Processed 50% of records',
+              recordsProcessed: 625,
+              recordsTotal: 1250,
+            },
+          ],
+        });
       } finally {
-        setIsLoading(false);
+        setLoading(false);
       }
     };
 
@@ -64,509 +171,618 @@ export const SyncDetails: React.FC = () => {
     }
   }, [id]);
 
-  // Function to format date strings
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return new Intl.DateTimeFormat('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    }).format(date);
+  // Handle cancel operation
+  const handleCancelOperation = async () => {
+    try {
+      // In a real implementation, this would call an API
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Update operation status locally
+      if (operation) {
+        setOperation({
+          ...operation,
+          status: 'pending',
+          history: [
+            {
+              id: `h${operation.history.length + 1}`,
+              timestamp: new Date().toISOString(),
+              event: 'cancellation_requested',
+              status: 'warning',
+              details: 'Cancellation requested by user',
+            },
+            ...operation.history,
+          ],
+        });
+      }
+      
+      setShowCancelModal(false);
+    } catch (error) {
+      console.error('Error cancelling operation:', error);
+      alert('Failed to cancel operation. Please try again.');
+    }
   };
 
-  // Function to handle confirmation actions
-  const handleConfirmAction = async () => {
-    if (!confirmAction || !syncOperation) return;
-    
-    setActionInProgress(true);
+  // Handle edit name
+  const handleEditName = async () => {
+    if (!editName.trim() || !operation) return;
     
     try {
-      // In a real implementation, these would be actual API calls
-      switch (confirmAction) {
-        case 'cancel':
-          // Simulate API call to cancel the sync operation
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          // Navigate back to dashboard after cancellation
-          navigate('/marketplace/sync');
-          break;
-        case 'restart':
-          // Simulate API call to restart the sync operation
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          // Refresh the operation details to show the new status
-          window.location.reload();
-          break;
-        case 'delete':
-          // Simulate API call to delete the sync operation
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          // Navigate back to dashboard after deletion
-          navigate('/marketplace/sync');
-          break;
-      }
-    } catch (err) {
-      console.error('Error performing action:', err);
-      setError(err instanceof Error ? err.message : 'An unknown error occurred');
-    } finally {
-      setActionInProgress(false);
-      setIsConfirmModalOpen(false);
-      setConfirmAction(null);
+      // In a real implementation, this would call an API
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Update operation name locally
+      setOperation({
+        ...operation,
+        name: editName,
+        history: [
+          {
+            id: `h${operation.history.length + 1}`,
+            timestamp: new Date().toISOString(),
+            event: 'config_changed',
+            status: 'info',
+            details: `Operation name changed from "${operation.name}" to "${editName}"`,
+          },
+          ...operation.history,
+        ],
+      });
+      
+      setShowEditModal(false);
+    } catch (error) {
+      console.error('Error updating operation name:', error);
+      alert('Failed to update operation name. Please try again.');
     }
   };
 
-  // Function to show the confirmation modal
-  const showConfirmModal = (action: 'cancel' | 'restart' | 'delete') => {
-    setConfirmAction(action);
-    setIsConfirmModalOpen(true);
-  };
-
-  // Function to get confirmation modal content based on the action
-  const getConfirmModalContent = () => {
-    switch (confirmAction) {
-      case 'cancel':
-        return {
-          title: 'Cancel Sync Operation',
-          message: 'Are you sure you want to cancel this sync operation? This action cannot be undone.',
-          confirmText: 'Yes, Cancel',
-        };
-      case 'restart':
-        return {
-          title: 'Restart Sync Operation',
-          message: 'Are you sure you want to restart this sync operation? This will reset all progress.',
-          confirmText: 'Yes, Restart',
-        };
-      case 'delete':
-        return {
-          title: 'Delete Sync Operation',
-          message: 'Are you sure you want to delete this sync operation? This action cannot be undone and all data will be lost.',
-          confirmText: 'Yes, Delete',
-        };
-      default:
-        return {
-          title: 'Confirm Action',
-          message: 'Are you sure you want to proceed with this action?',
-          confirmText: 'Confirm',
-        };
+  // Handle retry operation
+  const handleRetryOperation = async () => {
+    if (!operation) return;
+    
+    try {
+      // In a real implementation, this would call an API
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Update operation status locally
+      setOperation({
+        ...operation,
+        status: 'active',
+        progress: 0,
+        recordsProcessed: 0,
+        recordsFailed: 0,
+        startTime: new Date().toISOString(),
+        endTime: undefined,
+        history: [
+          {
+            id: `h${operation.history.length + 1}`,
+            timestamp: new Date().toISOString(),
+            event: 'sync_restarted',
+            status: 'info',
+            details: 'Sync operation restarted',
+          },
+          ...operation.history,
+        ],
+      });
+    } catch (error) {
+      console.error('Error restarting operation:', error);
+      alert('Failed to restart operation. Please try again.');
     }
   };
 
-  // Map status to appropriate styles
-  const getStatusStyles = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'completed':
-        return 'bg-green-100 text-green-800';
-      case 'in progress':
-        return 'bg-blue-100 text-blue-800';
-      case 'scheduled':
-        return 'bg-purple-100 text-purple-800';
-      case 'failed':
-        return 'bg-red-100 text-red-800';
-      case 'paused':
-        return 'bg-yellow-100 text-yellow-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  // Map log level to appropriate styles
-  const getLogLevelStyles = (level: string) => {
-    switch (level.toLowerCase()) {
-      case 'error':
-        return 'text-red-600';
-      case 'warning':
-        return 'text-yellow-600';
-      case 'info':
-        return 'text-blue-600';
-      case 'debug':
-        return 'text-gray-600';
-      default:
-        return 'text-gray-800';
-    }
-  };
-
-  if (isLoading) {
+  // Render status badge with appropriate color
+  const renderStatusBadge = (status: SyncStatus) => {
+    const statusConfig = {
+      active: { color: 'blue', label: 'Active' },
+      completed: { color: 'green', label: 'Completed' },
+      failed: { color: 'red', label: 'Failed' },
+      pending: { color: 'yellow', label: 'Pending' },
+      scheduled: { color: 'purple', label: 'Scheduled' },
+    };
+    
+    const config = statusConfig[status];
     return (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-      </div>
+      <Badge
+        color={config.color as 'blue' | 'green' | 'red' | 'yellow' | 'purple'}
+        size="md"
+      >
+        {config.label}
+      </Badge>
     );
-  }
+  };
 
-  if (error) {
+  if (loading) {
     return (
       <div className="p-6">
-        <div className="bg-red-50 border border-red-200 rounded-md p-4 text-red-700 mb-6">
-          <p className="font-medium">Error loading sync operation</p>
-          <p className="text-sm mt-1">{error}</p>
-        </div>
-        <Button
-          variant="secondary"
-          onClick={() => navigate('/marketplace/sync')}
-        >
-          Back to Dashboard
-        </Button>
-      </div>
-    );
-  }
-
-  if (!syncOperation) {
-    return (
-      <div className="p-6">
-        <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 text-yellow-700 mb-6">
-          <p className="font-medium">Sync operation not found</p>
-          <p className="text-sm mt-1">The requested sync operation could not be found.</p>
-        </div>
-        <Button
-          variant="secondary"
-          onClick={() => navigate('/marketplace/sync')}
-        >
-          Back to Dashboard
-        </Button>
-      </div>
-    );
-  }
-
-  // Modal content
-  const modalContent = getConfirmModalContent();
-
-  return (
-    <div className="p-6">
-      {/* Header section */}
-      <div className="mb-6 flex justify-between items-center">
-        <div className="flex items-center">
-          <Link to="/marketplace/sync" className="mr-4 text-blue-600 hover:text-blue-800">
-            <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-          </Link>
-          <h1 className="text-2xl font-bold">{syncOperation.name}</h1>
-          <span className={`ml-4 px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusStyles(syncOperation.status)}`}>
-            {syncOperation.status}
-          </span>
-        </div>
-        <div className="flex space-x-3">
-          {syncOperation.status === 'In Progress' && (
-            <Button
-              variant="warning"
-              onClick={() => showConfirmModal('cancel')}
-            >
-              Cancel
-            </Button>
-          )}
-          {syncOperation.status === 'Completed' || syncOperation.status === 'Failed' ? (
-            <Button
-              variant="primary"
-              onClick={() => showConfirmModal('restart')}
-            >
-              Restart
-            </Button>
-          ) : syncOperation.status === 'Paused' ? (
-            <Button
-              variant="success"
-            >
-              Resume
-            </Button>
-          ) : null}
-          <Button
-            variant="danger"
-            onClick={() => showConfirmModal('delete')}
+        <div className="text-center py-12">
+          <svg
+            className="animate-spin h-10 w-10 text-blue-500 mx-auto mb-4"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
           >
-            Delete
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            ></circle>
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+            ></path>
+          </svg>
+          <p className="text-gray-500">Loading sync operation details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!operation) {
+    return (
+      <div className="p-6">
+        <div className="text-center py-12 bg-white rounded-lg shadow">
+          <svg
+            className="h-16 w-16 text-gray-400 mx-auto mb-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="1"
+              d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+            />
+          </svg>
+          <h3 className="text-lg font-medium text-gray-900">Sync operation not found</h3>
+          <p className="mt-2 text-gray-500">
+            The sync operation you're looking for does not exist or has been removed.
+          </p>
+          <Button
+            className="mt-4"
+            onClick={() => navigate('/sync-dashboard')}
+          >
+            Back to Sync Dashboard
           </Button>
         </div>
       </div>
+    );
+  }
 
-      {/* Description */}
-      <div className="mb-6 text-gray-600">
-        {syncOperation.description}
-      </div>
-
-      {/* Progress section */}
-      {(syncOperation.status === 'In Progress' || syncOperation.status === 'Paused') && (
-        <div className="mb-6 bg-white rounded-lg shadow p-4">
-          <div className="flex justify-between mb-2">
-            <span className="text-sm font-medium text-gray-700">
-              Progress: {syncOperation.progress}%
-            </span>
-            <span className="text-sm font-medium text-gray-700">
-              {syncOperation.records.processed}/{syncOperation.records.total} records
-            </span>
-          </div>
-          <ProgressBar
-            value={syncOperation.progress}
-            max={100}
-            size="md"
-            colorScheme={syncOperation.status === 'Paused' ? 'yellow' : 'blue'}
-            animated={syncOperation.status === 'In Progress'}
-          />
-          <div className="mt-4 grid grid-cols-3 gap-4 text-center">
-            <div>
-              <div className="text-xs text-gray-500">Total Records</div>
-              <div className="text-lg font-semibold">{syncOperation.records.total}</div>
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">Processed</div>
-              <div className="text-lg font-semibold text-green-600">{syncOperation.records.successful}</div>
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">Failed</div>
-              <div className="text-lg font-semibold text-red-600">{syncOperation.records.failed}</div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Tabs */}
-      <div className="mb-6 border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
-          <button
-            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'overview'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-            onClick={() => setActiveTab('overview')}
-          >
-            Overview
-          </button>
-          <button
-            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'logs'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-            onClick={() => setActiveTab('logs')}
-          >
-            Logs
-          </button>
-          <button
-            className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'data'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-            onClick={() => setActiveTab('data')}
-          >
-            Data Preview
-          </button>
-        </nav>
-      </div>
-
-      {/* Tab content */}
-      <div className="bg-white shadow-md rounded-lg overflow-hidden">
-        {activeTab === 'overview' && (
-          <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <h3 className="text-lg font-medium mb-4">Sync Details</h3>
-                <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-                  <div className="border-t border-gray-200">
-                    <dl>
-                      <div className="bg-gray-50 px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                        <dt className="text-sm font-medium text-gray-500">Name</dt>
-                        <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{syncOperation.name}</dd>
-                      </div>
-                      <div className="bg-white px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                        <dt className="text-sm font-medium text-gray-500">Sync Type</dt>
-                        <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{syncOperation.type}</dd>
-                      </div>
-                      <div className="bg-gray-50 px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                        <dt className="text-sm font-medium text-gray-500">Status</dt>
-                        <dd className="mt-1 text-sm sm:mt-0 sm:col-span-2">
-                          <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusStyles(syncOperation.status)}`}>
-                            {syncOperation.status}
-                          </span>
-                        </dd>
-                      </div>
-                      <div className="bg-white px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                        <dt className="text-sm font-medium text-gray-500">Source</dt>
-                        <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{syncOperation.source}</dd>
-                      </div>
-                      <div className="bg-gray-50 px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                        <dt className="text-sm font-medium text-gray-500">Target</dt>
-                        <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{syncOperation.target}</dd>
-                      </div>
-                      <div className="bg-white px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                        <dt className="text-sm font-medium text-gray-500">Created</dt>
-                        <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{formatDate(syncOperation.created)}</dd>
-                      </div>
-                      <div className="bg-gray-50 px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                        <dt className="text-sm font-medium text-gray-500">Last Updated</dt>
-                        <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{formatDate(syncOperation.lastUpdated)}</dd>
-                      </div>
-                    </dl>
+  // Render tab content
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'overview':
+        return (
+          <div className="space-y-6">
+            {operation.status === 'active' && (
+              <Card>
+                <div className="mb-3">
+                  <h3 className="text-lg font-medium text-gray-900">Current Progress</h3>
+                </div>
+                <ProgressBar
+                  progress={operation.progress}
+                  showPercentage
+                  label={`${operation.recordsProcessed} of ${operation.recordsTotal} records processed`}
+                  color="blue"
+                  size="lg"
+                />
+                <div className="mt-4 flex flex-wrap gap-4">
+                  <div className="bg-blue-50 text-blue-800 p-2 rounded">
+                    <span className="font-medium">Records Processed:</span> {operation.recordsProcessed}
+                  </div>
+                  <div className="bg-red-50 text-red-800 p-2 rounded">
+                    <span className="font-medium">Records Failed:</span> {operation.recordsFailed}
+                  </div>
+                  <div className="bg-gray-50 text-gray-800 p-2 rounded">
+                    <span className="font-medium">Records Remaining:</span> {operation.recordsTotal - operation.recordsProcessed}
                   </div>
                 </div>
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <div className="flex justify-end">
+                    <Button
+                      variant="danger"
+                      onClick={() => setShowCancelModal(true)}
+                    >
+                      Cancel Operation
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            )}
+            
+            <Card>
+              <div className="mb-3 flex justify-between items-center">
+                <h3 className="text-lg font-medium text-gray-900">Operation Details</h3>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    setEditName(operation.name);
+                    setShowEditModal(true);
+                  }}
+                >
+                  Edit
+                </Button>
               </div>
-
-              <div>
-                <h3 className="text-lg font-medium mb-4">Record Statistics</h3>
-                <div className="bg-white shadow rounded-lg p-6">
-                  <div className="mb-6">
-                    <div className="flex justify-between mb-2">
-                      <span className="text-sm font-medium text-gray-500">Total Records</span>
-                      <span className="text-sm font-medium text-gray-900">{syncOperation.records.total}</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2.5">
-                      <div className="bg-gray-600 h-2.5 rounded-full" style={{ width: '100%' }}></div>
-                    </div>
-                  </div>
-
-                  <div className="mb-6">
-                    <div className="flex justify-between mb-2">
-                      <span className="text-sm font-medium text-gray-500">Processed</span>
-                      <span className="text-sm font-medium text-gray-900">{syncOperation.records.processed} ({Math.round((syncOperation.records.processed / syncOperation.records.total) * 100)}%)</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2.5">
-                      <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: `${(syncOperation.records.processed / syncOperation.records.total) * 100}%` }}></div>
-                    </div>
-                  </div>
-
-                  <div className="mb-6">
-                    <div className="flex justify-between mb-2">
-                      <span className="text-sm font-medium text-gray-500">Successful</span>
-                      <span className="text-sm font-medium text-gray-900">{syncOperation.records.successful} ({Math.round((syncOperation.records.successful / syncOperation.records.total) * 100)}%)</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2.5">
-                      <div className="bg-green-600 h-2.5 rounded-full" style={{ width: `${(syncOperation.records.successful / syncOperation.records.total) * 100}%` }}></div>
-                    </div>
-                  </div>
-
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <div className="flex justify-between mb-2">
-                      <span className="text-sm font-medium text-gray-500">Failed</span>
-                      <span className="text-sm font-medium text-gray-900">{syncOperation.records.failed} ({Math.round((syncOperation.records.failed / syncOperation.records.total) * 100)}%)</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2.5">
-                      <div className="bg-red-600 h-2.5 rounded-full" style={{ width: `${(syncOperation.records.failed / syncOperation.records.total) * 100}%` }}></div>
-                    </div>
+                    <p className="text-sm text-gray-500">Name</p>
+                    <p className="font-medium">{operation.name}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Status</p>
+                    <div>{renderStatusBadge(operation.status)}</div>
                   </div>
                 </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'logs' && (
-          <div className="p-6">
-            <h3 className="text-lg font-medium mb-4">Operation Logs</h3>
-            <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto font-mono text-sm">
-              {syncOperation.logs.map((log, index) => (
-                <div key={index} className="mb-2">
-                  <span className="text-gray-500">[{formatDate(log.timestamp)}]</span>{' '}
-                  <span className={`font-semibold ${getLogLevelStyles(log.level)}`}>{log.level.toUpperCase()}</span>:{' '}
-                  <span>{log.message}</span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-500">Source</p>
+                    <p className="font-medium">{operation.source.name}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Target</p>
+                    <p className="font-medium">{operation.target.name}</p>
+                  </div>
                 </div>
-              ))}
-              {syncOperation.logs.length === 0 && (
-                <div className="text-gray-500 italic">No logs available</div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'data' && (
-          <div className="p-6">
-            <h3 className="text-lg font-medium mb-4">Data Preview</h3>
-            {syncOperation.status === 'Completed' || syncOperation.status === 'In Progress' ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-500">Data Type</p>
+                    <p className="font-medium">{operation.dataType.name}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Schedule</p>
+                    <p className="font-medium">
+                      {operation.isRecurring
+                        ? `Recurring (${operation.frequency})`
+                        : 'One-time'}
+                    </p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-500">Start Time</p>
+                    <p className="font-medium">
+                      {new Date(operation.startTime).toLocaleString()}
+                    </p>
+                  </div>
+                  {operation.endTime && (
+                    <div>
+                      <p className="text-sm text-gray-500">End Time</p>
+                      <p className="font-medium">
+                        {new Date(operation.endTime).toLocaleString()}
+                      </p>
+                    </div>
+                  )}
+                </div>
+                {operation.status === 'failed' && (
+                  <div className="mt-4 flex justify-end">
+                    <Button
+                      variant="primary"
+                      onClick={handleRetryOperation}
+                    >
+                      Retry Operation
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </Card>
+            
+            <Card>
+              <div className="mb-3">
+                <h3 className="text-lg font-medium text-gray-900">Field Mapping</h3>
+              </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
                       <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        ID
+                        Source Field
                       </th>
                       <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Name
-                      </th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Category
-                      </th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status
-                      </th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Source Value
-                      </th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Target Value
+                        Target Field
                       </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {/* Sample data - would be dynamic in a real implementation */}
-                    <tr>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">001</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Product Alpha</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Electronics</td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                          Synced
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">$499.99</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">$499.99</td>
-                    </tr>
-                    <tr>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">002</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Product Beta</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Clothing</td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                          Synced
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">$29.99</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">$29.99</td>
-                    </tr>
-                    <tr>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">003</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Product Gamma</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Food</td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
-                          Error
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">$8.99</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-red-500">Invalid format</td>
-                    </tr>
+                    {operation.fields.map((field) => (
+                      <tr key={field}>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {field}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {operation.fieldMapping[field]}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
-            ) : (
-              <div className="bg-gray-50 rounded-lg p-8 text-center">
-                <svg className="mx-auto h-12 w-12 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-                </svg>
-                <h3 className="mt-2 text-sm font-medium text-gray-900">No data available</h3>
-                <p className="mt-1 text-sm text-gray-500">
-                  Data preview is only available for operations that have processed data.
-                </p>
-              </div>
+            </Card>
+            
+            {operation.filters && (
+              <Card>
+                <div className="mb-3">
+                  <h3 className="text-lg font-medium text-gray-900">Filters</h3>
+                </div>
+                <div className="bg-gray-50 p-3 rounded font-mono text-sm">
+                  {operation.filters}
+                </div>
+              </Card>
             )}
           </div>
-        )}
-      </div>
+        );
+      
+      case 'history':
+        return (
+          <div className="space-y-6">
+            <div className="flow-root">
+              <ul className="-mb-8">
+                {operation.history.map((historyItem, itemIdx) => (
+                  <li key={historyItem.id}>
+                    <div className="relative pb-8">
+                      {itemIdx !== operation.history.length - 1 ? (
+                        <span
+                          className="absolute top-4 left-4 -ml-px h-full w-0.5 bg-gray-200"
+                          aria-hidden="true"
+                        />
+                      ) : null}
+                      <div className="relative flex space-x-3">
+                        <div>
+                          <span
+                            className={`h-8 w-8 rounded-full flex items-center justify-center ring-8 ring-white ${
+                              historyItem.status === 'warning' || historyItem.status === 'error'
+                                ? 'bg-red-500'
+                                : 'bg-blue-500'
+                            }`}
+                          >
+                            {historyItem.event === 'error' || historyItem.status === 'warning' || historyItem.status === 'error' ? (
+                              <svg className="h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                              </svg>
+                            ) : historyItem.event === 'sync_started' || historyItem.event === 'sync_restarted' ? (
+                              <svg className="h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
+                              </svg>
+                            ) : historyItem.event === 'sync_completed' ? (
+                              <svg className="h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                            ) : (
+                              <svg className="h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                              </svg>
+                            )}
+                          </span>
+                        </div>
+                        <div className="min-w-0 flex-1 pt-1.5 flex justify-between space-x-4">
+                          <div>
+                            <p className="text-sm text-gray-500">
+                              {historyItem.details}
+                              {historyItem.recordsProcessed !== undefined && historyItem.recordsTotal !== undefined && (
+                                <span className="font-medium">
+                                  {' '}
+                                  ({historyItem.recordsProcessed} of {historyItem.recordsTotal} records)
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                          <div className="text-right text-sm whitespace-nowrap text-gray-500">
+                            <time dateTime={historyItem.timestamp}>
+                              {new Date(historyItem.timestamp).toLocaleString()}
+                            </time>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        );
+      
+      case 'config':
+        return (
+          <div className="space-y-6">
+            <Card>
+              <div className="mb-3">
+                <h3 className="text-lg font-medium text-gray-900">Source System Configuration</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Property
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Value
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    <tr>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        System ID
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {operation.source.id}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        System Name
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {operation.source.name}
+                      </td>
+                    </tr>
+                    {Object.entries(operation.source.connectionDetails).map(([key, value]) => (
+                      <tr key={key}>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {key}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {value}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+            
+            <Card>
+              <div className="mb-3">
+                <h3 className="text-lg font-medium text-gray-900">Target System Configuration</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Property
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Value
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    <tr>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        System ID
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {operation.target.id}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        System Name
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {operation.target.name}
+                      </td>
+                    </tr>
+                    {Object.entries(operation.target.connectionDetails).map(([key, value]) => (
+                      <tr key={key}>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {key}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {value}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          </div>
+        );
+      
+      default:
+        return null;
+    }
+  };
 
-      {/* Confirmation Modal */}
+  return (
+    <div className="p-6">
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h1 className="text-2xl font-bold">{operation.name}</h1>
+          <div className="flex items-center mt-1">
+            <span className="mr-2">{renderStatusBadge(operation.status)}</span>
+            <p className="text-gray-600">
+              {operation.dataType.name} from {operation.source.name} to {operation.target.name}
+            </p>
+          </div>
+        </div>
+        <Button
+          variant="secondary"
+          onClick={() => navigate('/sync-dashboard')}
+        >
+          Back to Dashboard
+        </Button>
+      </div>
+      
+      {/* Tabs */}
+      <div className="bg-white shadow-md rounded-lg overflow-hidden">
+        <TabGroup
+          tabs={[
+            { id: 'overview', label: 'Overview', content: null },
+            { id: 'history', label: 'History', content: null },
+            { id: 'config', label: 'Configuration', content: null },
+          ]}
+          defaultTab="overview"
+          onChange={setActiveTab}
+        />
+        
+        <div className="p-6">
+          {renderTabContent()}
+        </div>
+      </div>
+      
+      {/* Cancel Operation Modal */}
       <Modal
-        isOpen={isConfirmModalOpen}
-        onClose={() => setIsConfirmModalOpen(false)}
-        title={modalContent.title}
+        isOpen={showCancelModal}
+        onClose={() => setShowCancelModal(false)}
+        title="Cancel Sync Operation"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowCancelModal(false)}>
+              No, Keep Running
+            </Button>
+            <Button variant="danger" onClick={handleCancelOperation}>
+              Yes, Cancel Operation
+            </Button>
+          </>
+        }
       >
-        <p className="text-sm text-gray-500">{modalContent.message}</p>
-        <div className="mt-4">
-          <ModalFooter 
-            onCancel={() => setIsConfirmModalOpen(false)}
-            onConfirm={handleConfirmAction}
-            cancelText="Cancel"
-            confirmText={modalContent.confirmText}
-            isLoading={actionInProgress}
+        <p className="text-gray-700">
+          Are you sure you want to cancel this sync operation? This will stop all data transfer immediately.
+        </p>
+        <p className="mt-2 text-gray-700">
+          Any data that has already been synchronized will remain in the target system.
+        </p>
+      </Modal>
+      
+      {/* Edit Name Modal */}
+      <Modal
+        isOpen={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        title="Edit Sync Operation"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowEditModal(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleEditName} disabled={!editName.trim()}>
+              Save Changes
+            </Button>
+          </>
+        }
+      >
+        <div>
+          <label htmlFor="operationName" className="block text-sm font-medium text-gray-700">
+            Operation Name
+          </label>
+          <input
+            type="text"
+            id="operationName"
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            placeholder="e.g., Product Catalog Sync"
           />
         </div>
       </Modal>
     </div>
   );
 };
+
+export default SyncDetails;
