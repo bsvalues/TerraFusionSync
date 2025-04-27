@@ -1,6 +1,19 @@
-import axios, { AxiosRequestConfig, AxiosResponse, AxiosError } from 'axios';
+import axios, { AxiosRequestConfig } from 'axios';
 
-// API response type
+// Default API configuration
+const API_BASE_URL = process.env.API_URL || '/api';
+
+// Create an API client instance with default config
+const axiosInstance = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+  },
+  timeout: 30000,
+});
+
+// Response interface
 export interface ApiResponse<T> {
   data: T;
   error: {
@@ -8,140 +21,76 @@ export interface ApiResponse<T> {
     message: string;
     details?: any;
   } | null;
-  meta: {
-    [key: string]: any;
-  };
+  meta: Record<string, any>;
 }
 
-// Configure API client defaults
-const apiClient = axios.create({
-  baseURL: '/api',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  timeout: 30000, // 30 seconds timeout
-});
-
-// Add request interceptor for authentication tokens, etc.
-apiClient.interceptors.request.use(
-  (config: AxiosRequestConfig) => {
-    // Get auth token from storage if it exists
-    const token = localStorage.getItem('auth_token');
-    
-    // If token exists, add to headers
-    if (token && config.headers) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    
+// Add request interceptor for auth tokens, etc.
+axiosInstance.interceptors.request.use(
+  (config) => {
+    // You can add auth tokens here
+    // const token = localStorage.getItem('auth_token');
+    // if (token) {
+    //   config.headers.Authorization = `Bearer ${token}`;
+    // }
     return config;
   },
-  (error: AxiosError) => {
+  (error) => {
     return Promise.reject(error);
   }
 );
 
-// Add response interceptor for standard error handling
-apiClient.interceptors.response.use(
-  (response: AxiosResponse) => {
+// Add response interceptor for global error handling
+axiosInstance.interceptors.response.use(
+  (response) => {
+    // Pass through successful responses
     return response;
   },
-  (error: AxiosError) => {
-    // Handle network errors
-    if (!error.response) {
-      console.error('Network error:', error.message);
+  (error) => {
+    // Handle API errors
+    if (error.response) {
+      // The server responded with a status code outside the 2xx range
+      console.error('API Error:', error.response.status, error.response.data);
       
-      return Promise.reject({
-        error: {
-          code: 'NETWORK_ERROR',
-          message: 'Unable to connect to the server. Please check your internet connection.',
-        }
-      });
+      // You can add global error handling here
+      // if (error.response.status === 401) {
+      //   // Handle authentication errors
+      // }
+    } else if (error.request) {
+      // The request was made but no response was received
+      console.error('Network Error:', error.request);
+    } else {
+      // Something happened in setting up the request
+      console.error('Request Error:', error.message);
     }
     
-    // Handle API errors with standard format
-    if (error.response.status === 401) {
-      // Handle unauthorized - clear token and redirect to login
-      localStorage.removeItem('auth_token');
-      
-      // If we have a custom event for unauthorized, dispatch it
-      const unauthorizedEvent = new CustomEvent('auth:unauthorized');
-      window.dispatchEvent(unauthorizedEvent);
-    }
-    
-    // Log error for debugging
-    console.error('API Error:', {
-      status: error.response.status,
-      url: error.config?.url,
-      method: error.config?.method,
-      data: error.response.data
-    });
-    
-    return Promise.reject(error.response.data);
+    return Promise.reject(error.response?.data || error);
   }
 );
 
-// Export for app-wide use
-export default apiClient;
-
-// API utilities
+// API client interface
 export const api = {
   get: async <T>(url: string, config?: AxiosRequestConfig): Promise<ApiResponse<T>> => {
-    try {
-      const response = await apiClient.get<ApiResponse<T>>(url, config);
-      return response.data;
-    } catch (error) {
-      if (error && typeof error === 'object' && 'error' in error) {
-        return error as ApiResponse<T>;
-      }
-      throw error;
-    }
+    const response = await axiosInstance.get<ApiResponse<T>>(url, config);
+    return response.data;
   },
   
   post: async <T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<ApiResponse<T>> => {
-    try {
-      const response = await apiClient.post<ApiResponse<T>>(url, data, config);
-      return response.data;
-    } catch (error) {
-      if (error && typeof error === 'object' && 'error' in error) {
-        return error as ApiResponse<T>;
-      }
-      throw error;
-    }
-  },
-  
-  put: async <T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<ApiResponse<T>> => {
-    try {
-      const response = await apiClient.put<ApiResponse<T>>(url, data, config);
-      return response.data;
-    } catch (error) {
-      if (error && typeof error === 'object' && 'error' in error) {
-        return error as ApiResponse<T>;
-      }
-      throw error;
-    }
+    const response = await axiosInstance.post<ApiResponse<T>>(url, data, config);
+    return response.data;
   },
   
   patch: async <T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<ApiResponse<T>> => {
-    try {
-      const response = await apiClient.patch<ApiResponse<T>>(url, data, config);
-      return response.data;
-    } catch (error) {
-      if (error && typeof error === 'object' && 'error' in error) {
-        return error as ApiResponse<T>;
-      }
-      throw error;
-    }
+    const response = await axiosInstance.patch<ApiResponse<T>>(url, data, config);
+    return response.data;
+  },
+  
+  put: async <T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<ApiResponse<T>> => {
+    const response = await axiosInstance.put<ApiResponse<T>>(url, data, config);
+    return response.data;
   },
   
   delete: async <T>(url: string, config?: AxiosRequestConfig): Promise<ApiResponse<T>> => {
-    try {
-      const response = await apiClient.delete<ApiResponse<T>>(url, config);
-      return response.data;
-    } catch (error) {
-      if (error && typeof error === 'object' && 'error' in error) {
-        return error as ApiResponse<T>;
-      }
-      throw error;
-    }
+    const response = await axiosInstance.delete<ApiResponse<T>>(url, config);
+    return response.data;
   }
 };

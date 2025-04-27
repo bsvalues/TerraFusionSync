@@ -1,124 +1,148 @@
-export { default as apiClient, api, type ApiResponse } from './client';
+import { api, ApiResponse } from './client';
 
-// Sync operation types
-export type SyncStatus = 'active' | 'completed' | 'failed' | 'pending' | 'scheduled';
-
+// Type definitions
 export interface SyncOperation {
   id: string;
   name: string;
-  status: SyncStatus;
+  description?: string;
   source: string;
   target: string;
   dataType: string;
   fields: string[];
   fieldMapping: Record<string, string>;
-  filters?: string;
-  progress: number;
-  recordsTotal: number;
-  recordsProcessed: number;
-  recordsFailed: number;
-  startTime: string;
-  endTime?: string;
-  scheduledTime?: string;
-  frequency?: string;
-  isRecurring: boolean;
-  lastRunStatus?: string;
+  filters?: Record<string, any>;
+  status: SyncStatus;
+  schedule?: {
+    frequency: 'once' | 'daily' | 'weekly' | 'monthly';
+    startDate: string;
+    startTime: string;
+    isRecurring: boolean;
+    daysOfWeek?: number[];
+    dayOfMonth?: number;
+  };
+  lastRunAt?: string;
+  nextRunAt?: string;
   createdAt: string;
   updatedAt: string;
+  totalRecords?: number;
+  processedRecords?: number;
+  failedRecords?: number;
+  errorMessage?: string;
+  createdBy?: string;
 }
+
+export type SyncStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'scheduled';
 
 export interface SyncHistoryEntry {
   id: string;
-  syncId: string;
-  timestamp: string;
-  event: string;
-  status: string;
-  details?: string;
-  recordsProcessed?: number;
-  recordsTotal?: number;
-  duration?: number;
+  syncOperationId: string;
+  startTime: string;
+  endTime?: string;
+  status: SyncStatus;
+  totalRecords: number;
+  processedRecords: number;
+  failedRecords: number;
+  errorDetails?: Record<string, any>;
 }
 
 export interface SystemInfo {
   id: string;
   name: string;
   type: string;
-  connectionDetails: Record<string, any>;
+  description: string;
+  connectionDetails: {
+    url?: string | boolean;
+    apiKey?: boolean;
+    oauth?: boolean;
+    useCredentials?: boolean;
+  };
 }
 
 export interface DataTypeInfo {
   id: string;
   name: string;
-  fields: string[];
+  description: string;
+  fields: Array<{
+    name: string;
+    type: string;
+    required: boolean;
+    description?: string;
+  }>;
+  sourceSystemId?: string;
 }
 
 export interface FilterOptions {
-  page?: number;
-  limit?: number;
   status?: SyncStatus;
   source?: string;
   target?: string;
   dataType?: string;
-  fromDate?: string;
-  toDate?: string;
+  [key: string]: any;
 }
 
 export interface PaginationMetadata {
   page: number;
   limit: number;
-  totalCount: number;
-  totalPages: number;
+  total: number;
+  pages: number;
 }
 
-// Sync API endpoints
-export const SyncApi = {
-  // Get list of sync operations with filtering
-  getSyncs: (filters?: FilterOptions) => {
-    return api.get<SyncOperation[]>('/plugins/marketplace-sync/v1/syncs', { params: filters });
-  },
+// API functions
+export async function getSyncOperations(
+  page: number = 1,
+  limit: number = 20,
+  filters: FilterOptions = {}
+): Promise<ApiResponse<SyncOperation[]>> {
+  const queryParams = new URLSearchParams({
+    page: page.toString(),
+    limit: limit.toString(),
+    ...Object.entries(filters)
+      .filter(([_, value]) => value !== undefined && value !== null)
+      .reduce((acc, [key, value]) => ({ ...acc, [key]: value.toString() }), {})
+  });
   
-  // Get a specific sync operation by ID
-  getSync: (id: string) => {
-    return api.get<SyncOperation>(`/plugins/marketplace-sync/v1/syncs/${id}`);
-  },
-  
-  // Create a new sync operation
-  createSync: (data: any) => {
-    return api.post<SyncOperation>('/plugins/marketplace-sync/v1/syncs', data);
-  },
-  
-  // Update a sync operation
-  updateSync: (id: string, data: any) => {
-    return api.patch<SyncOperation>(`/plugins/marketplace-sync/v1/syncs/${id}`, data);
-  },
-  
-  // Retry a failed sync operation
-  retrySync: (id: string) => {
-    return api.post<SyncOperation>(`/plugins/marketplace-sync/v1/syncs/${id}/actions/retry`);
-  },
-  
-  // Cancel an active sync operation
-  cancelSync: (id: string) => {
-    return api.post<SyncOperation>(`/plugins/marketplace-sync/v1/syncs/${id}/actions/cancel`);
-  },
-  
-  // Get sync operation history
-  getSyncHistory: (id: string) => {
-    return api.get<SyncHistoryEntry[]>(`/plugins/marketplace-sync/v1/syncs/${id}/history`);
-  },
-  
-  // Get available systems
-  getSystems: () => {
-    return api.get<SystemInfo[]>('/plugins/marketplace-sync/v1/systems');
-  },
-  
-  // Get available data types
-  getDataTypes: () => {
-    return api.get<DataTypeInfo[]>('/plugins/marketplace-sync/v1/datatypes');
-  },
-  
-  // Get sync metrics
-  getMetrics: () => {
-    return api.get<any>('/plugins/marketplace-sync/v1/metrics');
-  }
-};
+  return api.get<SyncOperation[]>(`/plugins/marketplace-sync/v1/syncs?${queryParams.toString()}`);
+}
+
+export async function getSyncOperation(id: string): Promise<ApiResponse<SyncOperation>> {
+  return api.get<SyncOperation>(`/plugins/marketplace-sync/v1/syncs/${id}`);
+}
+
+export async function createSyncOperation(
+  data: Omit<SyncOperation, 'id' | 'createdAt' | 'updatedAt' | 'status'>
+): Promise<ApiResponse<SyncOperation>> {
+  return api.post<SyncOperation>('/plugins/marketplace-sync/v1/syncs', data);
+}
+
+export async function updateSyncOperation(
+  id: string,
+  data: Partial<SyncOperation>
+): Promise<ApiResponse<SyncOperation>> {
+  return api.patch<SyncOperation>(`/plugins/marketplace-sync/v1/syncs/${id}`, data);
+}
+
+export async function deleteSyncOperation(id: string): Promise<ApiResponse<boolean>> {
+  return api.delete<boolean>(`/plugins/marketplace-sync/v1/syncs/${id}`);
+}
+
+export async function runSyncOperation(id: string): Promise<ApiResponse<SyncOperation>> {
+  return api.post<SyncOperation>(`/plugins/marketplace-sync/v1/syncs/${id}/actions/run`);
+}
+
+export async function retrySyncOperation(id: string): Promise<ApiResponse<SyncOperation>> {
+  return api.post<SyncOperation>(`/plugins/marketplace-sync/v1/syncs/${id}/actions/retry`);
+}
+
+export async function getAvailableSystems(): Promise<ApiResponse<SystemInfo[]>> {
+  return api.get<SystemInfo[]>('/plugins/marketplace-sync/v1/systems');
+}
+
+export async function getAvailableDataTypes(): Promise<ApiResponse<DataTypeInfo[]>> {
+  return api.get<DataTypeInfo[]>('/plugins/marketplace-sync/v1/datatypes');
+}
+
+export async function getSyncHistory(syncId: string): Promise<ApiResponse<SyncHistoryEntry[]>> {
+  return api.get<SyncHistoryEntry[]>(`/plugins/marketplace-sync/v1/syncs/${syncId}/history`);
+}
+
+// Re-export client
+export { ApiResponse } from './client';

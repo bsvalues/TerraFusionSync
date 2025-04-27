@@ -1,3 +1,2 @@
+// Re-export all API types and functions
 export * from './api';
-export * from './types';
-export * from './schemas/sync-schemas';
