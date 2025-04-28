@@ -38,7 +38,7 @@ dependencies = [
 
 [tool.setuptools]
 packages = ["apps", "apps.backend", "apps.backend.syncservice", "libs"]
-package-dir = "."
+package-dir = {"" = "."}
 
 [tool.pytest]
 testpaths = ["tests"]
