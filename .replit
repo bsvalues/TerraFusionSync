@@ -66,7 +66,7 @@ args = "python -m pip install -r requirements.txt"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "gunicorn --bind 0.0.0.0:5000 main:app --reload"
+args = "gunicorn --bind 0.0.0.0:5000 main:app --reload --timeout 120"
 
 [[ports]]
 localPort = 5000
