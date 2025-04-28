@@ -1,0 +1,17 @@
+README.md
+pyproject.toml
+./apps/backend/__init__.py
+./apps/backend/database.py
+./apps/backend/syncservice/force_port_8080.py
+./apps/backend/syncservice/main.py
+./apps/backend/syncservice/run_service.py
+./apps/backend/syncservice/run_with_port.py
+./apps/backend/syncservice/start.py
+./apps/backend/syncservice/sync_integration.py
+./apps/backend/syncservice/sync_service_runner.py
+./apps/backend/syncservice/workflow_starter.py
+terrafusion.egg-info/PKG-INFO
+terrafusion.egg-info/SOURCES.txt
+terrafusion.egg-info/dependency_links.txt
+terrafusion.egg-info/requires.txt
+terrafusion.egg-info/top_level.txt

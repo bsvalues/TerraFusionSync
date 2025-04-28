@@ -7,7 +7,7 @@ packages = ["libxcrypt", "libyaml", "nats-server", "openssl", "postgresql", "uni
 [deployment]
 deploymentTarget = "autoscale"
 run = ["sh", "-c", "gunicorn --bind 0.0.0.0:5000 main:app"]
-build = ["sh", "-c", "python -m pip install -e ."]
+build = ["sh", "-c", "python -m pip install -r requirements.txt"]
 
 [workflows]
 runButton = "Project"
