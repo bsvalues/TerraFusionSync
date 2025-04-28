@@ -1701,9 +1701,6 @@ def proxy(path):
         }), 500
 
 
-# Initialize authentication routes
-init_auth_routes(app)
-
 # Utility function for creating audit log entries
 def create_audit_log(
     event_type: str,
