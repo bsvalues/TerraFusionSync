@@ -1006,8 +1006,8 @@ def get_sync_operations():
 
 
 @app.route('/api/metrics', methods=['GET'])
+@app.route('/api/system-metrics', methods=['GET'])
 @requires_auth
-@app.route('/api/system-metrics')
 def get_system_metrics():
     """Get system metrics from the database."""
     limit = request.args.get('limit', 100, type=int)
