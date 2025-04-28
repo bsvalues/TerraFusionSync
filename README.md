@@ -1,130 +1,100 @@
-# TerraFusion SyncService
+# TerraFusion SyncService Platform
 
-A sophisticated SyncService platform for enterprise data migration, designed to enable seamless integration across diverse system architectures with advanced monitoring and adaptive synchronization capabilities.
+A sophisticated enterprise data synchronization platform that enables intelligent, scalable data migration across complex system landscapes.
 
-## Architecture Overview
+## Overview
 
-The TerraFusion SyncService uses a two-tier microservice architecture:
+TerraFusion SyncService is a robust, enterprise-grade data synchronization platform built with a microservice architecture. It provides intelligent data migration capabilities between various systems with advanced monitoring, logging, and recovery features.
 
-1. **API Gateway (Flask, port 5000):**
+## Architecture
+
+The system uses a two-tier microservice architecture:
+
+1. **API Gateway (Flask, port 5000)**
    - Main entry point for all client requests
    - Handles authentication and routing
-   - Proxies API requests to the SyncService
-   - Provides auto-recovery of the SyncService if it stops
-   - Status monitoring and management endpoints
+   - Provides auto-recovery and health monitoring
 
-2. **SyncService (FastAPI, port 8080):**
+2. **SyncService (FastAPI, port 8080)**
    - Core business logic for synchronization
-   - Implements change detection, transformation, validation
-   - Provides detailed metrics and monitoring
-   - Self-healing capabilities for failed syncs
-   - Handles direct database interactions
-
-## Communication Flow
-
-```
-Client -> API Gateway (port 5000) -> SyncService (port 8080) -> External Systems
-```
+   - Implements change detection and validation
+   - Exposes detailed metrics and health endpoints
 
 ## Key Features
 
-- **Multi-system Integration**: Connect and synchronize data between PACS, CAMA, GIS, ERP, and CRM systems
-- **Incremental and Full Sync**: Support for both full data transfers and efficient incremental updates
-- **Real-time Monitoring**: Comprehensive metrics and health monitoring for all components
-- **Self-healing Capabilities**: Automatic recovery from failures and connection issues
-- **Defensive Programming**: Robust error handling with fallbacks at every level
+- **Intelligent Sync Workflows**: Customizable sync operations with incremental and full sync modes
+- **Advanced Monitoring**: Comprehensive metrics collection and visualization
+- **Auto-recovery**: Self-healing capabilities that automatically restart failed components
+- **Audit Logging**: Complete audit trail of all operations for compliance and debugging
+- **Performance Tuning**: Optimized database access and connection pooling
+- **Disaster Recovery**: Built-in backup, restore, and recovery procedures
+- **Scheduled Maintenance**: Automated maintenance tasks on regular schedules
+- **Security**: Configurable authentication, rate limiting, and security controls
 
-## Component Details
+## Getting Started
 
-### API Gateway
+### Prerequisites
 
-Built using Flask, provides a unified API surface for all clients. Features include:
-
-- Status monitoring and health checks
-- Service discovery and routing
-- Authentication and API key management
-- Database access for configuration and operations history
-- Dashboard UI for monitoring sync operations
-
-### SyncService
-
-Built using FastAPI, implements the core business logic for data synchronization:
-
-- Incremental and full sync operations
-- Change detection and differential updates
-- Data transformation and mapping
-- System resource monitoring
-- Error recovery and retry mechanisms
-
-## Setup and Configuration
-
-### Requirements
-
-- Python 3.11+
 - PostgreSQL database
-- Dependencies as listed in `pyproject.toml`
+- Python 3.8+
+- Required Python packages (installed via the package manager)
 
-### Environment Variables
+### Starting the Application
 
-The following environment variables are required:
+The application uses two workflows:
 
-- `DATABASE_URL`: PostgreSQL connection string
-- `SYNCSERVICE_API_KEY`: API key for SyncService authentication
+1. Start the SyncService:
+   ```
+   replit workflow start syncservice
+   ```
 
-### Installation
+2. Start the API Gateway:
+   ```
+   replit workflow start "Start application"
+   ```
 
-1. Clone the repository
-2. Install dependencies: `pip install -e .`
-3. Set up the database: `flask db upgrade`
-4. Start the services:
-   - API Gateway: `gunicorn --bind 0.0.0.0:5000 main:app`
-   - SyncService: `cd apps/backend/syncservice && uvicorn syncservice.main:app --host 0.0.0.0 --port 8080`
+### Verifying the Installation
 
-## API Documentation
+After starting the application, you can verify it's working by:
 
-### API Gateway Endpoints
+1. Checking the status endpoint:
+   ```
+   curl http://localhost:5000/api/status
+   ```
 
-- `GET /`: Root endpoint providing API information
-- `GET /dashboard`: Dashboard UI for monitoring
-- `GET /api/status`: API status and component health
-- `GET /api/sync-pairs`: List of configured sync pairs
-- `GET /api/sync-operations`: History of sync operations
+2. Checking the health endpoint:
+   ```
+   curl http://localhost:8080/health
+   ```
 
-### SyncService Endpoints
+## Key Utilities
 
-- `GET /health`: Health check endpoint
-- `POST /api/sync/full`: Start a full sync operation
-- `POST /api/sync/incremental`: Start an incremental sync operation
-- `GET /api/sync/operations`: List active and completed operations
-- `GET /api/metrics/system`: System metrics and performance data
+The platform includes several utility scripts for operations, maintenance, and recovery:
 
-## Development
+- **service_recovery.py**: Service recovery procedures
+- **backup_utilities.py**: Database backup and restore
+- **performance_tuning.py**: Performance optimization utilities
+- **disaster_recovery.py**: Disaster recovery procedures
+- **maintenance_schedule.py**: Scheduled maintenance tasks
+- **monitoring_service.py**: Monitoring and alerting
 
-### Project Structure
+## Documentation
 
-```
-terrafusion/
-├── apps/
-│   ├── backend/
-│   │   ├── api/         # API Gateway code
-│   │   └── syncservice/ # SyncService code
-│   └── frontend/        # Dashboard UI
-├── libs/
-│   └── shared/          # Shared utilities
-├── docs/                # Documentation
-└── tests/               # Test cases
-```
+Detailed documentation is available in the `docs` directory:
 
-### Testing
+- [System Documentation](docs/system_documentation.md): Comprehensive system documentation
+- Recovery plans are automatically generated in the `recovery_scripts` directory
+- Maintenance reports are created in the `maintenance_scripts` directory
 
-Run tests with: `pytest tests/`
+## Monitoring
 
-## Troubleshooting
+Key monitoring endpoints:
 
-- **API Gateway can't connect to SyncService**: Ensure SyncService is running on port 8080
-- **Database errors**: Check the DATABASE_URL environment variable
-- **SyncService crashes**: Check system monitoring logs for resource issues
+- System Status: `http://localhost:5000/api/status`
+- Health Check: `http://localhost:8080/health`
+- System Metrics: `http://localhost:8080/metrics`
+- Audit Summary: `http://localhost:5000/api/audit/summary`
 
 ## License
 
-MIT License
+Copyright (c) 2025 TerraFusion. All rights reserved.
