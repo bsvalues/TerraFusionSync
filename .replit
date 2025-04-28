@@ -10,7 +10,7 @@ run = ["sh", "-c", "gunicorn --bind 0.0.0.0:5000 main:app"]
 build = ["sh", "-c", "python -m pip install -r requirements.txt"]
 
 [workflows]
-runButton = "Project"
+runButton = "Run API Gateway"
 
 [[workflows.workflow]]
 name = "Project"
@@ -54,6 +54,19 @@ task = "packager.installForAll"
 task = "shell.exec"
 args = "python run_syncservice_workflow_8080.py"
 waitForPort = 8080
+
+[[workflows.workflow]]
+name = "Run API Gateway"
+author = 37274620
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python -m pip install -r requirements.txt"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "gunicorn --bind 0.0.0.0:5000 main:app --reload"
 
 [[ports]]
 localPort = 5000
