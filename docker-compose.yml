@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  api-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.api-gateway
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_APP=main.py
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-a_secure_key_for_development}
+      - SYNCSERVICE_BASE_URL=http://sync-service:8080
+      - DATABASE_URL=${DATABASE_URL}
+    volumes:
+      - ./:/app
+    depends_on:
+      - sync-service
+      - db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  sync-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.sync-service
+    ports:
+      - "8080:8080"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - SYNCSERVICE_DEV_MODE=1
+    volumes:
+      - ./:/app
+    depends_on:
+      - db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  db:
+    image: postgres:14-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-terradata}
+      - POSTGRES_USER=${POSTGRES_USER:-terrafusion}
+      - POSTGRES_DB=${POSTGRES_DB:-terrafusion}
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U terrafusion"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+    depends_on:
+      - api-gateway
+      - sync-service
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+
+volumes:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
