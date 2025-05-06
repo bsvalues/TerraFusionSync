@@ -17,6 +17,10 @@ from urllib.parse import urljoin
 
 from flask import Flask, jsonify, request, render_template, redirect, url_for, Response, session
 
+# Configure logging first to avoid "logger not defined" errors
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
 # Create and initialize the Flask app
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or "a secret key"
@@ -77,6 +81,14 @@ except ImportError:
 
 # Initialize authentication routes
 init_auth_routes(app)
+
+# Import and register WebSocket proxy
+try:
+    from proxy_websocket import register_websocket_proxy
+    register_websocket_proxy(app)
+    logger.info("WebSocket proxy registered successfully")
+except ImportError as e:
+    logger.warning(f"WebSocket proxy not available: {e}")
 
 # Register API blueprints
 try:

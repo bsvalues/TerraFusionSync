@@ -6,3 +6,4 @@ psycopg2-binary
 flask-sqlalchemy
 requests
 pydantic
+aiohttp
