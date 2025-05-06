@@ -7,3 +7,10 @@ flask-sqlalchemy
 requests
 pydantic
 aiohttp
+fastapi
+psutil
+tomli
+tomli-w
+uvicorn
+websockets
+werkzeug
