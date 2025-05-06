@@ -757,6 +757,58 @@ def trigger_health_check():
             "timestamp": datetime.utcnow().isoformat()
         }), 500
 
+@app.route('/health')
+def health_check():
+    """
+    General health check endpoint.
+    
+    This is the main health check endpoint for the API Gateway,
+    providing overall service health status.
+    """
+    # Check if SyncService is available
+    syncservice_status = check_syncservice_status()
+    
+    # Check database connection
+    try:
+        # Simple database query to check connection
+        db_status = db.session.execute(db.select(db.func.now())).scalar() is not None
+    except Exception as e:
+        logger.error(f"Database connection error: {str(e)}")
+        db_status = False
+    
+    # Check WebSocket server status
+    websocket_status = False
+    try:
+        response = requests.get("http://0.0.0.0:8081/health", timeout=2)
+        websocket_status = response.status_code == 200
+    except Exception:
+        websocket_status = False
+    
+    # Get system metrics using the safe system monitor
+    system_metrics = {}
+    try:
+        monitor = SafeSystemMonitor()
+        system_metrics = monitor.get_system_health()
+    except Exception as e:
+        logger.error(f"Error getting system metrics: {str(e)}")
+    
+    # Overall health status
+    is_healthy = db_status  # API Gateway requires database to be healthy
+    
+    return jsonify({
+        "service": "TerraFusion API Gateway",
+        "status": "healthy" if is_healthy else "unhealthy",
+        "version": "0.1.0",
+        "timestamp": datetime.utcnow().isoformat(),
+        "components": {
+            "api_gateway": "healthy",
+            "sync_service": "healthy" if syncservice_status else "unhealthy",
+            "database": "healthy" if db_status else "unhealthy",
+            "websocket": "healthy" if websocket_status else "unhealthy"
+        },
+        "system": system_metrics
+    }), 200 if is_healthy else 503
+
 @app.route('/health/live')
 def liveness_check():
     """
