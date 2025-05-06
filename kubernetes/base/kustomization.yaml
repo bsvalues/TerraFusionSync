@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- api-gateway-deployment.yaml
+- sync-service-deployment.yaml
+- websocket-deployment.yaml
+- database-deployment.yaml
+- ingress.yaml
+
+# The secrets-template.yaml is not included here as it should be customized per environment
+# and included in the overlays

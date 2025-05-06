@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sync-service
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+      - name: sync-service
+        env:
+        - name: SYNCSERVICE_DEV_MODE
+          valueFrom:
+            configMapKeyRef:
+              name: dev-terrafusion-config
+              key: SYNCSERVICE_DEV_MODE
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: dev-terrafusion-config
+              key: LOG_LEVEL
+        resources:
+          limits:
+            cpu: "0.5"
+            memory: "512Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
