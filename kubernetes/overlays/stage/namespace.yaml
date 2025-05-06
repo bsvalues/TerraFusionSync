@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: terrafusion-stage
+  labels:
+    name: terrafusion-stage
+    environment: staging

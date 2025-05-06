@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sync-service
+spec:
+  replicas: 3  # Higher replica count for production
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 2
+      maxUnavailable: 0
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8080"
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - sync-service
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: sync-service
+        env:
+        - name: SYNCSERVICE_DEV_MODE
+          valueFrom:
+            configMapKeyRef:
+              name: prod-terrafusion-config
+              key: SYNCSERVICE_DEV_MODE
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: prod-terrafusion-config
+              key: LOG_LEVEL
+        resources:
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+          requests:
+            cpu: "1"
+            memory: "2Gi"
+        volumeMounts:
+        - name: logs
+          mountPath: /app/logs
+      volumes:
+      - name: logs
+        persistentVolumeClaim:
+          claimName: prod-sync-service-logs
