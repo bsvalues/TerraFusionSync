@@ -8,6 +8,9 @@ resources:
 - ../../base
 - namespace.yaml
 - persistent-volumes.yaml
+- autoscaling.yaml
+- network-policies.yaml
+- pod-disruption-budgets.yaml
 
 patchesStrategicMerge:
 - api-gateway-patch.yaml

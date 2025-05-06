@@ -7,6 +7,7 @@ resources:
 - websocket-deployment.yaml
 - database-deployment.yaml
 - ingress.yaml
+- prometheus-servicemonitor.yaml
 
 # The secrets-template.yaml is not included here as it should be customized per environment
 # and included in the overlays
