@@ -284,22 +284,23 @@ def authenticate_user(username: str, password: str) -> Optional[Dict]:
         logger.error(f"LDAP authentication error for {username}: {str(e)}")
         return None
 
-def get_user_permissions(roles: List[str]) -> Set[str]:
+def get_user_permissions(roles: List[str]) -> List[str]:
     """
-    Get the set of permissions for a user based on their roles.
+    Get the list of permissions for a user based on their roles.
     
     Args:
         roles: List of role names
         
     Returns:
-        Set of permission strings
+        List of permission strings
     """
     permissions = set()
     for role in roles:
         if role in ROLE_PERMISSIONS:
             role_perms = ROLE_PERMISSIONS[role].get("permissions", [])
             permissions.update(role_perms)
-    return permissions
+    # Convert set to list to ensure JSON serializability
+    return list(permissions)
 
 def check_ip_allowed(ip_address: str) -> bool:
     """
@@ -335,11 +336,11 @@ def check_permission(permission: str) -> bool:
     if "ITAdmin" in user.get('roles', []):
         return True
     
-    # Check specific permissions
-    user_permissions = set()
+    # Check specific permissions - use a list instead of a set
+    user_permissions = []
     for role in user.get('roles', []):
         role_perms = ROLE_PERMISSIONS.get(role, {}).get("permissions", [])
-        user_permissions.update(role_perms)
+        user_permissions.extend(role_perms)
     
     return permission in user_permissions
 
@@ -585,12 +586,12 @@ def check_county_permission(permission: str) -> bool:
                 'Auditor': ['view_sync_operations', 'view_reports', 'view_audit_logs']
             }
             
-            # Check if the user has any role with the requested permission
+            # Convert sets to lists for JSON serializability
+            user_permissions = []
             for role in roles:
-                if permission in role_permissions.get(role, []):
-                    return True
+                user_permissions.extend(role_permissions.get(role, []))
             
-            return False
+            return permission in user_permissions
         else:
             return False
     except RuntimeError:
