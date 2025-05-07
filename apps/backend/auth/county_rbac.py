@@ -75,6 +75,53 @@ ROLE_PERMISSIONS = {
     }
 }
 
+# Map from Active Directory groups to application roles
+# This mapping allows us to determine which application roles
+# to assign based on the AD groups a user belongs to
+AD_GROUP_TO_ROLE_MAP = {
+    # IT Department
+    "IT Administrators": "ITAdmin",
+    "SysAdmins": "ITAdmin",
+    "Domain Admins": "ITAdmin",
+    
+    # Assessor's Office
+    "Property Assessors": "Assessor",
+    "Assessment Managers": "Assessor",
+    "Assessment Supervisors": "Assessor",
+    
+    # Staff groups
+    "Property Staff": "Staff",
+    "Assessment Clerks": "Staff",
+    "Data Entry": "Staff",
+    
+    # Auditor groups
+    "County Auditors": "Auditor",
+    "Financial Oversight": "Auditor",
+    "Compliance Officers": "Auditor"
+}
+
+def map_ad_groups_to_roles(ad_groups: List[str]) -> List[str]:
+    """
+    Maps Active Directory groups to application roles.
+    
+    Args:
+        ad_groups: List of Active Directory group names
+        
+    Returns:
+        List of application roles
+    """
+    roles = set()
+    
+    for group in ad_groups:
+        if group in AD_GROUP_TO_ROLE_MAP:
+            roles.add(AD_GROUP_TO_ROLE_MAP[group])
+    
+    # If no mappable roles found, use a restricted default
+    if not roles:
+        logger.warning(f"No role mappings found for AD groups: {ad_groups}")
+    
+    return list(roles)
+
 # County IP range (for development, allow all)
 COUNTY_IP_RANGES = [
     "192.168.0.0/16",  # Example: Development environment
@@ -145,8 +192,8 @@ mock_users = load_mock_users()
 
 def authenticate_user(username: str, password: str) -> Optional[Dict]:
     """
-    Authenticate a user against the County authentication system.
-    In production, this would use LDAP to authenticate against Active Directory.
+    Authenticate a user against the County Active Directory.
+    Uses LDAP to authenticate against the County AD server.
     
     Args:
         username: The username to authenticate
@@ -155,19 +202,87 @@ def authenticate_user(username: str, password: str) -> Optional[Dict]:
     Returns:
         User data dictionary if authenticated, None otherwise
     """
-    for user in mock_users.get("users", []):
-        if user.get("username") == username and user.get("password") == password and user.get("active", False):
-            # Create a clean user object to return (omit password)
-            return {
-                "id": f"user-{username}",
-                "username": username,
-                "email": user.get("email"),
-                "full_name": user.get("full_name"),
-                "roles": user.get("roles", []),
-                "department": user.get("department"),
-                "permissions": get_user_permissions(user.get("roles", []))
-            }
-    return None
+    # Get LDAP configuration from environment variables
+    ldap_server = os.environ.get('COUNTY_LDAP_SERVER', '')
+    ldap_base_dn = os.environ.get('COUNTY_LDAP_BASE_DN', '')
+    ldap_domain = os.environ.get('COUNTY_LDAP_DOMAIN', '')
+    
+    # Check if we're in development mode (no LDAP server configured)
+    if not ldap_server or not ldap_base_dn:
+        logger.warning("LDAP not configured. Using mock authentication.")
+        # Fall back to mock users for development
+        for user in mock_users.get("users", []):
+            if user.get("username") == username and user.get("password") == password and user.get("active", False):
+                # Create a clean user object to return (omit password)
+                return {
+                    "id": f"user-{username}",
+                    "username": username,
+                    "email": user.get("email"),
+                    "full_name": user.get("full_name"),
+                    "roles": user.get("roles", []),
+                    "department": user.get("department"),
+                    "permissions": get_user_permissions(user.get("roles", []))
+                }
+        return None
+    
+    try:
+        import ldap
+        
+        # Format user principal name
+        user_dn = f"{username}@{ldap_domain}" if ldap_domain else username
+        
+        # Initialize LDAP connection
+        conn = ldap.initialize(ldap_server)
+        conn.protocol_version = ldap.VERSION3
+        conn.set_option(ldap.OPT_REFERRALS, 0)
+        
+        # Bind with the provided credentials
+        conn.simple_bind_s(user_dn, password)
+        
+        # Search for the user to get their details
+        search_filter = f"(sAMAccountName={username})"
+        attrs = ['mail', 'displayName', 'department', 'memberOf']
+        
+        result = conn.search_s(ldap_base_dn, ldap.SCOPE_SUBTREE, search_filter, attrs)
+        
+        # No user found
+        if not result or not result[0][1]:
+            logger.warning(f"User {username} authenticated but not found in directory.")
+            return None
+        
+        # Extract user attributes
+        user_attrs = result[0][1]
+        email = user_attrs.get('mail', [b''])[0].decode('utf-8')
+        full_name = user_attrs.get('displayName', [b''])[0].decode('utf-8')
+        department = user_attrs.get('department', [b''])[0].decode('utf-8')
+        
+        # Extract AD groups
+        ad_groups = []
+        for group_dn in user_attrs.get('memberOf', []):
+            group_name = group_dn.decode('utf-8').split(',')[0].split('=')[1]
+            ad_groups.append(group_name)
+        
+        # Map AD groups to application roles
+        roles = map_ad_groups_to_roles(ad_groups)
+        
+        # Close the connection
+        conn.unbind_s()
+        
+        return {
+            "id": f"ad-{username}",
+            "username": username,
+            "email": email,
+            "full_name": full_name,
+            "roles": roles,
+            "department": department,
+            "permissions": get_user_permissions(roles)
+        }
+    except ldap.INVALID_CREDENTIALS:
+        logger.warning(f"Invalid credentials for user {username}")
+        return None
+    except Exception as e:
+        logger.error(f"LDAP authentication error for {username}: {str(e)}")
+        return None
 
 def get_user_permissions(roles: List[str]) -> Set[str]:
     """
