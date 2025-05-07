@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="400" height="300" viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect x="0" y="0" width="400" height="300" fill="#f0f7fd" rx="10" ry="10"/>
+  
+  <!-- Staff dashboard illustration -->
+  <rect x="50" y="50" width="300" height="200" fill="#ffffff" stroke="#003366" stroke-width="2" rx="5" ry="5"/>
+  
+  <!-- Header bar -->
+  <rect x="50" y="50" width="300" height="40" fill="#28a745" rx="5" ry="5"/>
+  <text x="70" y="75" font-family="Arial" font-size="14" fill="#ffffff" font-weight="bold">County Property Assessment - Staff Dashboard</text>
+  
+  <!-- User icon -->
+  <circle cx="330" cy="70" r="15" fill="#ffffff"/>
+  <path d="M330 60 Q330 55, 325 55 L335 55 Q330 55, 330 60" fill="#28a745"/>
+  <circle cx="330" cy="67" r="6" fill="#28a745"/>
+  <path d="M320 80 Q330 90, 340 80" fill="#28a745"/>
+  
+  <!-- Upload section -->
+  <rect x="60" y="100" width="280" height="80" fill="#f0f7fd" stroke="#b3d7ff" stroke-width="1" rx="3" ry="3"/>
+  <text x="70" y="120" font-family="Arial" font-size="14" fill="#003366" font-weight="bold">Upload New Assessment Data</text>
+  <rect x="70" y="130" width="200" height="30" fill="#ffffff" stroke="#ced4da" stroke-width="1" rx="3" ry="3"/>
+  <text x="80" y="150" font-family="Arial" font-size="12" fill="#6c757d">Select file to upload...</text>
+  <rect x="280" y="130" width="50" height="30" fill="#28a745" rx="3" ry="3"/>
+  <text x="292" y="150" font-family="Arial" font-size="12" fill="#ffffff" font-weight="bold">Browse</text>
+  
+  <!-- Recent uploads table -->
+  <rect x="60" y="190" width="280" height="50" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1" rx="3" ry="3"/>
+  <text x="70" y="210" font-family="Arial" font-size="14" fill="#003366" font-weight="bold">Recent Uploads</text>
+  
+  <rect x="70" y="220" width="260" height="1" fill="#dee2e6"/>
+  <text x="80" y="235" font-family="Arial" font-size="10" fill="#212529">property_data_2025.csv</text>
+  <text x="220" y="235" font-family="Arial" font-size="10" fill="#28a745">APPROVED</text>
+  <text x="280" y="235" font-family="Arial" font-size="10" fill="#6c757d">Yesterday</text>
+  
+  <!-- Title -->
+  <text x="200" y="275" font-family="Arial" font-size="14" text-anchor="middle" fill="#003366" font-weight="bold">
+    Welcome Staff Member
+  </text>
+</svg>
