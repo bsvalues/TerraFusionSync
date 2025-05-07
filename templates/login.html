@@ -11,6 +11,16 @@
                     <h3 class="card-title mb-0">Login to TerraFusion</h3>
                 </div>
                 <div class="card-body">
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                      {% if messages %}
+                        {% for category, message in messages %}
+                          <div class="alert {% if category == 'error' %}alert-danger{% else %}alert-{{ category }}{% endif %}">
+                            {{ message }}
+                          </div>
+                        {% endfor %}
+                      {% endif %}
+                    {% endwith %}
+                    
                     {% if error %}
                     <div class="alert alert-danger">
                         {{ error }}
@@ -26,6 +36,9 @@
                             <label for="password">Password</label>
                             <input type="password" class="form-control" id="password" name="password" required>
                         </div>
+                        {% if request.args.get('next') %}
+                        <input type="hidden" name="next" value="{{ request.args.get('next') }}">
+                        {% endif %}
                         <div class="d-grid gap-2">
                             <button type="submit" class="btn btn-primary">Login</button>
                         </div>
@@ -40,54 +53,4 @@
         </div>
     </div>
 </div>
-
-<script>
-    document.getElementById('login-form').addEventListener('submit', function(e) {
-        e.preventDefault();
-        
-        const username = document.getElementById('username').value;
-        const password = document.getElementById('password').value;
-        
-        fetch('{{ url_for("auth_bp.login") }}', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                username: username,
-                password: password
-            }),
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                // Store token in localStorage for SPA functionality
-                localStorage.setItem('auth_token', data.token);
-                
-                // Redirect to dashboard or original requested URL
-                const next = new URLSearchParams(window.location.search).get('next');
-                window.location.href = next || '{{ url_for("dashboard") }}';
-            } else {
-                // Show error message
-                const errorDiv = document.createElement('div');
-                errorDiv.className = 'alert alert-danger';
-                errorDiv.textContent = data.error || 'Authentication failed';
-                
-                const form = document.getElementById('login-form');
-                form.parentNode.insertBefore(errorDiv, form);
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            
-            // Show error message
-            const errorDiv = document.createElement('div');
-            errorDiv.className = 'alert alert-danger';
-            errorDiv.textContent = 'An error occurred during login';
-            
-            const form = document.getElementById('login-form');
-            form.parentNode.insertBefore(errorDiv, form);
-        });
-    });
-</script>
 {% endblock %}

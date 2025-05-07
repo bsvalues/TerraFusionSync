@@ -68,12 +68,11 @@ except ImportError:
             if 'token' not in session:
                 # Store the requested URL in session for redirect after login
                 session['next'] = request.path
-                # Redirect to login page if not authenticated
-                if request.content_type == 'application/json':
-                    return jsonify({'success': False, 'error': 'Authentication required'}), 401
-                else:
-                    flash('Authentication required to access this page', 'error')
-                    return redirect(url_for('login_page', next=request.path))
+                
+                # Always redirect to login page if not authenticated
+                # Regardless of whether it's an API or browser request
+                flash('Authentication required to access this page', 'error')
+                return redirect(url_for('login_page', next=request.path))
             return f(*args, **kwargs)
         return decorated
     
@@ -139,10 +138,11 @@ except ImportError:
                     # Handle form login
                     username = request.form.get('username')
                     password = request.form.get('password')
+                    next_param = request.form.get('next')
                     
                     if not username or not password:
                         flash('Username and password required', 'error')
-                        return redirect(url_for('login_page'))
+                        return redirect(url_for('login_page', next=next_param))
                     
                     # Create user data
                     user_data = {
@@ -172,10 +172,14 @@ except ImportError:
                     session['token'] = token
                     session['user'] = user_data
                     
-                    # Redirect to next or dashboard
-                    next_url = session.get('next', url_for('dashboard'))
-                    session.pop('next', None)
+                    # Get next URL from form parameter, URL param, session, or default to dashboard
+                    next_url = next_param or request.args.get('next') or session.get('next') or url_for('dashboard')
                     
+                    # Clean up session next if it exists
+                    if 'next' in session:
+                        session.pop('next', None)
+                    
+                    # Redirect to appropriate page
                     return redirect(next_url)
             else:
                 # For GET requests, redirect to login page
