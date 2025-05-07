@@ -14,6 +14,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 from urllib.parse import urljoin
+from functools import wraps
 
 from flask import Flask, jsonify, request, render_template, redirect, url_for, Response, session, flash
 
@@ -60,16 +61,144 @@ except ImportError:
     CUSTOM_AUTH_AVAILABLE = False
     
     def requires_auth(f):
-        """Fallback auth decorator that doesn't require authentication."""
-        return f
+        """Fallback auth decorator that requires authentication and redirects to login page."""
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            # Check if authenticated in session
+            if 'token' not in session:
+                # Store the requested URL in session for redirect after login
+                session['next'] = request.path
+                # Redirect to login page if not authenticated
+                if request.content_type == 'application/json':
+                    return jsonify({'success': False, 'error': 'Authentication required'}), 401
+                else:
+                    flash('Authentication required to access this page', 'error')
+                    return redirect(url_for('login_page', next=request.path))
+            return f(*args, **kwargs)
+        return decorated
     
     def init_auth_routes(app):
         """Fallback auth routes initializer."""
-        pass
-    
+        # Register auth blueprint
+        from flask import Blueprint
+        auth_bp = Blueprint('auth_bp', __name__, url_prefix='/auth')
+        
+        @auth_bp.route('/login', methods=['GET', 'POST'])
+        def login():
+            """
+            Handle login for API Gateway.
+            GET requests show login form, POST requests handle login.
+            """
+            if request.method == 'POST':
+                if request.content_type == 'application/json':
+                    # Handle JSON login for API
+                    data = request.json
+                    username = data.get('username')
+                    password = data.get('password')
+                    
+                    if not username or not password:
+                        return jsonify({'success': False, 'error': 'Username and password required'}), 400
+                    
+                    # Simple authentication for development
+                    # In production, this would validate against actual credentials
+                    
+                    # Create user data
+                    user_data = {
+                        'id': f"user-{username}",
+                        'name': username,
+                        'email': f"{username}@example.com",
+                        'roles': ['user']
+                    }
+                    
+                    # Create expiration time - 24 hours from now
+                    expiry = datetime.utcnow() + timedelta(hours=24)
+                    
+                    # Create token payload
+                    payload = {
+                        'sub': user_data['id'],
+                        'name': user_data['name'],
+                        'email': user_data['email'],
+                        'roles': user_data['roles'],
+                        'exp': expiry
+                    }
+                    
+                    # Create token
+                    import jwt
+                    token = jwt.encode(payload, app.secret_key, algorithm='HS256')
+                    
+                    # Store in session
+                    session['token'] = token
+                    session['user'] = user_data
+                    
+                    return jsonify({
+                        'success': True,
+                        'token': token,
+                        'user': user_data
+                    })
+                else:
+                    # Handle form login
+                    username = request.form.get('username')
+                    password = request.form.get('password')
+                    
+                    if not username or not password:
+                        flash('Username and password required', 'error')
+                        return redirect(url_for('login_page'))
+                    
+                    # Create user data
+                    user_data = {
+                        'id': f"user-{username}",
+                        'name': username,
+                        'email': f"{username}@example.com",
+                        'roles': ['user']
+                    }
+                    
+                    # Create expiration time - 24 hours from now
+                    expiry = datetime.utcnow() + timedelta(hours=24)
+                    
+                    # Create token payload
+                    payload = {
+                        'sub': user_data['id'],
+                        'name': user_data['name'],
+                        'email': user_data['email'],
+                        'roles': user_data['roles'],
+                        'exp': expiry
+                    }
+                    
+                    # Create token
+                    import jwt
+                    token = jwt.encode(payload, app.secret_key, algorithm='HS256')
+                    
+                    # Store in session
+                    session['token'] = token
+                    session['user'] = user_data
+                    
+                    # Redirect to next or dashboard
+                    next_url = session.get('next', url_for('dashboard'))
+                    session.pop('next', None)
+                    
+                    return redirect(next_url)
+            else:
+                # For GET requests, redirect to login page
+                return redirect(url_for('login_page'))
+        
+        @auth_bp.route('/logout', methods=['GET', 'POST'])
+        def logout():
+            """Handle logout."""
+            # Clear session
+            session.clear()
+            
+            # Redirect to home page or return JSON response
+            if request.content_type == 'application/json':
+                return jsonify({'success': True, 'message': 'Logged out successfully'})
+            else:
+                flash('You have been logged out', 'info')
+                return redirect(url_for('root'))
+                
+        app.register_blueprint(auth_bp)
+        
     def get_current_user():
         """Fallback current user function."""
-        return None
+        return session.get('user')
 
 # Import API blueprints
 try:
@@ -523,6 +652,19 @@ def check_and_ensure_service_health():
         # Even though there was an error checking health, we know the service is responding
         # so we'll consider it a partial success
         return syncservice_status
+
+
+@app.route('/login')
+def login_page():
+    """Login page for the API Gateway."""
+    # Check if already authenticated
+    if 'token' in session:
+        # Redirect to dashboard or next URL
+        next_url = request.args.get('next', url_for('dashboard'))
+        return redirect(next_url)
+    
+    # Render login page
+    return render_template('login.html', error=request.args.get('error'))
 
 
 @app.route('/')
