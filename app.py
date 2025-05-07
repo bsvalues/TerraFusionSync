@@ -228,17 +228,17 @@ except ImportError:
     SYNC_API_AVAILABLE = False
     logging.warning("Sync operations API module not available")
 
-# Initialize authentication routes
-init_auth_routes(app)
-
-# Initialize County RBAC if available
+# Initialize authentication routes (including County RBAC if available)
 try:
-    from apps.backend.auth import init_county_auth_routes, COUNTY_RBAC_AVAILABLE
+    from apps.backend.auth import init_auth_routes, COUNTY_RBAC_AVAILABLE
+    init_auth_routes(app)
     if COUNTY_RBAC_AVAILABLE:
-        init_county_auth_routes(app)
         logger.info("County RBAC authentication initialized")
+    else:
+        logger.warning("County RBAC not available")
 except ImportError:
-    logger.warning("County RBAC not available")
+    logger.warning("Auth module not available, using fallback authentication")
+    # Fallback auth initialization would go here
 
 # Import and register WebSocket proxy
 try:

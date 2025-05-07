@@ -1,0 +1,48 @@
+{
+    "users": [
+        {
+            "username": "admin",
+            "password": "admin123",
+            "email": "admin@county.gov",
+            "full_name": "Admin User",
+            "roles": [
+                "ITAdmin"
+            ],
+            "department": "IT",
+            "active": true
+        },
+        {
+            "username": "assessor",
+            "password": "assessor123",
+            "email": "assessor@county.gov",
+            "full_name": "Property Assessor",
+            "roles": [
+                "Assessor"
+            ],
+            "department": "Property Assessment",
+            "active": true
+        },
+        {
+            "username": "staff",
+            "password": "staff123",
+            "email": "staff@county.gov",
+            "full_name": "Staff Member",
+            "roles": [
+                "Staff"
+            ],
+            "department": "Property Assessment",
+            "active": true
+        },
+        {
+            "username": "auditor",
+            "password": "auditor123",
+            "email": "auditor@county.gov",
+            "full_name": "County Auditor",
+            "roles": [
+                "Auditor"
+            ],
+            "department": "Auditing",
+            "active": true
+        }
+    ]
+}
