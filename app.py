@@ -724,50 +724,218 @@ def dashboard():
             if user:
                 # Use County dashboard with role-based access control
                 import datetime
+                import os
+                import psutil
+                from sqlalchemy import func, desc
+                
                 current_time = datetime.datetime.now()
                 
-                # Mock data for dashboard (in production, this would come from database)
+                # Get real data from the database
+                # Get the latest sync operation
+                latest_sync = db.session.query(SyncOperation).order_by(
+                    SyncOperation.started_at.desc()
+                ).first()
+                
+                # Get sync statistics
+                today_start = datetime.datetime.combine(current_time.date(), datetime.time.min)
+                week_start = today_start - datetime.timedelta(days=current_time.weekday())
+                
+                today_ops = db.session.query(SyncOperation).filter(
+                    SyncOperation.started_at >= today_start
+                ).count()
+                
+                week_ops = db.session.query(SyncOperation).filter(
+                    SyncOperation.started_at >= week_start
+                ).count()
+                
+                pending_count = db.session.query(SyncOperation).filter(
+                    SyncOperation.status == 'PENDING'
+                ).count()
+                
+                # System metrics
+                try:
+                    # Get latest system metrics
+                    latest_metrics = db.session.query(SystemMetrics).order_by(
+                        SystemMetrics.timestamp.desc()
+                    ).first()
+                    
+                    disk_usage = latest_metrics.disk_usage if latest_metrics else 0
+                    
+                    # Get system uptime
+                    uptime_seconds = psutil.boot_time()
+                    uptime_text = str(datetime.timedelta(seconds=int(current_time.timestamp() - uptime_seconds)))
+                    
+                    # Get error count from last 24 hours
+                    error_count = db.session.query(AuditEntry).filter(
+                        AuditEntry.severity.in_(['error', 'critical']),
+                        AuditEntry.timestamp >= (current_time - datetime.timedelta(hours=24))
+                    ).count()
+                    
+                    # Get active user count (unique users with activity in last hour)
+                    active_users = db.session.query(func.count(func.distinct(AuditEntry.username))).filter(
+                        AuditEntry.timestamp >= (current_time - datetime.timedelta(hours=1))
+                    ).scalar() or 0
+                    
+                except Exception as e:
+                    logger.error(f"Error getting system metrics: {e}")
+                    disk_usage = 0
+                    uptime_text = "Unknown"
+                    error_count = 0
+                    active_users = 0
+                
+                # Role-specific data
+                recent_approvals = 0
+                oldest_pending_time = "N/A"
+                today_changes = 0
+                changes_by_dept = "N/A"
+                critical_events = 0
+                user_uploads = 0
+                user_pending_uploads = 0
+                last_upload_time = "N/A"
+                
+                # Assessor data
+                if 'Assessor' in user['roles']:
+                    # Get recent approvals
+                    recent_approvals = db.session.query(AuditEntry).filter(
+                        AuditEntry.event_type == 'sync_approved',
+                        AuditEntry.timestamp >= today_start
+                    ).count()
+                    
+                    # Get oldest pending operation
+                    oldest_pending = db.session.query(SyncOperation).filter(
+                        SyncOperation.status == 'PENDING'
+                    ).order_by(SyncOperation.started_at.asc()).first()
+                    
+                    if oldest_pending and oldest_pending.started_at:
+                        time_diff = current_time - oldest_pending.started_at
+                        hours = int(time_diff.total_seconds() / 3600)
+                        oldest_pending_time = f"{hours} hours" if hours < 24 else f"{int(hours/24)} days"
+                
+                # Auditor data
+                if 'Auditor' in user['roles']:
+                    # Get today's changes
+                    today_changes = db.session.query(AuditEntry).filter(
+                        AuditEntry.timestamp >= today_start
+                    ).count()
+                    
+                    # Get critical events
+                    critical_events = db.session.query(AuditEntry).filter(
+                        AuditEntry.severity == 'critical',
+                        AuditEntry.timestamp >= today_start
+                    ).count()
+                    
+                    # Group changes by department (using username for now)
+                    dept_counts = db.session.query(
+                        AuditEntry.username, func.count(AuditEntry.id)
+                    ).filter(
+                        AuditEntry.timestamp >= today_start
+                    ).group_by(AuditEntry.username).all()
+                    
+                    if dept_counts:
+                        changes_by_dept = ", ".join([f"{dept[0]}: {dept[1]}" for dept in dept_counts[:3]])
+                
+                # Staff data
+                if 'Staff' in user['roles']:
+                    # Get user uploads
+                    user_uploads = db.session.query(SyncOperation).filter(
+                        SyncOperation.created_by == user['username'],
+                        SyncOperation.started_at >= week_start
+                    ).count()
+                    
+                    # Get pending user uploads
+                    user_pending_uploads = db.session.query(SyncOperation).filter(
+                        SyncOperation.created_by == user['username'],
+                        SyncOperation.status == 'PENDING'
+                    ).count()
+                    
+                    # Get last upload time
+                    last_upload = db.session.query(SyncOperation).filter(
+                        SyncOperation.created_by == user['username']
+                    ).order_by(SyncOperation.started_at.desc()).first()
+                    
+                    if last_upload and last_upload.started_at:
+                        last_upload_time = last_upload.started_at.strftime('%Y-%m-%d %H:%M:%S')
+                
+                # Get recent operations for table
+                recent_ops = db.session.query(SyncOperation).order_by(
+                    SyncOperation.started_at.desc()
+                ).limit(10).all()
+                
+                recent_operations = []
+                for op in recent_ops:
+                    recent_operations.append({
+                        'id': f"OP-{op.id:06d}" if isinstance(op.id, int) else str(op.id),
+                        'timestamp': op.started_at.strftime('%Y-%m-%d %H:%M:%S') if op.started_at else 'N/A',
+                        'filename': op.sync_type, # Placeholder, would come from file metadata
+                        'property_count': op.total_records or 0,
+                        'status': op.status.upper()
+                    })
+                
+                # If no operations found, provide fallback data
+                if not recent_operations:
+                    recent_operations = [
+                        {
+                            'id': 'OP-000001',
+                            'timestamp': current_time.strftime('%Y-%m-%d %H:%M:%S'),
+                            'filename': 'No operations found',
+                            'property_count': 0,
+                            'status': 'N/A'
+                        }
+                    ]
+                
+                # Get sync status data
+                if latest_sync:
+                    last_sync_time = latest_sync.completed_at.strftime('%Y-%m-%d %H:%M:%S') if latest_sync.completed_at else 'In Progress'
+                    sync_status = latest_sync.status.capitalize()
+                    records_processed = latest_sync.processed_records
+                else:
+                    last_sync_time = 'Never'
+                    sync_status = 'Not Started'
+                    records_processed = 0
+                
                 context = {
                     'user': user,
                     'check_county_permission': check_county_permission,
-                    'last_sync_time': current_time.strftime('%Y-%m-%d %H:%M:%S'),
-                    'sync_status': 'Completed',
-                    'records_processed': 1253,
-                    'storage_usage': 42,
-                    'today_activity_count': 5,
-                    'weekly_activity_count': 23,
-                    'pending_approvals': 2,
+                    'last_sync_time': last_sync_time,
+                    'sync_status': sync_status,
+                    'records_processed': records_processed,
+                    'storage_usage': int(disk_usage) if disk_usage else 0,
+                    'today_activity_count': today_ops,
+                    'weekly_activity_count': week_ops,
+                    'pending_approvals': pending_count,
                     'current_year': current_time.year,
-                    'recent_operations': [
-                        {
-                            'id': 'OP-2023-001',
-                            'timestamp': '2025-05-06 14:32:10',
-                            'filename': 'may_assessments.csv',
-                            'property_count': 423,
-                            'status': 'APPROVED'
-                        },
-                        {
-                            'id': 'OP-2023-002',
-                            'timestamp': '2025-05-07 09:15:22',
-                            'filename': 'new_commercial_properties.csv',
-                            'property_count': 128,
-                            'status': 'PENDING'
-                        },
-                        {
-                            'id': 'OP-2023-003',
-                            'timestamp': '2025-05-07 10:42:55',
-                            'filename': 'residential_updates.csv',
-                            'property_count': 312,
-                            'status': 'PENDING'
-                        }
-                    ]
+                    'recent_operations': recent_operations,
+                    
+                    # IT Admin specific
+                    'system_uptime': uptime_text,
+                    'error_count': error_count,
+                    'active_users': active_users,
+                    
+                    # Assessor specific
+                    'recent_approvals': recent_approvals,
+                    'oldest_pending_time': oldest_pending_time,
+                    
+                    # Auditor specific
+                    'today_changes': today_changes,
+                    'changes_by_dept': changes_by_dept,
+                    'critical_events': critical_events,
+                    
+                    # Staff specific
+                    'user_uploads': user_uploads,
+                    'user_pending_uploads': user_pending_uploads,
+                    'last_upload_time': last_upload_time
                 }
+                
                 return render_template('county_dashboard.html', **context)
             else:
                 user = get_current_user()
         else:
             user = get_current_user()
     except ImportError:
+        user = get_current_user()
+    except Exception as e:
+        logger.error(f"Error in dashboard: {e}")
+        # If we hit an exception, fall back to standard dashboard
         user = get_current_user()
         
     # Fallback to standard dashboard for non-County users
@@ -821,6 +989,370 @@ def sync_dashboard():
                           sync_pairs=db.session.query(SyncPair).all(),
                           recent_operations=db.session.query(SyncOperation).order_by(
                               SyncOperation.started_at.desc()).limit(10).all())
+
+
+@app.route('/sync/pairs')
+@requires_auth
+def sync_pairs():
+    """Sync pairs management page."""
+    try:
+        from apps.backend.auth import get_current_county_user, check_county_permission, COUNTY_RBAC_AVAILABLE
+        if COUNTY_RBAC_AVAILABLE:
+            user = get_current_county_user()
+            if user:
+                # Check permission to view sync pairs
+                if not check_county_permission('view_sync_operations'):
+                    flash('Permission denied: You do not have access to sync pairs management', 'error')
+                    return redirect(url_for('dashboard'))
+                
+                import datetime
+                current_time = datetime.datetime.now()
+                
+                # Get all sync pairs from database
+                pairs = db.session.query(SyncPair).all()
+                
+                context = {
+                    'user': user,
+                    'check_county_permission': check_county_permission,
+                    'current_year': current_time.year,
+                    'sync_pairs': pairs
+                }
+                
+                return render_template('sync_pairs.html', **context)
+    except Exception as e:
+        logger.error(f"Error in sync_pairs view: {e}")
+        
+    # Fall back to standard view if any error occurs
+    flash('Error loading sync pairs management', 'error')
+    return redirect(url_for('dashboard'))
+
+
+@app.route('/sync/pairs/create', methods=['POST'])
+@requires_auth
+def create_sync_pair():
+    """Create a new sync pair."""
+    try:
+        from apps.backend.auth import get_current_county_user, check_county_permission
+        
+        user = get_current_county_user()
+        if not user or not check_county_permission('create_sync_pairs'):
+            flash('Permission denied: You do not have access to create sync pairs', 'error')
+            return redirect(url_for('sync_pairs'))
+        
+        import json
+        
+        # Get form data
+        name = request.form.get('name')
+        description = request.form.get('description', '')
+        sync_schedule = request.form.get('sync_schedule', 'manual')
+        
+        source_type = request.form.get('source_type')
+        source_config = request.form.get('source_config', '{}')
+        
+        target_type = request.form.get('target_type')
+        target_config = request.form.get('target_config', '{}')
+        
+        field_mappings = request.form.get('field_mappings', '{}')
+        
+        # Basic validation
+        if not name or not source_type or not target_type:
+            flash('Missing required fields', 'error')
+            return redirect(url_for('sync_pairs'))
+        
+        # Parse JSON fields
+        try:
+            source_config_json = json.loads(source_config)
+            target_config_json = json.loads(target_config)
+            field_mappings_json = json.loads(field_mappings)
+        except json.JSONDecodeError:
+            flash('Invalid JSON in configuration fields', 'error')
+            return redirect(url_for('sync_pairs'))
+        
+        # Create new sync pair
+        new_pair = SyncPair(
+            name=name,
+            description=description,
+            source_type=source_type,
+            source_config=source_config_json,
+            target_type=target_type,
+            target_config=target_config_json,
+            sync_schedule=sync_schedule,
+            is_active=True,
+            created_by=user.get('username')
+        )
+        
+        db.session.add(new_pair)
+        db.session.commit()
+        
+        # Log the action
+        create_audit_log(
+            event_type='sync_pair_created',
+            resource_type='sync_pair',
+            description=f"Created new sync pair: {name}",
+            resource_id=str(new_pair.id),
+            user_id=user.get('id'),
+            username=user.get('username'),
+            ip_address=request.remote_addr,
+            severity='info',
+            new_state={
+                'id': new_pair.id,
+                'name': name,
+                'source_type': source_type,
+                'target_type': target_type
+            }
+        )
+        
+        flash(f'Sync pair "{name}" created successfully', 'success')
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error creating sync pair: {e}")
+        flash(f'Error creating sync pair: {str(e)}', 'error')
+    
+    return redirect(url_for('sync_pairs'))
+
+
+@app.route('/sync/pairs/<int:pair_id>')
+@requires_auth
+def view_sync_pair(pair_id):
+    """View details of a sync pair."""
+    try:
+        from apps.backend.auth import get_current_county_user, check_county_permission
+        
+        if not check_county_permission('view_sync_pairs'):
+            flash('Permission denied: You do not have access to view sync pair details', 'error')
+            return redirect(url_for('sync_pairs'))
+        
+        # Get the sync pair
+        pair = db.session.query(SyncPair).filter(SyncPair.id == pair_id).first()
+        
+        if not pair:
+            flash('Sync pair not found', 'error')
+            return redirect(url_for('sync_pairs'))
+        
+        # Get operations for this pair
+        operations = db.session.query(SyncOperation).filter(
+            SyncOperation.sync_pair_id == pair_id
+        ).order_by(SyncOperation.started_at.desc()).limit(10).all()
+        
+        user = get_current_county_user()
+        context = {
+            'user': user,
+            'check_county_permission': check_county_permission,
+            'pair': pair,
+            'operations': operations,
+            'current_year': datetime.datetime.now().year
+        }
+        
+        return render_template('sync_pair_details.html', **context)
+        
+    except Exception as e:
+        logger.error(f"Error viewing sync pair: {e}")
+        flash(f'Error viewing sync pair: {str(e)}', 'error')
+        return redirect(url_for('sync_pairs'))
+
+
+@app.route('/sync/pairs/<int:pair_id>/edit', methods=['GET', 'POST'])
+@requires_auth
+def edit_sync_pair(pair_id):
+    """Edit a sync pair."""
+    try:
+        from apps.backend.auth import get_current_county_user, check_county_permission
+        
+        if not check_county_permission('edit_sync_pairs'):
+            flash('Permission denied: You do not have access to edit sync pairs', 'error')
+            return redirect(url_for('sync_pairs'))
+        
+        # Get the sync pair
+        pair = db.session.query(SyncPair).filter(SyncPair.id == pair_id).first()
+        
+        if not pair:
+            flash('Sync pair not found', 'error')
+            return redirect(url_for('sync_pairs'))
+        
+        user = get_current_county_user()
+        
+        if request.method == 'POST':
+            import json
+            
+            # Update fields
+            previous_state = pair.to_dict()
+            
+            pair.name = request.form.get('name', pair.name)
+            pair.description = request.form.get('description', pair.description)
+            pair.sync_schedule = request.form.get('sync_schedule', pair.sync_schedule)
+            
+            # Parse JSON fields
+            try:
+                source_config = request.form.get('source_config')
+                target_config = request.form.get('target_config')
+                field_mappings = request.form.get('field_mappings')
+                
+                if source_config:
+                    pair.source_config = json.loads(source_config)
+                if target_config:
+                    pair.target_config = json.loads(target_config)
+                if field_mappings:
+                    pair.field_mappings = json.loads(field_mappings)
+            except json.JSONDecodeError:
+                flash('Invalid JSON in configuration fields', 'error')
+                return redirect(url_for('edit_sync_pair', pair_id=pair_id))
+            
+            db.session.commit()
+            
+            # Log the action
+            create_audit_log(
+                event_type='sync_pair_updated',
+                resource_type='sync_pair',
+                description=f"Updated sync pair: {pair.name}",
+                resource_id=str(pair.id),
+                user_id=user.get('id'),
+                username=user.get('username'),
+                ip_address=request.remote_addr,
+                severity='info',
+                previous_state=previous_state,
+                new_state=pair.to_dict()
+            )
+            
+            flash(f'Sync pair "{pair.name}" updated successfully', 'success')
+            return redirect(url_for('sync_pairs'))
+        else:
+            # GET request - show edit form
+            context = {
+                'user': user,
+                'check_county_permission': check_county_permission,
+                'pair': pair,
+                'current_year': datetime.datetime.now().year
+            }
+            
+            return render_template('edit_sync_pair.html', **context)
+            
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error editing sync pair: {e}")
+        flash(f'Error editing sync pair: {str(e)}', 'error')
+        return redirect(url_for('sync_pairs'))
+
+
+@app.route('/sync/pairs/toggle-status', methods=['POST'])
+@requires_auth
+def toggle_sync_pair_status():
+    """Enable or disable a sync pair."""
+    try:
+        from apps.backend.auth import get_current_county_user, check_county_permission
+        
+        if not check_county_permission('manage_sync_pairs'):
+            flash('Permission denied: You do not have access to manage sync pairs', 'error')
+            return redirect(url_for('sync_pairs'))
+        
+        pair_id = request.form.get('sync_pair_id')
+        active = request.form.get('active') == '1'
+        
+        if not pair_id:
+            flash('Missing sync pair ID', 'error')
+            return redirect(url_for('sync_pairs'))
+        
+        # Get the sync pair
+        pair = db.session.query(SyncPair).filter(SyncPair.id == pair_id).first()
+        
+        if not pair:
+            flash('Sync pair not found', 'error')
+            return redirect(url_for('sync_pairs'))
+        
+        # Update status
+        previous_state = pair.to_dict()
+        pair.is_active = active
+        db.session.commit()
+        
+        # Log the action
+        user = get_current_county_user()
+        create_audit_log(
+            event_type='sync_pair_status_changed',
+            resource_type='sync_pair',
+            description=f"{'Enabled' if active else 'Disabled'} sync pair: {pair.name}",
+            resource_id=str(pair.id),
+            user_id=user.get('id'),
+            username=user.get('username'),
+            ip_address=request.remote_addr,
+            severity='info',
+            previous_state=previous_state,
+            new_state=pair.to_dict()
+        )
+        
+        flash(f'Sync pair "{pair.name}" {("enabled" if active else "disabled")} successfully', 'success')
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error toggling sync pair status: {e}")
+        flash(f'Error toggling sync pair status: {str(e)}', 'error')
+    
+    return redirect(url_for('sync_pairs'))
+
+
+@app.route('/sync/operations/run', methods=['POST'])
+@requires_auth
+def run_sync_operation():
+    """Run a sync operation for a specific pair."""
+    try:
+        from apps.backend.auth import get_current_county_user, check_county_permission
+        
+        if not check_county_permission('execute_sync'):
+            flash('Permission denied: You do not have access to run sync operations', 'error')
+            return redirect(url_for('sync_pairs'))
+        
+        pair_id = request.form.get('sync_pair_id')
+        
+        if not pair_id:
+            flash('Missing sync pair ID', 'error')
+            return redirect(url_for('sync_pairs'))
+        
+        # Get the sync pair
+        pair = db.session.query(SyncPair).filter(SyncPair.id == pair_id).first()
+        
+        if not pair:
+            flash('Sync pair not found', 'error')
+            return redirect(url_for('sync_pairs'))
+        
+        # Check if pair is active
+        if not pair.is_active:
+            flash('Cannot run sync for inactive pair', 'error')
+            return redirect(url_for('sync_pairs'))
+        
+        # Create new sync operation
+        user = get_current_county_user()
+        operation = SyncOperation(
+            sync_pair_id=pair.id,
+            status='pending',
+            sync_type='manual',
+            started_at=datetime.datetime.now(),
+            created_by=user.get('username')
+        )
+        
+        db.session.add(operation)
+        db.session.commit()
+        
+        # Log the action
+        create_audit_log(
+            event_type='sync_operation_started',
+            resource_type='sync_operation',
+            description=f"Started sync operation for pair: {pair.name}",
+            resource_id=str(operation.id),
+            operation_id=operation.id,
+            user_id=user.get('id'),
+            username=user.get('username'),
+            ip_address=request.remote_addr,
+            severity='info',
+            new_state=operation.to_dict()
+        )
+        
+        flash(f'Sync operation started for "{pair.name}"', 'success')
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error starting sync operation: {e}")
+        flash(f'Error starting sync operation: {str(e)}', 'error')
+    
+    return redirect(url_for('sync_pairs'))
 
 
 @app.route('/new-sync')

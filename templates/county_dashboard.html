@@ -243,6 +243,59 @@
                         <div><strong>Pending Approvals:</strong> {{ pending_approvals }}</div>
                     </div>
                 </div>
+                
+                {% if 'ITAdmin' in user.roles %}
+                <!-- IT Admin specific dashboard card -->
+                <div class="dashboard-card">
+                    <div class="card-title">System Administration</div>
+                    <div>
+                        <div><strong>System Uptime:</strong> {{ system_uptime }}</div>
+                        <div><strong>Recent Errors:</strong> {{ error_count }}</div>
+                        <div><strong>Active Users:</strong> {{ active_users }}</div>
+                        <a href="{{ url_for('system_monitor_dashboard') }}" class="button" style="margin-top: 10px; display: inline-block;">System Monitor</a>
+                    </div>
+                </div>
+                {% endif %}
+                
+                {% if 'Assessor' in user.roles %}
+                <!-- Assessor specific dashboard card -->
+                <div class="dashboard-card">
+                    <div class="card-title">Approval Queue</div>
+                    <div>
+                        <div><strong>Pending Approvals:</strong> {{ pending_approvals }}</div>
+                        <div><strong>Recent Approvals:</strong> {{ recent_approvals }}</div>
+                        <div><strong>Waiting Since:</strong> {{ oldest_pending_time }}</div>
+                        {% if pending_approvals > 0 %}
+                        <a href="{{ url_for('approval_queue') }}" class="button button-success" style="margin-top: 10px; display: inline-block;">Review Pending</a>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+                
+                {% if 'Auditor' in user.roles %}
+                <!-- Auditor specific dashboard card -->
+                <div class="dashboard-card">
+                    <div class="card-title">Audit Summary</div>
+                    <div>
+                        <div><strong>Today's Changes:</strong> {{ today_changes }}</div>
+                        <div><strong>By Department:</strong> {{ changes_by_dept }}</div>
+                        <div><strong>Critical Events:</strong> {{ critical_events }}</div>
+                        <a href="{{ url_for('audit_dashboard') }}" class="button" style="margin-top: 10px; display: inline-block;">Full Audit Log</a>
+                    </div>
+                </div>
+                {% endif %}
+                
+                {% if 'Staff' in user.roles %}
+                <!-- Staff specific dashboard card -->
+                <div class="dashboard-card">
+                    <div class="card-title">My Uploads</div>
+                    <div>
+                        <div><strong>Recent Uploads:</strong> {{ user_uploads }}</div>
+                        <div><strong>Pending Review:</strong> {{ user_pending_uploads }}</div>
+                        <div><strong>Last Upload:</strong> {{ last_upload_time }}</div>
+                    </div>
+                </div>
+                {% endif %}
             </div>
             
             {% if check_county_permission('create_sync_operations') %}
