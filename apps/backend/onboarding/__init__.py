@@ -1,36 +1,38 @@
 """
-TerraFusion SyncService Onboarding Module
+TerraFusion Onboarding Module
 
-This module provides interactive tutorials and onboarding resources
-for users based on their role in the system.
+This module provides an interactive onboarding experience for new users
+of the TerraFusion platform, with role-specific tutorials.
 """
 
 import logging
-import os
+from flask import Flask
 
 from apps.backend.database import db
-from apps.backend.models.onboarding import UserOnboarding
+from apps.backend.onboarding.routes import onboarding_bp
 
 logger = logging.getLogger(__name__)
 
-def init_onboarding():
-    """Initialize the onboarding module."""
+def init_app(app: Flask):
+    """
+    Initialize the onboarding module and register its routes with the Flask app.
+    
+    Args:
+        app: The Flask application instance
+    """
+    # Register the blueprint
+    app.register_blueprint(onboarding_bp)
+    
     logger.info("Initializing onboarding module")
     
-    def create_onboarding_blueprint():
-        """Create the onboarding blueprint."""
-        from .routes import onboarding_bp
-        return onboarding_bp
+    # Ensure database tables are created
+    with app.app_context():
+        from apps.backend.models.onboarding import UserOnboarding
+        
+        # Create tables if they don't exist
+        if not app.config.get('ONBOARDING_INITIALIZED', False):
+            db.create_all()
+            app.config['ONBOARDING_INITIALIZED'] = True
+            logger.info("Onboarding database tables created")
     
-    # Check if onboarding assets exist
-    static_dir = os.path.join('static', 'images', 'onboarding')
-    if not os.path.exists(static_dir):
-        os.makedirs(static_dir, exist_ok=True)
-        logger.warning(f"Created onboarding static directory: {static_dir}")
-    
-    # Ensure onboarding blueprint and routes are loaded
-    from . import routes
-    
-    return {
-        "create_onboarding_blueprint": create_onboarding_blueprint,
-    }
+    return app
