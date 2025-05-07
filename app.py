@@ -215,6 +215,15 @@ except ImportError:
 # Initialize authentication routes
 init_auth_routes(app)
 
+# Initialize County RBAC if available
+try:
+    from apps.backend.auth import init_county_auth_routes, COUNTY_RBAC_AVAILABLE
+    if COUNTY_RBAC_AVAILABLE:
+        init_county_auth_routes(app)
+        logger.info("County RBAC authentication initialized")
+except ImportError:
+    logger.warning("County RBAC not available")
+
 # Import and register WebSocket proxy
 try:
     from proxy_websocket import register_websocket_proxy
@@ -238,6 +247,14 @@ try:
     logger.info("Registered validation API blueprint")
 except ImportError:
     logger.warning("Validation API blueprint not available")
+
+# Register rollback API blueprint for ITAdmin functionality
+try:
+    from apps.backend.api.rollback import rollback_bp
+    app.register_blueprint(rollback_bp)
+    logger.info("Registered rollback API blueprint for ITAdmin")
+except ImportError:
+    logger.warning("Rollback API blueprint not available")
 
 # Add route for validation dashboard
 @app.route('/validation', methods=['GET'])
@@ -683,7 +700,16 @@ def root():
 @requires_auth
 def dashboard():
     """Main dashboard view."""
-    user = get_current_user()
+    # Try to get County user first, fall back to standard user
+    try:
+        from apps.backend.auth import get_current_county_user, COUNTY_RBAC_AVAILABLE
+        if COUNTY_RBAC_AVAILABLE:
+            user = get_current_county_user() or get_current_user()
+        else:
+            user = get_current_user()
+    except ImportError:
+        user = get_current_user()
+        
     # Check if the user has requested the new UI
     if request.args.get('new_ui', '0') == '1':
         return render_template('dashboard_new.html', user=user)
@@ -694,7 +720,42 @@ def dashboard():
 @requires_auth
 def sync_dashboard():
     """Sync operations dashboard."""
-    user = get_current_user()
+    # Try to use County RBAC, otherwise fall back to standard auth
+    try:
+        from apps.backend.auth import requires_county_permission, get_current_county_user, COUNTY_RBAC_AVAILABLE
+        
+        if COUNTY_RBAC_AVAILABLE:
+            # County user takes precedence if available
+            county_user = get_current_county_user()
+            if county_user:
+                # If County RBAC is active, check permission to view sync dashboard
+                if "view" not in county_user.get("permissions", []):
+                    from apps.backend.auth import log_user_action
+                    # Log the access attempt
+                    log_user_action(
+                        county_user["username"],
+                        county_user["role"],
+                        "DENIED:view_sync_dashboard"
+                    )
+                    return redirect(url_for('county_auth.county_login', 
+                                          next=request.path,
+                                          message="You need 'view' permission to access this page."))
+                
+                # User has permission, log the access
+                from apps.backend.auth import log_user_action
+                log_user_action(
+                    county_user["username"],
+                    county_user["role"],
+                    "ACCESS:sync_dashboard"
+                )
+                user = county_user
+            else:
+                user = get_current_user()
+        else:
+            user = get_current_user()
+    except ImportError:
+        user = get_current_user()
+    
     return render_template('sync_dashboard.html',
                           user=user,
                           sync_pairs=db.session.query(SyncPair).all(),
@@ -706,7 +767,43 @@ def sync_dashboard():
 @requires_auth
 def new_sync_wizard():
     """New sync operation wizard."""
-    user = get_current_user()
+    # Try to use County RBAC, otherwise fall back to standard auth
+    try:
+        from apps.backend.auth import requires_county_permission, get_current_county_user, COUNTY_RBAC_AVAILABLE
+        
+        if COUNTY_RBAC_AVAILABLE:
+            # County user takes precedence if available
+            county_user = get_current_county_user()
+            if county_user:
+                # Check if user has permission to create new sync operations
+                user_role = county_user.get("role")
+                if user_role not in ["ITAdmin", "Staff"]:
+                    from apps.backend.auth import log_user_action
+                    # Log the access attempt
+                    log_user_action(
+                        county_user["username"],
+                        user_role,
+                        "DENIED:new_sync_wizard"
+                    )
+                    return redirect(url_for('county_auth.county_login', 
+                                          next=request.path,
+                                          message="You need Staff or ITAdmin role to access this page."))
+                
+                # User has permission, log the access
+                from apps.backend.auth import log_user_action
+                log_user_action(
+                    county_user["username"],
+                    user_role,
+                    "ACCESS:new_sync_wizard"
+                )
+                user = county_user
+            else:
+                user = get_current_user()
+        else:
+            user = get_current_user()
+    except ImportError:
+        user = get_current_user()
+    
     return render_template('new_sync_wizard.html', user=user)
 
 
