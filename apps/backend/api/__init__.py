@@ -1,11 +1,14 @@
 """
-API package for TerraFusion SyncService.
+API package for the TerraFusion SyncService platform.
 
-This package provides API endpoints for the TerraFusion SyncService platform.
+This package contains API endpoints for the platform,
+including rollback API for ITAdmin users.
 """
 
-from apps.backend.api.validation import validation_bp
-
-__all__ = [
-    'validation_bp'
-]
+try:
+    from flask import Blueprint
+    
+    # Create a shared blueprint for validation API
+    validation_bp = Blueprint('validation', __name__, url_prefix='/api/validation')
+except ImportError:
+    validation_bp = None

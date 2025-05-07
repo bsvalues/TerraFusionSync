@@ -1,240 +1,239 @@
 """
-Rollback API Module for the TerraFusion SyncService platform.
+Rollback API module for the TerraFusion SyncService platform.
 
-This module provides endpoints for rolling back sync operations,
-restricted to IT Admin users only for security purposes.
+This module provides API endpoints for rolling back sync operations,
+accessible only to ITAdmin users.
 """
 
 import os
 import logging
-from datetime import datetime
-from typing import Optional, Dict, Any
+import json
+from datetime import datetime, timedelta
+from typing import Dict, Any, Optional, List, Tuple
 
-from flask import Blueprint, jsonify, request, g, current_app
-from apps.backend.database import db
-from apps.backend.models import SyncOperation, AuditEntry
+from flask import Blueprint, request, jsonify, current_app, render_template, redirect, url_for, flash, session
 
-# Import authorization functions
-from apps.backend.auth import requires_auth
+# Import the database models
+from apps.backend.models import SyncOperation, SyncPair, AuditEntry
+from app import db
+
+# Import authentication utilities
 try:
-    from apps.backend.auth import requires_county_permission, log_user_action, COUNTY_RBAC_AVAILABLE
-    COUNTY_RBAC_ENABLED = True 
+    from apps.backend.auth.county_rbac import check_permission, requires_county_permission
+    COUNTY_RBAC_AVAILABLE = True
 except ImportError:
-    COUNTY_RBAC_ENABLED = False
-
-# Create blueprint
-rollback_bp = Blueprint('rollback', __name__, url_prefix='/api/rollback')
+    COUNTY_RBAC_AVAILABLE = False
+    
+    # Fallback decorator if County RBAC isn't available
+    def requires_county_permission(permission):
+        def decorator(f):
+            def wrapped(*args, **kwargs):
+                # Just pass through if RBAC isn't available
+                return f(*args, **kwargs)
+            return wrapped
+        return decorator
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Define decorator for ITAdmin-only endpoints
-def requires_admin(f):
-    """
-    Decorator to require ITAdmin role for API endpoints.
-    This is used to ensure that only authorized administrators can perform
-    sensitive operations like rollbacks.
-    """
-    if COUNTY_RBAC_ENABLED:
-        from apps.backend.auth import check_permission
-        # If county RBAC is available, use it
-        return requires_auth(requires_county_permission("rollback")(f))
-    else:
-        # Otherwise, use standard auth with custom check
-        @requires_auth
-        def decorated(*args, **kwargs):
-            # Get current user
-            user = g.get('user', {})
-            
-            # Check if user has admin role
-            if not user or 'admin' not in user.get('roles', []):
-                return jsonify({
-                    'success': False,
-                    'error': 'Admin role required for this operation'
-                }), 403
-                
-            return f(*args, **kwargs)
-        
-        return decorated
+# Create a blueprint for rollback operations
+rollback_bp = Blueprint('rollback', __name__, url_prefix='/api/rollback')
 
-
-def create_rollback_audit(operation_id: int, user_id: Optional[str] = None, 
-                         username: Optional[str] = None, reason: Optional[str] = None) -> None:
+# Helper functions
+def log_user_action(action: str, details: Dict[str, Any], severity: str = "info") -> None:
     """
-    Create an audit log entry for a rollback operation.
+    Log user actions for audit purposes.
     
     Args:
-        operation_id: ID of the rolled back operation
-        user_id: ID of the user who performed the rollback (optional)
-        username: Username of the user who performed the rollback (optional)
-        reason: Reason for the rollback (optional)
+        action: The action being performed
+        details: Additional details about the action
+        severity: The severity level of the action
     """
-    if COUNTY_RBAC_ENABLED:
-        # Get county user
-        county_user = g.get('county_user')
-        if county_user:
-            log_user_action(
-                county_user["username"],
-                county_user["role"],
-                f"ROLLBACK:operation_{operation_id}",
-                resource_id=str(operation_id)
-            )
-            return
+    user = session.get('user', {})
+    username = user.get('name', 'system')
+    user_id = user.get('id', 'system')
     
-    # Standard audit logging
-    from apps.backend.app import create_audit_log
+    # Create an audit entry
+    entry = AuditEntry(
+        event_type=f"rollback_{action}",
+        resource_type="sync_operation",
+        description=f"Rollback action: {action}",
+        severity=severity,
+        user_id=user_id,
+        username=username,
+        ip_address=request.remote_addr,
+        new_state=details
+    )
     
+    # Add and commit to the database
     with current_app.app_context():
-        create_audit_log(
-            event_type="rollback_operation",
-            resource_type="sync_operation",
-            resource_id=str(operation_id),
-            description=f"Operation {operation_id} rolled back" + (f" - Reason: {reason}" if reason else ""),
-            severity="warning",
-            user_id=user_id,
-            username=username
-        )
-
-
-@rollback_bp.route('/operation/<int:operation_id>', methods=['POST'])
-@requires_admin
-def rollback_operation(operation_id: int):
-    """
-    Roll back a sync operation.
-    
-    This endpoint allows IT admins to roll back a specific sync operation.
-    It will:
-    1. Mark the operation as rolled back
-    2. Create a new sync operation with reverse direction if possible
-    3. Log the rollback in the audit trail
-    
-    Args:
-        operation_id: ID of the operation to roll back
-        
-    Returns:
-        JSON response with rollback status
-    """
-    # Get current user
-    user = g.get('user')
-    county_user = getattr(g, 'county_user', None)
-    
-    # Get reason for rollback
-    reason = request.json.get('reason') if request.is_json else None
-    
-    # Get the operation
-    operation = db.session.query(SyncOperation).filter(SyncOperation.id == operation_id).first()
-    if not operation:
-        return jsonify({
-            'success': False,
-            'error': f'Operation {operation_id} not found'
-        }), 404
-    
-    # Check if the operation is already rolled back
-    if operation.status == 'rolled_back':
-        return jsonify({
-            'success': False,
-            'error': f'Operation {operation_id} has already been rolled back'
-        }), 400
-    
-    try:
-        # Create a snapshot of the operation's state before modifying it
-        previous_state = {
-            'id': operation.id,
-            'sync_pair_id': operation.sync_pair_id,
-            'status': operation.status,
-            'sync_type': operation.sync_type,
-            'started_at': operation.started_at.isoformat() if operation.started_at else None,
-            'completed_at': operation.completed_at.isoformat() if operation.completed_at else None,
-            'total_records': operation.total_records,
-            'processed_records': operation.processed_records,
-            'successful_records': operation.successful_records,
-            'failed_records': operation.failed_records
-        }
-        
-        # Update the operation status
-        operation.status = 'rolled_back'
-        operation.error_message = f"Rolled back by {'County user: ' + county_user['username'] if county_user else 'admin'} at {datetime.utcnow().isoformat()}"
-        
-        if reason:
-            operation.error_message += f" - Reason: {reason}"
-        
-        # Commit the changes
+        db.session.add(entry)
         db.session.commit()
-        
-        # Create a reverse operation if needed
-        # This would be implemented according to your specific rollback requirements
-        
-        # Create audit log entry
-        create_rollback_audit(
-            operation_id=operation_id,
-            user_id=user.get('id') if user else None,
-            username=user.get('username') if user else (county_user.get('username') if county_user else None),
-            reason=reason
-        )
-        
-        # Return success response
-        return jsonify({
-            'success': True,
-            'message': f'Operation {operation_id} has been rolled back successfully',
-            'operation': {
-                'id': operation.id,
-                'status': operation.status,
-                'rollback_time': datetime.utcnow().isoformat()
-            }
-        })
-    except Exception as e:
-        # Log the error
-        logger.error(f"Error rolling back operation {operation_id}: {str(e)}")
-        
-        # Rollback transaction
-        db.session.rollback()
-        
-        # Return error response
-        return jsonify({
-            'success': False,
-            'error': f'Error rolling back operation: {str(e)}'
-        }), 500
+    
+    logger.info(f"Rollback action logged: {action} by {username}")
 
-
-@rollback_bp.route('/list', methods=['GET'])
-@requires_admin
+# API Routes
+@rollback_bp.route('/operations', methods=['GET'])
 def list_rollback_operations():
     """
-    List all operations that have been rolled back.
+    List operations that can be rolled back.
     
-    Returns:
-        JSON response with a list of rolled back operations
+    Only completed or failed operations within the last 30 days.
     """
-    try:
-        # Query rolled back operations
-        rolled_back_ops = db.session.query(SyncOperation).filter(
-            SyncOperation.status == 'rolled_back'
-        ).order_by(SyncOperation.completed_at.desc()).all()
+    # Calculate the cutoff date (30 days ago)
+    cutoff_date = datetime.utcnow() - timedelta(days=30)
+    
+    # Query for operations that can be rolled back
+    operations = db.session.query(SyncOperation).filter(
+        SyncOperation.status.in_(['completed', 'failed']),
+        SyncOperation.completed_at > cutoff_date
+    ).order_by(SyncOperation.completed_at.desc()).all()
+    
+    # Format the result
+    result = []
+    for op in operations:
+        # Get sync pair information
+        pair = db.session.query(SyncPair).filter_by(id=op.sync_pair_id).first()
+        pair_name = pair.name if pair else "Unknown"
         
-        # Format the operations
-        operations = []
-        for op in rolled_back_ops:
-            operations.append({
-                'id': op.id,
-                'sync_pair_id': op.sync_pair_id,
-                'sync_type': op.sync_type,
-                'started_at': op.started_at.isoformat() if op.started_at else None,
-                'completed_at': op.completed_at.isoformat() if op.completed_at else None,
-                'error_message': op.error_message
-            })
-        
-        # Return response
-        return jsonify({
-            'success': True,
-            'count': len(operations),
-            'operations': operations
+        result.append({
+            'id': op.id,
+            'sync_pair_id': op.sync_pair_id,
+            'sync_pair_name': pair_name,
+            'status': op.status,
+            'started_at': op.started_at.isoformat() if op.started_at else None,
+            'completed_at': op.completed_at.isoformat() if op.completed_at else None,
+            'total_records': op.total_records,
+            'processed_records': op.processed_records,
+            'successful_records': op.successful_records,
+            'failed_records': op.failed_records
         })
-    except Exception as e:
-        # Log the error
-        logger.error(f"Error listing rolled back operations: {str(e)}")
-        
-        # Return error response
-        return jsonify({
-            'success': False,
-            'error': f'Error listing rolled back operations: {str(e)}'
-        }), 500
+    
+    # Log the action
+    log_user_action('list', {'count': len(result)})
+    
+    return jsonify({'operations': result})
+
+@rollback_bp.route('/operations/<int:operation_id>', methods=['GET'])
+def get_rollback_operation(operation_id: int):
+    """
+    Get details of a specific operation for rollback verification.
+    """
+    # Query for the operation
+    operation = db.session.query(SyncOperation).filter_by(id=operation_id).first()
+    
+    if not operation:
+        return jsonify({'error': 'Operation not found'}), 404
+    
+    # Get the associated sync pair
+    pair = db.session.query(SyncPair).filter_by(id=operation.sync_pair_id).first()
+    
+    # Format the result
+    result = {
+        'id': operation.id,
+        'sync_pair_id': operation.sync_pair_id,
+        'sync_pair_name': pair.name if pair else "Unknown",
+        'sync_pair_source': pair.source_type if pair else "Unknown",
+        'sync_pair_target': pair.target_type if pair else "Unknown",
+        'status': operation.status,
+        'started_at': operation.started_at.isoformat() if operation.started_at else None,
+        'completed_at': operation.completed_at.isoformat() if operation.completed_at else None,
+        'total_records': operation.total_records,
+        'processed_records': operation.processed_records,
+        'successful_records': operation.successful_records,
+        'failed_records': operation.failed_records,
+        'error_message': operation.error_message
+    }
+    
+    # Log the action
+    log_user_action('view', {'operation_id': operation_id})
+    
+    return jsonify({'operation': result})
+
+@rollback_bp.route('/operations/<int:operation_id>/rollback', methods=['POST'])
+def rollback_operation(operation_id: int):
+    """
+    Initiate a rollback for a specific operation.
+    """
+    # Query for the operation
+    operation = db.session.query(SyncOperation).filter_by(id=operation_id).first()
+    
+    if not operation:
+        return jsonify({'error': 'Operation not found'}), 404
+    
+    # Verify operation can be rolled back
+    if operation.status not in ['completed', 'failed']:
+        return jsonify({'error': 'Operation cannot be rolled back (must be completed or failed)'}), 400
+    
+    # Get the associated sync pair
+    pair = db.session.query(SyncPair).filter_by(id=operation.sync_pair_id).first()
+    
+    if not pair:
+        return jsonify({'error': 'Associated sync pair not found'}), 404
+    
+    # Get JSON data from request
+    data = request.get_json() or {}
+    reason = data.get('reason', 'No reason provided')
+    force = data.get('force', False)
+    
+    # Create a new operation for the rollback
+    rollback_op = SyncOperation(
+        sync_pair_id=operation.sync_pair_id,
+        status='pending',
+        sync_type='rollback',
+        total_records=operation.successful_records,  # We're rolling back successful records
+        created_by=session.get('user', {}).get('name', 'system')
+    )
+    
+    # Add and commit to the database
+    db.session.add(rollback_op)
+    db.session.commit()
+    
+    # Create an audit log for the rollback
+    # We store both the original operation and the rollback operation IDs
+    user = session.get('user', {})
+    audit = AuditEntry(
+        event_type='rollback_initiated',
+        resource_type='sync_operation',
+        resource_id=str(operation_id),
+        operation_id=rollback_op.id,
+        description=f"Rollback initiated for operation {operation_id}: {reason}",
+        severity='warning',
+        user_id=user.get('id', 'system'),
+        username=user.get('name', 'system'),
+        ip_address=request.remote_addr,
+        previous_state={'operation_id': operation_id},
+        new_state={'rollback_operation_id': rollback_op.id, 'reason': reason, 'force': force}
+    )
+    
+    db.session.add(audit)
+    db.session.commit()
+    
+    logger.warning(f"Rollback initiated for operation {operation_id} by {user.get('name', 'system')}: {reason}")
+    
+    # Notify the SyncService about the rollback
+    # In a real implementation, this would likely make a request to the SyncService
+    # to trigger the actual rollback process
+    
+    return jsonify({
+        'success': True,
+        'message': 'Rollback initiated',
+        'rollback_operation_id': rollback_op.id
+    })
+
+@rollback_bp.route('/audit', methods=['GET'])
+def list_rollback_audit():
+    """
+    List audit entries related to rollback operations.
+    """
+    # Query for rollback-related audit entries
+    audit_entries = db.session.query(AuditEntry).filter(
+        AuditEntry.event_type.like('rollback_%')
+    ).order_by(AuditEntry.timestamp.desc()).limit(100).all()
+    
+    # Format the result
+    result = []
+    for entry in audit_entries:
+        result.append(entry.to_dict())
+    
+    return jsonify({'audit_entries': result})

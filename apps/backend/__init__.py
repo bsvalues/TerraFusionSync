@@ -1,5 +1,6 @@
 """
-TerraFusion SyncService backend package.
+Backend package for the TerraFusion SyncService platform.
 
-This package contains the backend components of the TerraFusion SyncService.
+This package contains the backend components for the platform,
+including database models, API endpoints, and authentication.
 """

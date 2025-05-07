@@ -27,11 +27,27 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or "a secret key"
 
 # Import database models
-from apps.backend.database import db, init_app
-from apps.backend.models import SyncPair, SyncOperation, AuditEntry, SystemMetrics
+from flask_sqlalchemy import SQLAlchemy
+
+# Initialize SQLAlchemy
+db = SQLAlchemy()
+
+# Configure the database connection
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL")
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    "pool_recycle": 300,
+    "pool_pre_ping": True,
+}
 
 # Initialize the database with the Flask app
-init_app(app)
+db.init_app(app)
+
+# Import database modules and initialize them
+import apps.backend.database
+apps.backend.database.init_db(db)
+
+# Import models
+from apps.backend.models import SyncPair, SyncOperation, AuditEntry, SystemMetrics
 
 # Import system monitor utility if available
 try:
