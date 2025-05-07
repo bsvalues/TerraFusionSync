@@ -718,15 +718,59 @@ def dashboard():
     """Main dashboard view."""
     # Try to get County user first, fall back to standard user
     try:
-        from apps.backend.auth import get_current_county_user, COUNTY_RBAC_AVAILABLE
+        from apps.backend.auth import get_current_county_user, check_county_permission, COUNTY_RBAC_AVAILABLE
         if COUNTY_RBAC_AVAILABLE:
-            user = get_current_county_user() or get_current_user()
+            user = get_current_county_user()
+            if user:
+                # Use County dashboard with role-based access control
+                import datetime
+                current_time = datetime.datetime.now()
+                
+                # Mock data for dashboard (in production, this would come from database)
+                context = {
+                    'user': user,
+                    'check_county_permission': check_county_permission,
+                    'last_sync_time': current_time.strftime('%Y-%m-%d %H:%M:%S'),
+                    'sync_status': 'Completed',
+                    'records_processed': 1253,
+                    'storage_usage': 42,
+                    'today_activity_count': 5,
+                    'weekly_activity_count': 23,
+                    'pending_approvals': 2,
+                    'current_year': current_time.year,
+                    'recent_operations': [
+                        {
+                            'id': 'OP-2023-001',
+                            'timestamp': '2025-05-06 14:32:10',
+                            'filename': 'may_assessments.csv',
+                            'property_count': 423,
+                            'status': 'APPROVED'
+                        },
+                        {
+                            'id': 'OP-2023-002',
+                            'timestamp': '2025-05-07 09:15:22',
+                            'filename': 'new_commercial_properties.csv',
+                            'property_count': 128,
+                            'status': 'PENDING'
+                        },
+                        {
+                            'id': 'OP-2023-003',
+                            'timestamp': '2025-05-07 10:42:55',
+                            'filename': 'residential_updates.csv',
+                            'property_count': 312,
+                            'status': 'PENDING'
+                        }
+                    ]
+                }
+                return render_template('county_dashboard.html', **context)
+            else:
+                user = get_current_user()
         else:
             user = get_current_user()
     except ImportError:
         user = get_current_user()
         
-    # Check if the user has requested the new UI
+    # Fallback to standard dashboard for non-County users
     if request.args.get('new_ui', '0') == '1':
         return render_template('dashboard_new.html', user=user)
     return render_template('dashboard.html', user=user)

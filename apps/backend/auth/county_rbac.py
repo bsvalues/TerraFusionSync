@@ -441,3 +441,42 @@ def user_has_county_role(role: str) -> bool:
             return False
     except RuntimeError:
         return False
+
+def check_county_permission(permission: str) -> bool:
+    """
+    Check if the current user has a specific County permission.
+    
+    Args:
+        permission: The permission to check (e.g., 'view_sync_operations')
+        
+    Returns:
+        True if the user has the permission, False otherwise
+    """
+    try:
+        if hasattr(session, '_get_current_object'):
+            user = session.get('user', {})
+            if not user:
+                return False
+                
+            # Get user roles
+            roles = user.get('roles', [])
+            
+            # Define permissions for each role
+            role_permissions = {
+                'ITAdmin': ['view_sync_operations', 'create_sync_operations', 'approve_sync_operations', 
+                           'rollback_operations', 'view_reports', 'view_audit_logs', 'manage_users'],
+                'Assessor': ['view_sync_operations', 'approve_sync_operations', 'view_reports'],
+                'Staff': ['view_sync_operations', 'create_sync_operations'],
+                'Auditor': ['view_sync_operations', 'view_reports', 'view_audit_logs']
+            }
+            
+            # Check if the user has any role with the requested permission
+            for role in roles:
+                if permission in role_permissions.get(role, []):
+                    return True
+            
+            return False
+        else:
+            return False
+    except RuntimeError:
+        return False

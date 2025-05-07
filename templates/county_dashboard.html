@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>County Property Assessment Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background-color: #003366;
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .title-area {
+            display: flex;
+            align-items: center;
+        }
+        .logo {
+            height: 40px;
+            margin-right: 15px;
+        }
+        h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+        .user-info {
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+        }
+        .user-name {
+            margin-right: 15px;
+        }
+        .role-badge {
+            background-color: #005099;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .navbar {
+            background-color: #f0f0f0;
+            padding: 10px 20px;
+            border-bottom: 1px solid #ddd;
+        }
+        .navbar a {
+            color: #005099;
+            text-decoration: none;
+            margin-right: 20px;
+            font-weight: bold;
+        }
+        .navbar a:hover {
+            text-decoration: underline;
+        }
+        .main {
+            padding: 20px;
+            background-color: white;
+            border-radius: 5px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-top: 20px;
+        }
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .dashboard-card {
+            background-color: white;
+            border-radius: 5px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 15px;
+            border-top: 4px solid #005099;
+        }
+        .card-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #003366;
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        .data-table th {
+            background-color: #f0f0f0;
+            text-align: left;
+            padding: 10px;
+            border-bottom: 2px solid #ddd;
+        }
+        .data-table td {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+        .data-table tr:hover {
+            background-color: #f9f9f9;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status-pending {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        .status-approved {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status-rejected {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .button {
+            background-color: #005099;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .button:hover {
+            background-color: #003d73;
+        }
+        .button-secondary {
+            background-color: #6c757d;
+        }
+        .button-danger {
+            background-color: #dc3545;
+        }
+        .button-success {
+            background-color: #28a745;
+        }
+        .footer {
+            margin-top: 30px;
+            border-top: 1px solid #ddd;
+            padding-top: 20px;
+            color: #666;
+            font-size: 12px;
+            text-align: center;
+        }
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+        }
+        .upload-section {
+            background-color: #e9f2fa;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border: 1px solid #cce5ff;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="file"] {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="title-area">
+            <img src="{{ url_for('static', filename='county_logo.svg') }}" alt="County Logo" class="logo">
+            <h1>County Property Assessment</h1>
+        </div>
+        <div class="user-info">
+            <span class="user-name">Welcome, {{ user.full_name }}</span>
+            <span class="role-badge">{{ user.roles[0] }}</span>
+        </div>
+    </div>
+    
+    <div class="navbar">
+        <a href="{{ url_for('dashboard') }}">Dashboard</a>
+        {% if check_county_permission('view_sync_operations') %}
+        <a href="{{ url_for('sync_dashboard') }}">Sync Operations</a>
+        {% endif %}
+        {% if check_county_permission('view_reports') %}
+        <a href="{{ url_for('metrics_dashboard') }}">Reports</a>
+        {% endif %}
+        {% if check_county_permission('view_audit_logs') %}
+        <a href="{{ url_for('audit_dashboard') }}">Audit Logs</a>
+        {% endif %}
+        <a href="{{ url_for('county_auth_blueprint.logout') }}">Logout</a>
+    </div>
+    
+    <div class="container">
+        <div class="main">
+            <h2>Property Assessment Dashboard</h2>
+            
+            <div class="dashboard-grid">
+                <div class="dashboard-card">
+                    <div class="card-title">Sync Status</div>
+                    <div>
+                        <div><strong>Last Sync:</strong> {{ last_sync_time }}</div>
+                        <div><strong>Status:</strong> {{ sync_status }}</div>
+                        <div><strong>Records Processed:</strong> {{ records_processed }}</div>
+                    </div>
+                </div>
+                
+                <div class="dashboard-card">
+                    <div class="card-title">System Health</div>
+                    <div>
+                        <div><strong>API Status:</strong> Healthy</div>
+                        <div><strong>Database:</strong> Connected</div>
+                        <div><strong>Storage:</strong> {{ storage_usage }}% Used</div>
+                    </div>
+                </div>
+                
+                <div class="dashboard-card">
+                    <div class="card-title">Recent Activity</div>
+                    <div>
+                        <div><strong>Today:</strong> {{ today_activity_count }} operations</div>
+                        <div><strong>This Week:</strong> {{ weekly_activity_count }} operations</div>
+                        <div><strong>Pending Approvals:</strong> {{ pending_approvals }}</div>
+                    </div>
+                </div>
+            </div>
+            
+            {% if check_county_permission('create_sync_operations') %}
+            <div class="upload-section">
+                <h3>Upload New Assessment Data</h3>
+                <form action="{{ url_for('upload_sync_data') }}" method="post" enctype="multipart/form-data">
+                    <div class="form-group">
+                        <label for="file">Select File:</label>
+                        <input type="file" id="file" name="file" required>
+                    </div>
+                    <button type="submit" class="button">Upload for Review</button>
+                </form>
+            </div>
+            {% endif %}
+            
+            <h3>Recent Sync Operations</h3>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Timestamp</th>
+                        <th>Filename</th>
+                        <th>Properties</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for operation in recent_operations %}
+                    <tr>
+                        <td>{{ operation.id }}</td>
+                        <td>{{ operation.timestamp }}</td>
+                        <td>{{ operation.filename }}</td>
+                        <td>{{ operation.property_count }}</td>
+                        <td>
+                            <span class="status status-{{ operation.status.lower() }}">
+                                {{ operation.status }}
+                            </span>
+                        </td>
+                        <td class="action-buttons">
+                            {% if check_county_permission('view_sync_operations') %}
+                            <a href="{{ url_for('view_diff', operation_id=operation.id) }}" class="button">View Diff</a>
+                            {% endif %}
+                            
+                            {% if operation.status == 'PENDING' and check_county_permission('approve_sync_operations') %}
+                            <form action="{{ url_for('approve_sync_operation') }}" method="post">
+                                <input type="hidden" name="operation_id" value="{{ operation.id }}">
+                                <button type="submit" class="button button-success">Approve</button>
+                            </form>
+                            {% endif %}
+                            
+                            {% if operation.status == 'APPROVED' and check_county_permission('rollback_operations') %}
+                            <form action="{{ url_for('rollback_sync_operation') }}" method="post">
+                                <input type="hidden" name="operation_id" value="{{ operation.id }}">
+                                <button type="submit" class="button button-danger">Rollback</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="footer">
+            &copy; {{ current_year }} County Property Assessment Department | TerraFusion SyncService
+            <br>For technical support, contact IT Support at ext. 4357
+        </div>
+    </div>
+</body>
+</html>
