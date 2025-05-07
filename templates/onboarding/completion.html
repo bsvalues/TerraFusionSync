@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}Tutorial Completed{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="mb-8 text-center">
+        <h1 class="text-3xl font-bold text-green-600">Congratulations!</h1>
+        <p class="text-lg text-gray-600 mt-2">You've completed the TerraFusion SyncService tutorial</p>
+    </div>
+
+    <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+        <div class="text-center mb-8">
+            <div class="inline-block p-4 bg-green-100 rounded-full mb-4">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+            </div>
+            <h2 class="text-2xl font-semibold text-gray-800 mb-2">Tutorial Complete!</h2>
+            <p class="text-lg text-gray-700">{{ message }}</p>
+        </div>
+        
+        <!-- Completion image -->
+        <div class="flex justify-center mb-8">
+            <img src="{{ url_for('static', filename='images/onboarding/' + image) }}" 
+                 alt="Tutorial Complete" 
+                 class="max-w-md rounded-lg shadow-md">
+        </div>
+
+        <!-- Role-specific completion message -->
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-8">
+            <h3 class="text-xl font-semibold text-blue-800 mb-3">What You've Learned</h3>
+            
+            {% if role == 'ITAdmin' %}
+                <ul class="list-disc pl-6 text-blue-700">
+                    <li class="mb-2">System administration and monitoring capabilities</li>
+                    <li class="mb-2">User and permission management</li>
+                    <li class="mb-2">System configuration and security settings</li>
+                    <li class="mb-2">Audit logs and performance monitoring</li>
+                    <li class="mb-2">Backup and recovery procedures</li>
+                </ul>
+            {% elif role == 'Assessor' %}
+                <ul class="list-disc pl-6 text-blue-700">
+                    <li class="mb-2">Review and approval workflow for property assessments</li>
+                    <li class="mb-2">Detailed property information access</li>
+                    <li class="mb-2">Data validation and verification tools</li>
+                    <li class="mb-2">Assessment reporting capabilities</li>
+                    <li class="mb-2">Approval and rejection processes</li>
+                </ul>
+            {% elif role == 'Staff' %}
+                <ul class="list-disc pl-6 text-blue-700">
+                    <li class="mb-2">Data submission and upload procedures</li>
+                    <li class="mb-2">Document validation and error correction</li>
+                    <li class="mb-2">Submission tracking and status monitoring</li>
+                    <li class="mb-2">Property record management</li>
+                    <li class="mb-2">Communication tools for assessment feedback</li>
+                </ul>
+            {% elif role == 'Auditor' %}
+                <ul class="list-disc pl-6 text-blue-700">
+                    <li class="mb-2">Comprehensive audit trail access</li>
+                    <li class="mb-2">User activity monitoring capabilities</li>
+                    <li class="mb-2">Compliance reporting tools</li>
+                    <li class="mb-2">Data access and security auditing</li>
+                    <li class="mb-2">Alert configuration for suspicious activities</li>
+                </ul>
+            {% else %}
+                <ul class="list-disc pl-6 text-blue-700">
+                    <li class="mb-2">Basic system navigation and functionality</li>
+                    <li class="mb-2">Account management and configuration</li>
+                    <li class="mb-2">Data access and reporting features</li>
+                    <li class="mb-2">Communication and collaboration tools</li>
+                    <li class="mb-2">Help and support resources</li>
+                </ul>
+            {% endif %}
+        </div>
+
+        <div class="text-center mb-8">
+            <p class="text-gray-700 mb-4">Your onboarding progress has been saved. You can revisit any part of the tutorial from your profile settings.</p>
+        </div>
+
+        <div class="flex justify-center">
+            <a href="{{ url_for('dashboard') }}" 
+               class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center">
+                Go to Dashboard
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 ml-2" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L12.586 11H5a1 1 0 110-2h7.586l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd" />
+                </svg>
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,20 +1,15 @@
 """
-Database setup and utilities for the TerraFusion SyncService platform.
+Database configuration for TerraFusion SyncService.
+
+This module provides the shared database instance for the application.
 """
 
-# Import SQLAlchemy
 from flask_sqlalchemy import SQLAlchemy
 
-# Create a reference to the database instance without initializing it yet
-# This avoids circular imports
-db = None
+# Create the database instance - but this should be initialized with app in the main app.py
+db = SQLAlchemy()
 
-def init_db(app_db):
-    """
-    Initialize the database reference with the actual instance.
-    
-    Args:
-        app_db: The Flask-SQLAlchemy database instance
-    """
+def set_shared_db(shared_db_instance):
+    """Set the shared database instance from the main application."""
     global db
-    db = app_db
+    db = shared_db_instance

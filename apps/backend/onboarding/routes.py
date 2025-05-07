@@ -1,513 +1,262 @@
 """
-Onboarding routes for TerraFusion SyncService.
+Onboarding routes and controllers for TerraFusion SyncService.
 
-Provides routes for interactive user onboarding and role-based tutorials.
+This module provides interactive tutorials and onboarding experiences
+for new users based on their roles.
 """
 
 import os
 import json
 import logging
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
-from flask import Blueprint, request, jsonify, render_template, redirect, url_for, session, current_app
+from flask import Blueprint, render_template, jsonify, request, session, redirect, url_for, flash, current_app
 
-# Configuration and utilities
+from apps.backend.auth import requires_auth, get_current_user
+from apps.backend.database import db
+from apps.backend.models.onboarding import UserOnboarding
+
+# Configure logging
 logger = logging.getLogger(__name__)
 
-# Import database model and app context
-from ..models import UserOnboarding, db
-
-def create_onboarding_blueprint() -> Blueprint:
-    """Create the onboarding blueprint with routes."""
-    onboarding_bp = Blueprint('onboarding_bp', __name__, url_prefix='/onboarding')
-    
-    @onboarding_bp.route('/', methods=['GET'])
-    def onboarding_home():
-        """
-        Main onboarding route that redirects to appropriate tutorial
-        based on the user's role and progress.
-        """
-        # Get current user from session
-        try:
-            from ..auth import get_county_current_user
-            user = get_county_current_user()
-        except (ImportError, AttributeError):
-            # Fallback if county auth not available
-            user = session.get('user', {})
-        
-        if not user:
-            return redirect(url_for('login_page'))
-        
-        # Get or create onboarding record
-        onboarding = get_or_create_onboarding(user)
-        
-        # If onboarding is completed or dismissed, redirect to dashboard
-        if onboarding.dismissed or onboarding.onboarding_completed:
-            return redirect(url_for('dashboard'))
-        
-        # Redirect to the current step
-        return redirect(url_for('onboarding_bp.tutorial_step', role=onboarding.role, step=onboarding.current_step))
-    
-    @onboarding_bp.route('/tutorial/<string:role>/<int:step>', methods=['GET'])
-    def tutorial_step(role, step):
-        """
-        Display a specific tutorial step for a role.
-        """
-        # Get current user
-        try:
-            from ..auth import get_county_current_user
-            user = get_county_current_user()
-        except (ImportError, AttributeError):
-            user = session.get('user', {})
-        
-        if not user:
-            return redirect(url_for('login_page'))
-        
-        # Get onboarding record
-        onboarding = get_or_create_onboarding(user)
-        
-        # Check if role matches
-        if onboarding.role != role:
-            # Redirect to the correct role's onboarding
-            return redirect(url_for('onboarding_bp.tutorial_step', role=onboarding.role, step=onboarding.current_step))
-        
-        # Get tutorial content based on role and step
-        tutorial_content = get_tutorial_content(role, step)
-        
-        return render_template(
-            'onboarding/tutorial.html',
-            user=user,
-            role=role,
-            current_step=step,
-            total_steps=get_total_steps(role),
-            tutorial=tutorial_content,
-            onboarding=onboarding
-        )
-    
-    @onboarding_bp.route('/mark_completed/<int:step>', methods=['POST'])
-    def mark_step_completed(step):
-        """
-        Mark a step as completed and redirect to the next step.
-        """
-        # Get current user
-        try:
-            from ..auth import get_county_current_user
-            user = get_county_current_user()
-        except (ImportError, AttributeError):
-            user = session.get('user', {})
-        
-        if not user:
-            return jsonify({'error': 'Not authenticated'}), 401
-        
-        # Get onboarding record
-        onboarding = get_or_create_onboarding(user)
-        
-        # Mark the step as completed
-        onboarding.mark_step_completed(step)
-        db.session.commit()
-        
-        # Check if this was the last step
-        if step >= get_total_steps(onboarding.role):
-            onboarding.complete_onboarding()
-            db.session.commit()
-            return jsonify({
-                'success': True, 
-                'completed': True,
-                'redirect': url_for('dashboard')
-            })
-        
-        # Return next step info
-        return jsonify({
-            'success': True, 
-            'next_step': onboarding.current_step,
-            'redirect': url_for('onboarding_bp.tutorial_step', role=onboarding.role, step=onboarding.current_step)
-        })
-    
-    @onboarding_bp.route('/dismiss', methods=['POST'])
-    def dismiss_onboarding():
-        """
-        Dismiss the onboarding tutorial permanently.
-        """
-        # Get current user
-        try:
-            from ..auth import get_county_current_user
-            user = get_county_current_user()
-        except (ImportError, AttributeError):
-            user = session.get('user', {})
-        
-        if not user:
-            return jsonify({'error': 'Not authenticated'}), 401
-        
-        # Get and update onboarding record
-        onboarding = get_or_create_onboarding(user)
-        onboarding.dismissed = True
-        db.session.commit()
-        
-        return jsonify({
-            'success': True,
-            'redirect': url_for('dashboard')
-        })
-    
-    @onboarding_bp.route('/reset', methods=['POST'])
-    def reset_onboarding():
-        """
-        Reset onboarding progress.
-        """
-        # Get current user
-        try:
-            from ..auth import get_county_current_user
-            user = get_county_current_user()
-        except (ImportError, AttributeError):
-            user = session.get('user', {})
-        
-        if not user:
-            return jsonify({'error': 'Not authenticated'}), 401
-        
-        # Reset onboarding
-        onboarding = get_or_create_onboarding(user)
-        onboarding.current_step = 1
-        onboarding.completed_steps = json.dumps([])
-        onboarding.onboarding_completed = None
-        onboarding.dismissed = False
-        onboarding.last_activity = datetime.utcnow()
-        db.session.commit()
-        
-        return jsonify({
-            'success': True,
-            'redirect': url_for('onboarding_bp.onboarding_home')
-        })
-    
-    return onboarding_bp
+# Tutorial steps by role
+TUTORIAL_STEPS = {
+    "ITAdmin": [
+        {"title": "Welcome Admin", "description": "Welcome to the IT Administrator interface. This tutorial will guide you through system administration features.", "image": "admin_welcome.svg"},
+        {"title": "System Overview", "description": "The dashboard shows system health, recent sync operations, and active users.", "image": "admin_system.svg"},
+        {"title": "User Management", "description": "You can manage users, roles, and permissions from the Administration panel.", "image": "admin_users.svg"},
+        {"title": "Configuration", "description": "Adjust system settings, connection parameters, and security policies.", "image": "admin_config.svg"},
+        {"title": "Monitoring", "description": "View detailed logs, metrics, and set up alerts for critical events.", "image": "admin_complete.svg"}
+    ],
+    "Assessor": [
+        {"title": "Welcome Assessor", "description": "Welcome to the County Assessor interface. This tutorial will guide you through the review and approval process.", "image": "assessor_welcome.svg"},
+        {"title": "Review Queue", "description": "Your dashboard shows pending approvals that require your review.", "image": "assessor_queue.svg"},
+        {"title": "Assessment Details", "description": "Click on any entry to view detailed information and compare changes.", "image": "assessor_details.svg"},
+        {"title": "Approval Process", "description": "After reviewing, you can approve, reject, or request changes.", "image": "assessor_approval.svg"},
+        {"title": "Reports", "description": "Generate reports on approved and pending assessments.", "image": "assessor_complete.svg"}
+    ],
+    "Staff": [
+        {"title": "Welcome Staff", "description": "Welcome to the County Staff interface. This tutorial will guide you through data submission.", "image": "staff_welcome.svg"},
+        {"title": "Submission Queue", "description": "Your dashboard shows recent submissions and their status.", "image": "staff_queue.svg"},
+        {"title": "Upload Process", "description": "Use the upload button to submit new property assessment data.", "image": "staff_upload.svg"},
+        {"title": "Validation", "description": "All submissions are automatically validated before review.", "image": "staff_validation.svg"},
+        {"title": "Status Tracking", "description": "Track the status of your submissions through the approval process.", "image": "staff_complete.svg"}
+    ],
+    "Auditor": [
+        {"title": "Welcome Auditor", "description": "Welcome to the County Auditor interface. This tutorial will guide you through audit capabilities.", "image": "auditor_welcome.svg"},
+        {"title": "Audit Logs", "description": "Your dashboard shows a complete audit trail of all system activities.", "image": "auditor_logs.svg"},
+        {"title": "Filter Controls", "description": "Use filters to search for specific activities by user, date, or type.", "image": "auditor_filters.svg"},
+        {"title": "Compliance Reports", "description": "Generate compliance reports for internal or external review.", "image": "auditor_reports.svg"},
+        {"title": "Alert Configuration", "description": "Set up alerts for unusual or high-risk activities.", "image": "auditor_complete.svg"}
+    ],
+    "default": [
+        {"title": "Welcome", "description": "Welcome to TerraFusion SyncService. This tutorial will guide you through the basics.", "image": "default_welcome.svg"},
+        {"title": "Dashboard", "description": "Your dashboard shows recent activity and key information.", "image": "default_dashboard.svg"},
+        {"title": "Navigation", "description": "Use the menu on the left to access different features.", "image": "default_nav.svg"},
+        {"title": "Profile", "description": "Manage your profile and preferences.", "image": "default_profile.svg"},
+        {"title": "Help & Support", "description": "Access documentation and support resources.", "image": "default_complete.svg"}
+    ]
+}
 
 def get_or_create_onboarding(user: Dict[str, Any]) -> UserOnboarding:
     """
-    Get or create onboarding record for a user.
+    Get or create an onboarding record for a user.
     
     Args:
-        user: User dictionary from session
+        user: User dictionary with id, username, roles
         
     Returns:
-        UserOnboarding record
+        UserOnboarding instance
     """
+    # Extract user information
     user_id = user.get('id', f"user-{user.get('username', 'unknown')}")
     username = user.get('username', 'unknown')
     
-    # Default to the first role if multiple roles exist
+    # Get user's primary role (first in list)
     roles = user.get('roles', [])
-    role = roles[0] if roles else 'Staff'  # Default to Staff as fallback
+    role = roles[0] if roles else 'default'
     
-    # Try to find existing record
+    # Try to find existing onboarding record
     onboarding = UserOnboarding.query.filter_by(user_id=user_id).first()
     
     if not onboarding:
-        # Create new record
+        # Create new onboarding record
         onboarding = UserOnboarding(
             user_id=user_id,
             username=username,
             role=role,
-            current_step=1,
-            completed_steps=json.dumps([]),
-            tutorial_config=get_tutorial_config(role)
+            total_steps=len(TUTORIAL_STEPS.get(role, TUTORIAL_STEPS['default']))
         )
         db.session.add(onboarding)
         db.session.commit()
+        logger.info(f"Created new onboarding record for user {username} with role {role}")
     
     return onboarding
 
-def get_tutorial_config(role: str) -> Dict[str, Any]:
+def create_onboarding_blueprint() -> Blueprint:
     """
-    Get tutorial configuration for a specific role.
+    Create the onboarding blueprint.
     
-    Args:
-        role: User role
-        
     Returns:
-        Dictionary with tutorial configuration
+        Flask Blueprint for onboarding
     """
-    # Get the number of steps for each role's tutorial
-    return {
-        'total_steps': get_total_steps(role),
-        'role': role,
-        'version': 1.0
-    }
-
-def get_total_steps(role: str) -> int:
-    """
-    Get the total number of tutorial steps for a role.
+    onboarding_bp = Blueprint('onboarding_bp', __name__, url_prefix='/onboarding')
     
-    Args:
-        role: User role
+    @onboarding_bp.route('/', methods=['GET'])
+    @requires_auth
+    def onboarding_home():
+        """Display the onboarding home page."""
+        user = get_current_user()
+        if not user:
+            flash('Please log in to access the onboarding tutorial', 'error')
+            return redirect(url_for('login_page'))
         
-    Returns:
-        Number of steps
-    """
-    # Configuration of steps per role
-    step_counts = {
-        'ITAdmin': 7,
-        'Assessor': 5,
-        'Staff': 4,
-        'Auditor': 4
-    }
+        # Get or create onboarding for this user
+        onboarding = get_or_create_onboarding(user)
+        
+        # Get role-specific tutorial steps
+        roles = user.get('roles', [])
+        role = roles[0] if roles else 'default'
+        steps = TUTORIAL_STEPS.get(role, TUTORIAL_STEPS['default'])
+        
+        return render_template(
+            'onboarding/tutorial.html',
+            user=user,
+            onboarding=onboarding,
+            steps=steps,
+            current_step=onboarding.current_step,
+            role=role
+        )
     
-    return step_counts.get(role, 4)  # Default to 4 steps
-
-def get_tutorial_content(role: str, step: int) -> Dict[str, Any]:
-    """
-    Get the tutorial content for a specific role and step.
+    @onboarding_bp.route('/step/<int:step_number>', methods=['GET'])
+    @requires_auth
+    def view_step(step_number):
+        """View a specific tutorial step."""
+        user = get_current_user()
+        if not user:
+            return jsonify({'error': 'Authentication required'}), 401
+        
+        # Get onboarding for this user
+        onboarding = get_or_create_onboarding(user)
+        
+        # Check if the step is accessible
+        if step_number > onboarding.current_step:
+            flash('Please complete the previous steps first', 'warning')
+            return redirect(url_for('onboarding_bp.onboarding_home'))
+        
+        # Get role-specific tutorial steps
+        roles = user.get('roles', [])
+        role = roles[0] if roles else 'default'
+        steps = TUTORIAL_STEPS.get(role, TUTORIAL_STEPS['default'])
+        
+        # Make sure the step exists
+        if step_number < 1 or step_number > len(steps):
+            flash('Invalid tutorial step', 'error')
+            return redirect(url_for('onboarding_bp.onboarding_home'))
+        
+        # Get the step content
+        step = steps[step_number - 1]
+        
+        return render_template(
+            'onboarding/step.html',
+            user=user,
+            onboarding=onboarding,
+            step=step,
+            step_number=step_number,
+            total_steps=len(steps),
+            role=role
+        )
     
-    Args:
-        role: User role
-        step: Tutorial step
+    @onboarding_bp.route('/complete/<int:step_number>', methods=['POST'])
+    @requires_auth
+    def complete_step(step_number):
+        """Mark a step as completed."""
+        user = get_current_user()
+        if not user:
+            return jsonify({'error': 'Authentication required'}), 401
         
-    Returns:
-        Dictionary with tutorial content
-    """
-    # Load tutorial content from configuration
-    # In a real application, this might be stored in a database or config files
+        # Get onboarding for this user
+        onboarding = get_or_create_onboarding(user)
+        
+        # Update onboarding progress
+        onboarding.mark_step_completed(step_number)
+        db.session.commit()
+        
+        # Get role-specific tutorial steps
+        roles = user.get('roles', [])
+        role = roles[0] if roles else 'default'
+        steps = TUTORIAL_STEPS.get(role, TUTORIAL_STEPS['default'])
+        
+        # Check if this was the last step
+        if step_number >= len(steps):
+            # Redirect to completion page
+            return jsonify({
+                'success': True,
+                'completed': True,
+                'redirect': url_for('onboarding_bp.completion')
+            })
+        
+        # Redirect to next step
+        return jsonify({
+            'success': True,
+            'completed': False,
+            'next_step': step_number + 1,
+            'redirect': url_for('onboarding_bp.view_step', step_number=step_number + 1)
+        })
     
-    tutorials = {
-        # ITAdmin tutorials
-        'ITAdmin': {
-            1: {
-                'title': 'Welcome to County Property Assessment',
-                'description': 'As an IT Administrator, you have full access to the system. This tutorial will help you understand how to manage the system, users, and data synchronization.',
-                'image': 'admin_welcome.svg',
-                'target_element': '#dashboard-overview',
-                'actions': [
-                    {'type': 'highlight', 'element': '#admin-panel', 'description': 'Admin panel for system configuration'},
-                    {'type': 'click', 'element': '#admin-panel', 'description': 'Click here to access admin features'}
-                ],
-                'completion_action': 'button',
-                'button_text': 'Continue'
-            },
-            2: {
-                'title': 'System Administration',
-                'description': 'The System Administration panel provides tools for monitoring, configuration, and user management.',
-                'image': 'admin_system.svg',
-                'target_element': '#system-admin',
-                'actions': [
-                    {'type': 'highlight', 'element': '#system-status', 'description': 'View system status and metrics'},
-                    {'type': 'highlight', 'element': '#user-management', 'description': 'Manage users and permissions'}
-                ],
-                'completion_action': 'button',
-                'button_text': 'Continue'
-            },
-            3: {
-                'title': 'User Management',
-                'description': 'As an administrator, you can manage users, roles, and permissions.',
-                'image': 'admin_users.svg',
-                'target_element': '#user-management',
-                'actions': [
-                    {'type': 'highlight', 'element': '#add-user', 'description': 'Add new users to the system'},
-                    {'type': 'highlight', 'element': '#edit-roles', 'description': 'Modify user roles and permissions'}
-                ],
-                'completion_action': 'button',
-                'button_text': 'Continue'
-            },
-            4: {
-                'title': 'Sync Pair Management',
-                'description': 'Configure and manage synchronization between systems.',
-                'image': 'admin_sync.svg',
-                'target_element': '#sync-management',
-                'actions': [
-                    {'type': 'highlight', 'element': '#create-sync', 'description': 'Create new sync pairs'},
-                    {'type': 'highlight', 'element': '#manage-sync', 'description': 'Manage existing sync pairs'}
-                ],
-                'completion_action': 'button',
-                'button_text': 'Continue'
-            },
-            5: {
-                'title': 'Approval Workflow',
-                'description': 'Review and approve sync operations submitted by staff.',
-                'image': 'admin_approval.svg',
-                'target_element': '#approval-queue',
-                'actions': [
-                    {'type': 'highlight', 'element': '#pending-approvals', 'description': 'View pending approval requests'},
-                    {'type': 'highlight', 'element': '#approve-button', 'description': 'Approve sync operations'},
-                    {'type': 'highlight', 'element': '#reject-button', 'description': 'Reject sync operations'}
-                ],
-                'completion_action': 'button',
-                'button_text': 'Continue'
-            },
-            6: {
-                'title': 'System Monitoring',
-                'description': 'Monitor system health, performance, and activity.',
-                'image': 'admin_monitoring.svg',
-                'target_element': '#system-monitoring',
-                'actions': [
-                    {'type': 'highlight', 'element': '#metrics-dashboard', 'description': 'View system metrics'},
-                    {'type': 'highlight', 'element': '#logs-viewer', 'description': 'Access system logs'},
-                    {'type': 'highlight', 'element': '#alerts', 'description': 'Configure system alerts'}
-                ],
-                'completion_action': 'button',
-                'button_text': 'Continue'
-            },
-            7: {
-                'title': 'Congratulations!',
-                'description': 'You\'ve completed the IT Administrator tutorial. You now have the knowledge to effectively manage the County Property Assessment system.',
-                'image': 'admin_complete.svg',
-                'completion_action': 'button',
-                'button_text': 'Finish Tutorial'
-            }
-        },
+    @onboarding_bp.route('/dismiss', methods=['POST'])
+    @requires_auth
+    def dismiss_onboarding():
+        """Dismiss the onboarding tutorial."""
+        user = get_current_user()
+        if not user:
+            return jsonify({'error': 'Authentication required'}), 401
         
-        # Assessor tutorials
-        'Assessor': {
-            1: {
-                'title': 'Welcome to County Property Assessment',
-                'description': 'As an Assessor, you are responsible for reviewing and approving property data changes. This tutorial will guide you through the process.',
-                'image': 'assessor_welcome.svg',
-                'target_element': '#dashboard-overview',
-                'actions': [
-                    {'type': 'highlight', 'element': '#approval-queue', 'description': 'Your approval queue'},
-                    {'type': 'click', 'element': '#approval-queue', 'description': 'Click here to see pending approvals'}
-                ],
-                'completion_action': 'button',
-                'button_text': 'Continue'
-            },
-            2: {
-                'title': 'Reviewing Property Changes',
-                'description': 'Learn how to review property data changes submitted by staff members.',
-                'image': 'assessor_review.svg',
-                'target_element': '#review-changes',
-                'actions': [
-                    {'type': 'highlight', 'element': '#change-details', 'description': 'View detailed changes'},
-                    {'type': 'highlight', 'element': '#diff-viewer', 'description': 'See before and after comparisons'}
-                ],
-                'completion_action': 'button',
-                'button_text': 'Continue'
-            },
-            3: {
-                'title': 'Approving Changes',
-                'description': 'Learn how to approve property data changes after review.',
-                'image': 'assessor_approve.svg',
-                'target_element': '#approve-changes',
-                'actions': [
-                    {'type': 'highlight', 'element': '#approve-button', 'description': 'Approve verified changes'},
-                    {'type': 'highlight', 'element': '#comments-field', 'description': 'Add comments for the record'}
-                ],
-                'completion_action': 'button',
-                'button_text': 'Continue'
-            },
-            4: {
-                'title': 'Rejecting Changes',
-                'description': 'Learn how to reject changes that need revision.',
-                'image': 'assessor_reject.svg',
-                'target_element': '#reject-changes',
-                'actions': [
-                    {'type': 'highlight', 'element': '#reject-button', 'description': 'Reject changes that need revision'},
-                    {'type': 'highlight', 'element': '#feedback-field', 'description': 'Provide feedback for correction'}
-                ],
-                'completion_action': 'button',
-                'button_text': 'Continue'
-            },
-            5: {
-                'title': 'Congratulations!',
-                'description': 'You\'ve completed the Assessor tutorial. You now have the knowledge to effectively review and approve property data changes.',
-                'image': 'assessor_complete.svg',
-                'completion_action': 'button',
-                'button_text': 'Finish Tutorial'
-            }
-        },
+        # Get onboarding for this user
+        onboarding = get_or_create_onboarding(user)
         
-        # Staff tutorials
-        'Staff': {
-            1: {
-                'title': 'Welcome to County Property Assessment',
-                'description': 'As a Staff member, you can upload and manage property data. This tutorial will guide you through the process.',
-                'image': 'staff_welcome.svg',
-                'target_element': '#dashboard-overview',
-                'actions': [
-                    {'type': 'highlight', 'element': '#upload-section', 'description': 'Upload new data'},
-                    {'type': 'click', 'element': '#upload-section', 'description': 'Click here to upload data'}
-                ],
-                'completion_action': 'button',
-                'button_text': 'Continue'
-            },
-            2: {
-                'title': 'Uploading Property Data',
-                'description': 'Learn how to upload property data files for synchronization.',
-                'image': 'staff_upload.svg',
-                'target_element': '#upload-form',
-                'actions': [
-                    {'type': 'highlight', 'element': '#file-input', 'description': 'Select files to upload'},
-                    {'type': 'highlight', 'element': '#upload-button', 'description': 'Submit files for review'}
-                ],
-                'completion_action': 'button',
-                'button_text': 'Continue'
-            },
-            3: {
-                'title': 'Tracking Your Uploads',
-                'description': 'Monitor the status of your uploaded data.',
-                'image': 'staff_tracking.svg',
-                'target_element': '#my-uploads',
-                'actions': [
-                    {'type': 'highlight', 'element': '#upload-status', 'description': 'Check upload status'},
-                    {'type': 'highlight', 'element': '#pending-reviews', 'description': 'Track pending reviews'}
-                ],
-                'completion_action': 'button',
-                'button_text': 'Continue'
-            },
-            4: {
-                'title': 'Congratulations!',
-                'description': 'You\'ve completed the Staff tutorial. You now have the knowledge to effectively upload and manage property data.',
-                'image': 'staff_complete.svg',
-                'completion_action': 'button',
-                'button_text': 'Finish Tutorial'
-            }
-        },
+        # Dismiss onboarding
+        onboarding.dismiss_onboarding()
+        db.session.commit()
         
-        # Auditor tutorials
-        'Auditor': {
-            1: {
-                'title': 'Welcome to County Property Assessment',
-                'description': 'As an Auditor, you can view and audit property data operations. This tutorial will guide you through the auditing tools.',
-                'image': 'auditor_welcome.svg',
-                'target_element': '#dashboard-overview',
-                'actions': [
-                    {'type': 'highlight', 'element': '#audit-section', 'description': 'Access audit tools'},
-                    {'type': 'click', 'element': '#audit-section', 'description': 'Click here to view audit logs'}
-                ],
-                'completion_action': 'button',
-                'button_text': 'Continue'
-            },
-            2: {
-                'title': 'Viewing Audit Logs',
-                'description': 'Learn how to access and filter audit logs.',
-                'image': 'auditor_logs.svg',
-                'target_element': '#audit-logs',
-                'actions': [
-                    {'type': 'highlight', 'element': '#log-filters', 'description': 'Filter logs by date, user, or action'},
-                    {'type': 'highlight', 'element': '#export-logs', 'description': 'Export logs for reporting'}
-                ],
-                'completion_action': 'button',
-                'button_text': 'Continue'
-            },
-            3: {
-                'title': 'Reviewing Sync Operations',
-                'description': 'Audit completed sync operations and their changes.',
-                'image': 'auditor_review.svg',
-                'target_element': '#sync-history',
-                'actions': [
-                    {'type': 'highlight', 'element': '#operation-details', 'description': 'View operation details'},
-                    {'type': 'highlight', 'element': '#change-history', 'description': 'See property change history'}
-                ],
-                'completion_action': 'button',
-                'button_text': 'Continue'
-            },
-            4: {
-                'title': 'Congratulations!',
-                'description': 'You\'ve completed the Auditor tutorial. You now have the knowledge to effectively audit property data operations.',
-                'image': 'auditor_complete.svg',
-                'completion_action': 'button',
-                'button_text': 'Finish Tutorial'
-            }
+        return jsonify({'success': True})
+    
+    @onboarding_bp.route('/completion', methods=['GET'])
+    @requires_auth
+    def completion():
+        """Display the onboarding completion page."""
+        user = get_current_user()
+        if not user:
+            flash('Please log in to access the onboarding tutorial', 'error')
+            return redirect(url_for('login_page'))
+        
+        # Get onboarding for this user
+        onboarding = get_or_create_onboarding(user)
+        
+        # Get role-specific content
+        roles = user.get('roles', [])
+        role = roles[0] if roles else 'default'
+        
+        # Get completion message and image
+        completion_messages = {
+            'ITAdmin': 'You now have full access to all administrative tools and features.',
+            'Assessor': 'You can now review and approve property assessment changes.',
+            'Staff': 'You can now submit new property assessment data for review.',
+            'Auditor': 'You now have full access to audit logs and reporting tools.',
+            'default': 'You have completed the basic tutorial and can now use the system.'
         }
-    }
+        
+        message = completion_messages.get(role, completion_messages['default'])
+        image = f"{role.lower()}_complete.svg"
+        
+        return render_template(
+            'onboarding/completion.html',
+            user=user,
+            onboarding=onboarding,
+            role=role,
+            message=message,
+            image=image
+        )
     
-    # Get tutorial for the specified role and step
-    role_tutorials = tutorials.get(role, tutorials['Staff'])  # Default to Staff if role not found
-    tutorial = role_tutorials.get(step, role_tutorials[1])  # Default to step 1 if step not found
-    
-    return tutorial
+    return onboarding_bp

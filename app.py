@@ -42,9 +42,9 @@ app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
 # Initialize the database with the Flask app
 db.init_app(app)
 
-# Import database modules and initialize them
+# Import database module and share our db instance with it
 import apps.backend.database
-apps.backend.database.init_db(db)
+apps.backend.database.set_shared_db(db)
 
 # Import models
 from apps.backend.models import SyncPair, SyncOperation, AuditEntry, SystemMetrics

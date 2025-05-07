@@ -9,6 +9,7 @@ from .sync_pair import SyncPair
 from .sync_operation import SyncOperation
 from .audit import AuditEntry
 from .system_metrics import SystemMetrics
+from .onboarding import UserOnboarding
 
 __all__ = [
     'Base',
@@ -16,4 +17,5 @@ __all__ = [
     'SyncOperation',
     'AuditEntry',
     'SystemMetrics',
+    'UserOnboarding',
 ]
