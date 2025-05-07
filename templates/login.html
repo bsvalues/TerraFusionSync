@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}TerraFusion - Login{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h3 class="card-title mb-0">Login to TerraFusion</h3>
+                </div>
+                <div class="card-body">
+                    {% if error %}
+                    <div class="alert alert-danger">
+                        {{ error }}
+                    </div>
+                    {% endif %}
+
+                    <form id="login-form" method="post" action="{{ url_for('auth_bp.login') }}">
+                        <div class="form-group mb-3">
+                            <label for="username">Username</label>
+                            <input type="text" class="form-control" id="username" name="username" required>
+                        </div>
+                        <div class="form-group mb-3">
+                            <label for="password">Password</label>
+                            <input type="password" class="form-control" id="password" name="password" required>
+                        </div>
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary">Login</button>
+                        </div>
+                    </form>
+                </div>
+                <div class="card-footer">
+                    <div class="text-center">
+                        <p class="mb-0">Need help? Contact your system administrator.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById('login-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+        
+        fetch('{{ url_for("auth_bp.login") }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                username: username,
+                password: password
+            }),
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Store token in localStorage for SPA functionality
+                localStorage.setItem('auth_token', data.token);
+                
+                // Redirect to dashboard or original requested URL
+                const next = new URLSearchParams(window.location.search).get('next');
+                window.location.href = next || '{{ url_for("dashboard") }}';
+            } else {
+                // Show error message
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'alert alert-danger';
+                errorDiv.textContent = data.error || 'Authentication failed';
+                
+                const form = document.getElementById('login-form');
+                form.parentNode.insertBefore(errorDiv, form);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            
+            // Show error message
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'alert alert-danger';
+            errorDiv.textContent = 'An error occurred during login';
+            
+            const form = document.getElementById('login-form');
+            form.parentNode.insertBefore(errorDiv, form);
+        });
+    });
+</script>
+{% endblock %}

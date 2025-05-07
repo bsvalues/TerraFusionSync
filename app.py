@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 from urllib.parse import urljoin
 
-from flask import Flask, jsonify, request, render_template, redirect, url_for, Response, session
+from flask import Flask, jsonify, request, render_template, redirect, url_for, Response, session, flash
 
 # Configure logging first to avoid "logger not defined" errors
 logging.basicConfig(level=logging.DEBUG)
