@@ -396,7 +396,16 @@ def get_county_current_user():
     Returns:
         User dictionary if authenticated, None otherwise
     """
-    return session.get('user')
+    try:
+        if hasattr(session, '_get_current_object'):
+            # We're in a request context, safe to access session
+            return session.get('user')
+        else:
+            # We're outside a request context
+            return None
+    except RuntimeError:
+        # Handle "working outside of request context" error
+        return None
 
 def get_county_current_roles():
     """
@@ -405,8 +414,14 @@ def get_county_current_roles():
     Returns:
         List of role names
     """
-    user = session.get('user', {})
-    return user.get('roles', [])
+    try:
+        if hasattr(session, '_get_current_object'):
+            user = session.get('user', {})
+            return user.get('roles', [])
+        else:
+            return []
+    except RuntimeError:
+        return []
 
 def user_has_county_role(role: str) -> bool:
     """
@@ -418,5 +433,11 @@ def user_has_county_role(role: str) -> bool:
     Returns:
         True if the user has the role, False otherwise
     """
-    user = session.get('user', {})
-    return role in user.get('roles', [])
+    try:
+        if hasattr(session, '_get_current_object'):
+            user = session.get('user', {})
+            return role in user.get('roles', [])
+        else:
+            return False
+    except RuntimeError:
+        return False
