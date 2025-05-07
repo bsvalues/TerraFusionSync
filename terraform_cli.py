@@ -13,7 +13,13 @@ import logging
 import json
 import subprocess
 import time
-from datetime import datetime
+import getpass
+import base64
+import hashlib
+import hmac
+import uuid
+import requests
+from datetime import datetime, timedelta
 import platform
 import shutil
 from typing import Dict, List, Optional, Tuple, Union
@@ -39,6 +45,8 @@ class TerraFusionCLI:
         """Initialize the CLI with configuration."""
         self.config = self._load_config()
         self._check_dependencies()
+        self.auth_token = None
+        self.token_expiry = None
 
     def _load_config(self) -> Dict:
         """Load configuration from file or create default."""
@@ -60,19 +68,26 @@ class TerraFusionCLI:
                 "dev": {
                     "namespace": "terrafusion-dev",
                     "domain": "dev.terrafusion.example.com",
+                    "api_url": "http://localhost:5000",
                 },
                 "stage": {
                     "namespace": "terrafusion-stage",
                     "domain": "stage.terrafusion.example.com",
+                    "api_url": "https://stage.terrafusion.example.com",
                 },
                 "prod": {
                     "namespace": "terrafusion-prod",
                     "domain": "terrafusion.example.com",
+                    "api_url": "https://terrafusion.example.com",
                 },
             },
             "registry": "docker.io/terrafusion",
             "git_repo": "https://github.com/example/terrafusion-gitops.git",
             "git_branch": "main",
+            "auth": {
+                "token_file": os.path.expanduser("~/.terrafusion/auth_token.json"),
+                "default_user": "admin"
+            }
         }
 
         # Ensure directory exists
@@ -245,6 +260,28 @@ class TerraFusionCLI:
             parser.print_help()
             return
 
+        # Auth command
+        auth_parser = subparsers.add_parser("auth", help="Authentication operations")
+        auth_subparsers = auth_parser.add_subparsers(
+            dest="auth_command", help="Authentication command"
+        )
+        
+        # Auth login
+        auth_login = auth_subparsers.add_parser("login", help="Log in to TerraFusion")
+        auth_login.add_argument(
+            "-e", "--environment", choices=["dev", "stage", "prod"], default="dev",
+            help="Target environment"
+        )
+        auth_login.add_argument(
+            "-u", "--username", help="Username (default: from config)"
+        )
+        
+        # Auth status
+        auth_status = auth_subparsers.add_parser("status", help="Check authentication status")
+        
+        # Auth logout
+        auth_logout = auth_subparsers.add_parser("logout", help="Log out from TerraFusion")
+
         # Set up command dispatch
         command_dispatch = {
             "config": self._handle_config,
@@ -255,6 +292,7 @@ class TerraFusionCLI:
             "logs": self._handle_logs,
             "gitops": self._handle_gitops,
             "build": self._handle_build,
+            "auth": self._handle_auth,
         }
 
         # Dispatch to the appropriate handler
@@ -678,6 +716,211 @@ class TerraFusionCLI:
             logger.error(f"Error building {component}: {e}")
             if hasattr(e, 'stderr') and e.stderr:
                 logger.error(e.stderr)
+                
+    def _handle_auth(self, args):
+        """Handle auth commands."""
+        if not hasattr(args, "auth_command") or not args.auth_command:
+            logger.error("No auth command specified")
+            return
+            
+        if args.auth_command == "login":
+            self._handle_auth_login(args)
+        elif args.auth_command == "status":
+            self._handle_auth_status(args)
+        elif args.auth_command == "logout":
+            self._handle_auth_logout(args)
+        else:
+            logger.error(f"Unknown auth command: {args.auth_command}")
+            
+    def _handle_auth_login(self, args):
+        """Handle auth login command."""
+        logger.info(f"Logging in to {args.environment} environment")
+        
+        # Get API URL for the environment
+        api_url = self.config["environments"][args.environment]["api_url"]
+        
+        # Get username
+        username = args.username or self.config["auth"].get("default_user", "admin")
+        
+        # Get password securely
+        password = getpass.getpass(f"Password for {username}: ")
+        
+        # Authenticate with the API
+        try:
+            token = self._authenticate(api_url, username, password)
+            if token:
+                # Store token
+                self._save_auth_token(token, args.environment)
+                logger.info(f"Successfully logged in as {username} to {args.environment}")
+            else:
+                logger.error("Authentication failed")
+        except Exception as e:
+            logger.error(f"Login failed: {e}")
+            
+    def _handle_auth_status(self, args):
+        """Handle auth status command."""
+        if self._load_auth_token():
+            if self.token_expiry and datetime.now() < self.token_expiry:
+                remaining = self.token_expiry - datetime.now()
+                print(f"Authenticated - token valid for {remaining.total_seconds()//60} minutes")
+            else:
+                print("Token present but expired")
+        else:
+            print("Not authenticated")
+            
+    def _handle_auth_logout(self, args):
+        """Handle auth logout command."""
+        if os.path.exists(self.config["auth"]["token_file"]):
+            try:
+                os.remove(self.config["auth"]["token_file"])
+                logger.info("Successfully logged out")
+            except Exception as e:
+                logger.error(f"Logout failed: {e}")
+        else:
+            logger.info("Not logged in")
+            
+    def _authenticate(self, api_url, username, password):
+        """
+        Authenticate with the TerraFusion API.
+        
+        Args:
+            api_url: Base URL of the API
+            username: Username for authentication
+            password: Password for authentication
+            
+        Returns:
+            Authentication token if successful, None otherwise
+        """
+        try:
+            # Create a secure login token
+            timestamp = int(time.time())
+            nonce = str(uuid.uuid4())
+            
+            # Create password hash
+            password_hash = hashlib.sha256(password.encode()).hexdigest()
+            
+            # Create login payload
+            login_payload = {
+                "username": username,
+                "timestamp": timestamp,
+                "nonce": nonce,
+                "hash": self._create_auth_hash(username, timestamp, nonce, password_hash)
+            }
+            
+            # Make login request
+            auth_url = f"{api_url}/api/auth/login"
+            response = requests.post(auth_url, json=login_payload, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("success") and data.get("token"):
+                    token_data = {
+                        "token": data["token"],
+                        "expiry": data.get("expiry"),
+                        "username": username,
+                        "environment": api_url,
+                    }
+                    return token_data
+            
+            # If we got here, authentication failed
+            logger.error(f"Authentication failed: {response.text}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Authentication error: {e}")
+            return None
+            
+    def _create_auth_hash(self, username, timestamp, nonce, password_hash):
+        """
+        Create authentication hash for login.
+        
+        Args:
+            username: Username for authentication
+            timestamp: Current timestamp
+            nonce: Random nonce
+            password_hash: SHA-256 hash of user's password
+            
+        Returns:
+            HMAC-SHA256 hash for authentication
+        """
+        # Create message string
+        message = f"{username}:{timestamp}:{nonce}"
+        
+        # Create HMAC using password hash as key
+        hmac_obj = hmac.new(password_hash.encode(), message.encode(), hashlib.sha256)
+        return hmac_obj.hexdigest()
+            
+    def _save_auth_token(self, token_data, environment):
+        """
+        Save authentication token to disk.
+        
+        Args:
+            token_data: Token data including token and expiry
+            environment: Environment the token is for
+        """
+        # Make sure the directory exists
+        os.makedirs(os.path.dirname(self.config["auth"]["token_file"]), exist_ok=True)
+        
+        # Calculate expiry time
+        if token_data.get("expiry"):
+            expiry = datetime.now() + timedelta(seconds=token_data["expiry"])
+            token_data["expiry_timestamp"] = expiry.timestamp()
+            self.token_expiry = expiry
+        
+        # Save token file
+        with open(self.config["auth"]["token_file"], "w") as f:
+            json.dump(token_data, f)
+            
+        # Store token in memory
+        self.auth_token = token_data["token"]
+            
+    def _load_auth_token(self):
+        """
+        Load authentication token from disk.
+        
+        Returns:
+            True if token was loaded and is valid, False otherwise
+        """
+        token_file = self.config["auth"]["token_file"]
+        if not os.path.exists(token_file):
+            return False
+            
+        try:
+            with open(token_file, "r") as f:
+                token_data = json.load(f)
+                
+            # Check if token has expiry
+            if "expiry_timestamp" in token_data:
+                expiry_time = datetime.fromtimestamp(token_data["expiry_timestamp"])
+                self.token_expiry = expiry_time
+                
+                # Check if token is expired
+                if datetime.now() > expiry_time:
+                    logger.warning("Auth token is expired")
+                    return False
+                    
+            # Store token in memory
+            self.auth_token = token_data["token"]
+            return True
+                
+        except Exception as e:
+            logger.warning(f"Failed to load auth token: {e}")
+            return False
+            
+    def _get_auth_headers(self):
+        """
+        Get authorization headers for authenticated requests.
+        
+        Returns:
+            Dict with authorization headers if authenticated, empty dict otherwise
+        """
+        if not self.auth_token and not self._load_auth_token():
+            logger.warning("Not authenticated. Run 'terrafusion auth login' first.")
+            return {}
+            
+        return {
+            "Authorization": f"Bearer {self.auth_token}"
+        }
 
 
 def main():
