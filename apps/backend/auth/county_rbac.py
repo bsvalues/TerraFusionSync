@@ -246,7 +246,7 @@ def requires_county_permission(permission: str):
                     }), 403
                 else:
                     flash(f'Permission denied: This page requires the {permission} permission', 'error')
-                    return redirect(url_for('login_page'))
+                    return redirect(url_for('county_auth_bp.login'))
             return f(*args, **kwargs)
         return wrapped
     return decorator
@@ -275,7 +275,7 @@ def create_county_auth_blueprint():
                     return jsonify({'error': 'Username and password required'}), 400
                 else:
                     flash('Username and password required', 'error')
-                    return redirect(url_for('county_auth_blueprint.login'))
+                    return redirect(url_for('county_auth_bp.login'))
             
             # Check IP restrictions
             ip_address = request.remote_addr
@@ -285,7 +285,7 @@ def create_county_auth_blueprint():
                     return jsonify({'error': 'Access denied from this network'}), 403
                 else:
                     flash('Access denied from this network', 'error')
-                    return redirect(url_for('county_auth_blueprint.login'))
+                    return redirect(url_for('county_auth_bp.login'))
             
             # Authenticate user
             user = authenticate_user(username, password)
@@ -330,7 +330,7 @@ def create_county_auth_blueprint():
                     return jsonify({'error': 'Invalid credentials'}), 401
                 else:
                     flash('Invalid username or password', 'error')
-                    return redirect(url_for('county_auth_blueprint.login'))
+                    return redirect(url_for('county_auth_bp.login'))
         else:
             # GET request - show login form
             return render_template('county_login.html')
@@ -353,7 +353,7 @@ def create_county_auth_blueprint():
             return jsonify({'success': True, 'message': 'Logged out successfully'})
         else:
             flash('You have been logged out', 'info')
-            return redirect(url_for('county_auth_blueprint.login'))
+            return redirect(url_for('county_auth_bp.login'))
     
     @county_auth_bp.route('/roles', methods=['GET'])
     @requires_county_permission('manage_users')
@@ -373,9 +373,9 @@ def init_county_auth_routes(app):
     Args:
         app: Flask application instance
     """
-    # Use a unique name to avoid blueprint name collisions
+    # Use a consistent name to avoid blueprint name collisions
     county_auth_bp = create_county_auth_blueprint()
-    app.register_blueprint(county_auth_bp, name='county_auth_blueprint')
+    app.register_blueprint(county_auth_bp)
     logger.info("County auth routes initialized")
     
     @app.context_processor
