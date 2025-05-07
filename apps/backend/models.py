@@ -171,3 +171,62 @@ class SystemMetrics(db.Model):
             'error_count': self.error_count,
             'sync_operations_count': self.sync_operations_count
         }
+
+
+# User Onboarding model
+class UserOnboarding(db.Model):
+    """
+    Tracks user onboarding progress and tutorial completion.
+    This enables personalized, role-based onboarding experiences.
+    """
+    __tablename__ = 'user_onboarding'
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String(64), nullable=False, index=True)
+    username = Column(String(128), nullable=False, index=True)
+    role = Column(String(64), nullable=False, index=True)
+    onboarding_started = Column(DateTime, default=datetime.utcnow)
+    onboarding_completed = Column(DateTime, nullable=True)
+    current_step = Column(Integer, default=1)
+    completed_steps = Column(JSON, default=lambda: json.dumps([]))
+    last_activity = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    dismissed = Column(Boolean, default=False)
+    tutorial_config = Column(JSON, nullable=True)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'username': self.username,
+            'role': self.role,
+            'onboarding_started': self.onboarding_started.isoformat() if self.onboarding_started else None,
+            'onboarding_completed': self.onboarding_completed.isoformat() if self.onboarding_completed else None,
+            'current_step': self.current_step,
+            'completed_steps': json.loads(self.completed_steps) if isinstance(self.completed_steps, str) else self.completed_steps,
+            'last_activity': self.last_activity.isoformat() if self.last_activity else None,
+            'dismissed': self.dismissed,
+            'tutorial_config': self.tutorial_config
+        }
+    
+    def mark_step_completed(self, step_number: int) -> None:
+        """Mark a step as completed and update the current step if needed."""
+        completed = json.loads(self.completed_steps) if isinstance(self.completed_steps, str) else self.completed_steps or []
+        if step_number not in completed:
+            completed.append(step_number)
+            self.completed_steps = json.dumps(completed)
+        
+        # Move to the next step if we just completed the current one
+        if self.current_step == step_number:
+            self.current_step = step_number + 1
+        
+        self.last_activity = datetime.utcnow()
+    
+    def is_step_completed(self, step_number: int) -> bool:
+        """Check if a specific step has been completed."""
+        completed = json.loads(self.completed_steps) if isinstance(self.completed_steps, str) else self.completed_steps or []
+        return step_number in completed
+    
+    def complete_onboarding(self) -> None:
+        """Mark the onboarding process as completed."""
+        self.onboarding_completed = datetime.utcnow()
+        self.dismissed = True
