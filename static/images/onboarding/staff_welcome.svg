@@ -1,52 +1,47 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg width="400" height="300" viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">
+<svg width="300" height="200" xmlns="http://www.w3.org/2000/svg">
   <!-- Background -->
-  <rect x="0" y="0" width="400" height="300" fill="#f5f9f7" rx="10" ry="10"/>
+  <rect width="300" height="200" fill="#f0f7ff" rx="15" ry="15"/>
   
-  <!-- Staff dashboard illustration -->
-  <rect x="50" y="50" width="300" height="200" fill="#ffffff" stroke="#003366" stroke-width="2" rx="5" ry="5"/>
+  <!-- Document/Form Icon -->
+  <g transform="translate(90, 70)">
+    <rect x="0" y="0" width="70" height="90" fill="white" stroke="#4f46e5" stroke-width="2" rx="5" ry="5"/>
+    <line x1="15" y1="20" x2="55" y2="20" stroke="#4f46e5" stroke-width="2" stroke-linecap="round"/>
+    <line x1="15" y1="35" x2="55" y2="35" stroke="#4f46e5" stroke-width="2" stroke-linecap="round"/>
+    <line x1="15" y1="50" x2="40" y2="50" stroke="#4f46e5" stroke-width="2" stroke-linecap="round"/>
+    <rect x="15" y="60" width="40" height="20" fill="#e0e7ff" stroke="#4f46e5" stroke-width="1" rx="3" ry="3"/>
+    
+    <!-- Folded Corner -->
+    <path d="M70,0 L70,15 L55,0 Z" fill="#c7d2fe"/>
+  </g>
   
-  <!-- Header bar -->
-  <rect x="50" y="50" width="300" height="40" fill="#38b2ac" rx="5" ry="5"/>
-  <text x="70" y="75" font-family="Arial" font-size="14" fill="#ffffff" font-weight="bold">County Property Assessment - Staff Dashboard</text>
+  <!-- Staff Figure -->
+  <g transform="translate(200, 100)">
+    <circle cx="0" cy="-20" r="15" fill="#f0f7ff"/>
+    <path d="M-15,0 Q0,20 15,0 L15,40 L-15,40 L-15,0 Z" fill="#4338ca"/>
+    <rect x="-20" y="5" width="40" height="6" fill="#f0f7ff" rx="3" ry="3"/>
+    <rect x="-20" y="15" width="40" height="6" fill="#f0f7ff" rx="3" ry="3"/>
+  </g>
   
-  <!-- User icon -->
-  <circle cx="330" cy="70" r="15" fill="#ffffff"/>
-  <path d="M330 60 Q330 55, 325 55 L335 55 Q330 55, 330 60" fill="#38b2ac"/>
-  <circle cx="330" cy="67" r="6" fill="#38b2ac"/>
-  <path d="M320 80 Q330 90, 340 80" fill="#38b2ac"/>
+  <!-- Upload Arrow -->
+  <g transform="translate(50, 100)">
+    <circle cx="0" cy="0" r="20" fill="#e0e7ff"/>
+    <path d="M0,-10 L0,10 M-10,0 L0,-10 L10,0" stroke="#4338ca" stroke-width="3" stroke-linecap="round" fill="none"/>
+  </g>
   
-  <!-- Upload section -->
-  <rect x="60" y="100" width="280" height="60" fill="#ebf8f5" stroke="#38b2ac" stroke-width="1" rx="3" ry="3"/>
-  <text x="80" y="120" font-family="Arial" font-size="14" fill="#003366" font-weight="bold">Upload Assessment Data</text>
-  <text x="80" y="140" font-family="Arial" font-size="11" fill="#5a6268">Select CSV or Excel files to upload</text>
+  <!-- Pencil Icon -->
+  <g transform="translate(230, 60) rotate(45)">
+    <rect x="-5" y="-15" width="10" height="30" fill="#818cf8"/>
+    <polygon points="0,-15 5,-15 5,-25 -5,-25 -5,-15" fill="#4f46e5"/>
+    <rect x="-5" y="15" width="10" height="2" fill="#c7d2fe"/>
+  </g>
   
-  <rect x="240" y="110" width="80" height="30" fill="#38b2ac" rx="3" ry="3"/>
-  <text x="265" y="130" font-family="Arial" font-size="12" fill="#ffffff" font-weight="bold">Upload</text>
-  <circle cx="250" cy="125" r="8" fill="#ffffff"/>
-  <path d="M250 122 L250 128 M247 125 L253 125 M250 122 L247 119 M250 122 L253 119" stroke="#38b2ac" stroke-width="1.5" fill="none"/>
+  <!-- Text Box -->
+  <g transform="translate(125, 160) scale(0.7)">
+    <rect x="-50" y="0" width="100" height="30" fill="#e0e7ff" rx="5" ry="5"/>
+    <text x="0" y="20" font-family="Arial" font-size="14" fill="#4338ca" text-anchor="middle">DATA ENTRY</text>
+  </g>
   
-  <!-- Recent uploads section -->
-  <rect x="60" y="170" width="280" height="70" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1" rx="3" ry="3"/>
-  <text x="80" y="190" font-family="Arial" font-size="14" fill="#003366" font-weight="bold">Recent Uploads</text>
-  
-  <!-- Table headers -->
-  <rect x="70" y="200" width="260" height="15" fill="#e9ecef" rx="2" ry="2"/>
-  <text x="80" y="212" font-family="Arial" font-size="9" fill="#495057" font-weight="bold">Date</text>
-  <text x="140" y="212" font-family="Arial" font-size="9" fill="#495057" font-weight="bold">Filename</text>
-  <text x="240" y="212" font-family="Arial" font-size="9" fill="#495057" font-weight="bold">Status</text>
-  <text x="300" y="212" font-family="Arial" font-size="9" fill="#495057" font-weight="bold">Action</text>
-  
-  <!-- Table row -->
-  <rect x="70" y="215" width="260" height="15" fill="#ffffff" stroke="#dee2e6" stroke-width="0.5"/>
-  <text x="80" y="227" font-family="Arial" font-size="9" fill="#212529">Today</text>
-  <text x="140" y="227" font-family="Arial" font-size="9" fill="#212529">property_updates.csv</text>
-  <text x="240" y="227" font-family="Arial" font-size="9" fill="#fd7e14">Pending</text>
-  <rect x="295" y="217" width="30" height="10" fill="#38b2ac" rx="2" ry="2"/>
-  <text x="302" y="225" font-family="Arial" font-size="7" fill="#ffffff">View</text>
-  
-  <!-- Title -->
-  <text x="200" y="275" font-family="Arial" font-size="14" text-anchor="middle" fill="#003366" font-weight="bold">
-    Welcome Staff Member
-  </text>
+  <!-- Text -->
+  <text x="150" y="30" font-family="Arial" font-size="16" font-weight="bold" fill="#4338ca" text-anchor="middle">County Staff</text>
 </svg>

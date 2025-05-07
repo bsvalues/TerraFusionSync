@@ -1,89 +1,104 @@
-{% extends "base.html" %}
+{% extends 'base.html' %}
 
-{% block title %}Tutorial Completed{% endblock %}
+{% block title %}TerraFusion Onboarding - Completion{% endblock %}
 
 {% block content %}
-<div class="container mx-auto px-4 py-8">
-    <div class="mb-8 text-center">
-        <h1 class="text-3xl font-bold text-green-600">Congratulations!</h1>
-        <p class="text-lg text-gray-600 mt-2">You've completed the TerraFusion SyncService tutorial</p>
-    </div>
-
-    <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
-        <div class="text-center mb-8">
-            <div class="inline-block p-4 bg-green-100 rounded-full mb-4">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+<div class="container mx-auto p-4 max-w-4xl">
+    <div class="bg-white shadow-md rounded-lg p-6 mb-6">
+        <div class="flex items-center justify-between mb-6">
+            <h1 class="text-2xl font-bold text-gray-800">Tutorial Completion</h1>
+            <a href="{{ url_for('dashboard') }}" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
                 </svg>
-            </div>
-            <h2 class="text-2xl font-semibold text-gray-800 mb-2">Tutorial Complete!</h2>
-            <p class="text-lg text-gray-700">{{ message }}</p>
-        </div>
-        
-        <!-- Completion image -->
-        <div class="flex justify-center mb-8">
-            <img src="{{ url_for('static', filename='images/onboarding/' + image) }}" 
-                 alt="Tutorial Complete" 
-                 class="max-w-md rounded-lg shadow-md">
-        </div>
-
-        <!-- Role-specific completion message -->
-        <div class="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-8">
-            <h3 class="text-xl font-semibold text-blue-800 mb-3">What You've Learned</h3>
-            
-            {% if role == 'ITAdmin' %}
-                <ul class="list-disc pl-6 text-blue-700">
-                    <li class="mb-2">System administration and monitoring capabilities</li>
-                    <li class="mb-2">User and permission management</li>
-                    <li class="mb-2">System configuration and security settings</li>
-                    <li class="mb-2">Audit logs and performance monitoring</li>
-                    <li class="mb-2">Backup and recovery procedures</li>
-                </ul>
-            {% elif role == 'Assessor' %}
-                <ul class="list-disc pl-6 text-blue-700">
-                    <li class="mb-2">Review and approval workflow for property assessments</li>
-                    <li class="mb-2">Detailed property information access</li>
-                    <li class="mb-2">Data validation and verification tools</li>
-                    <li class="mb-2">Assessment reporting capabilities</li>
-                    <li class="mb-2">Approval and rejection processes</li>
-                </ul>
-            {% elif role == 'Staff' %}
-                <ul class="list-disc pl-6 text-blue-700">
-                    <li class="mb-2">Data submission and upload procedures</li>
-                    <li class="mb-2">Document validation and error correction</li>
-                    <li class="mb-2">Submission tracking and status monitoring</li>
-                    <li class="mb-2">Property record management</li>
-                    <li class="mb-2">Communication tools for assessment feedback</li>
-                </ul>
-            {% elif role == 'Auditor' %}
-                <ul class="list-disc pl-6 text-blue-700">
-                    <li class="mb-2">Comprehensive audit trail access</li>
-                    <li class="mb-2">User activity monitoring capabilities</li>
-                    <li class="mb-2">Compliance reporting tools</li>
-                    <li class="mb-2">Data access and security auditing</li>
-                    <li class="mb-2">Alert configuration for suspicious activities</li>
-                </ul>
-            {% else %}
-                <ul class="list-disc pl-6 text-blue-700">
-                    <li class="mb-2">Basic system navigation and functionality</li>
-                    <li class="mb-2">Account management and configuration</li>
-                    <li class="mb-2">Data access and reporting features</li>
-                    <li class="mb-2">Communication and collaboration tools</li>
-                    <li class="mb-2">Help and support resources</li>
-                </ul>
-            {% endif %}
-        </div>
-
-        <div class="text-center mb-8">
-            <p class="text-gray-700 mb-4">Your onboarding progress has been saved. You can revisit any part of the tutorial from your profile settings.</p>
-        </div>
-
-        <div class="flex justify-center">
-            <a href="{{ url_for('dashboard') }}" 
-               class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center">
                 Go to Dashboard
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 ml-2" viewBox="0 0 20 20" fill="currentColor">
-                    <path fill-rule="evenodd" d="M10.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L12.586 11H5a1 1 0 110-2h7.586l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd" />
+            </a>
+        </div>
+
+        <div class="completion-section mb-8">
+            <div class="flex flex-col md:flex-row items-center">
+                <div class="md:w-1/2 p-4">
+                    <div class="bg-green-50 border-l-4 border-green-500 p-4 mb-6">
+                        <div class="flex">
+                            <div class="flex-shrink-0">
+                                <svg class="h-5 w-5 text-green-500" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                                </svg>
+                            </div>
+                            <div class="ml-3">
+                                <p class="text-sm leading-5 text-green-700">
+                                    Completed on {{ onboarding.completion_date.strftime('%B %d, %Y') if onboarding.completion_date else 'Today' }}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <h2 class="text-xl font-semibold text-green-700 mb-4">Congratulations!</h2>
+                    <p class="text-gray-700 mb-4">{{ message }}</p>
+                    
+                    <div class="mt-6">
+                        <h3 class="text-lg font-medium text-gray-800 mb-3">What's Next?</h3>
+                        <ul class="list-disc pl-5 mb-4 text-gray-700 space-y-2">
+                            <li>Explore the dashboard and start using the features you've learned about</li>
+                            <li>Check out the documentation for more detailed information</li>
+                            <li>Contact your administrator if you have any questions</li>
+                        </ul>
+                    </div>
+                    
+                    {% if role == 'ITAdmin' %}
+                    <div class="mt-6 bg-blue-50 p-4 rounded-md">
+                        <h3 class="text-lg font-medium text-blue-800 mb-2">Administrator Resources</h3>
+                        <p class="text-gray-700 mb-3">As an IT Administrator, you have access to additional resources:</p>
+                        <ul class="list-disc pl-5 mb-3 text-gray-700 space-y-1">
+                            <li>System monitoring and configuration documentation</li>
+                            <li>Advanced security settings guide</li>
+                            <li>User management best practices</li>
+                        </ul>
+                        <p class="text-sm text-blue-600">These resources are available in the Admin section of the dashboard.</p>
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="md:w-1/2 p-4 flex justify-center">
+                    <div class="certificate-container bg-gradient-to-r from-blue-50 to-green-50 p-6 border border-gray-200 rounded-lg shadow-sm">
+                        <div class="certificate text-center">
+                            <div class="text-xl font-bold text-green-800 mb-2">Certificate of Completion</div>
+                            <div class="text-gray-500 mb-4">TerraFusion SyncService</div>
+                            <div class="mb-3 text-gray-800">This certifies that</div>
+                            <div class="text-xl font-semibold text-gray-800 mb-3">{{ user.get('name', user.get('username', 'User')) }}</div>
+                            <div class="mb-3 text-gray-800">has successfully completed the</div>
+                            <div class="text-lg font-semibold text-blue-800 mb-4">
+                                {% if role == 'ITAdmin' %}
+                                IT Administrator Training
+                                {% elif role == 'Assessor' %}
+                                County Assessor Training
+                                {% elif role == 'Staff' %}
+                                County Staff Training
+                                {% elif role == 'Auditor' %}
+                                County Auditor Training
+                                {% else %}
+                                TerraFusion SyncService Training
+                                {% endif %}
+                            </div>
+                            <div class="mt-4 border-t pt-4 text-sm text-gray-600">
+                                {{ onboarding.completion_date.strftime('%B %d, %Y') if onboarding.completion_date else 'Today' }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex justify-between items-center mt-8">
+            <a href="{{ url_for('onboarding_bp.onboarding_home') }}" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" />
+                </svg>
+                Back to Tutorial
+            </a>
+            <a href="{{ url_for('dashboard') }}" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center">
+                Get Started
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 ml-1" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd" />
                 </svg>
             </a>
         </div>

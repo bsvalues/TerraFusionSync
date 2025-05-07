@@ -1,137 +1,259 @@
-{% extends "base.html" %}
+{% extends 'base.html' %}
 
-{% block title %}{{ step.title }} - Tutorial Step {{ step_number }}{% endblock %}
+{% block title %}TerraFusion Onboarding - Step {{ step_number }}{% endblock %}
 
 {% block content %}
-<div class="container mx-auto px-4 py-8">
-    <div class="mb-8 text-center">
-        <h1 class="text-3xl font-bold text-blue-800">{{ step.title }}</h1>
-        <p class="text-lg text-gray-600 mt-2">Step {{ step_number }} of {{ total_steps }}</p>
-    </div>
-
-    <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
-        <!-- Progress bar -->
-        <div class="mb-6">
-            <div class="w-full bg-gray-200 rounded-full h-3">
-                <div class="bg-blue-600 h-3 rounded-full" style="width: {{ (step_number / total_steps) * 100 }}%"></div>
+<div class="container mx-auto p-4 max-w-5xl">
+    <div class="bg-white shadow-md rounded-lg p-6 mb-6">
+        <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center">
+                <a href="{{ url_for('onboarding_bp.onboarding_home') }}" class="mr-4 text-blue-600 hover:text-blue-800 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" />
+                    </svg>
+                    Back to Tutorial
+                </a>
+                <h1 class="text-2xl font-bold text-gray-800">Step {{ step_number }}: {{ step.title }}</h1>
             </div>
-            <div class="flex justify-between mt-2 text-sm text-gray-600">
-                <span>Step 1</span>
-                <span>Step {{ step_number }} of {{ total_steps }}</span>
-                <span>Step {{ total_steps }}</span>
-            </div>
+            <div class="text-gray-600">{{ step_number }} of {{ total_steps }}</div>
         </div>
 
-        <!-- Tutorial content -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-            <div>
-                <div class="prose max-w-none">
-                    <h2 class="text-2xl font-semibold text-gray-800 mb-4">{{ step.title }}</h2>
+        <div class="tutorial-progress mb-8">
+            <div class="w-full bg-gray-200 rounded-full h-2 mb-2">
+                <div class="bg-blue-600 h-2 rounded-full" style="width: {{ (step_number / total_steps * 100) | round }}%"></div>
+            </div>
+            <div class="text-right text-sm text-gray-600">Step {{ step_number }} of {{ total_steps }}</div>
+        </div>
+
+        <div class="step-content mb-8">
+            <div class="flex flex-col md:flex-row">
+                <div class="md:w-1/2 p-4">
+                    <h2 class="text-xl font-semibold text-blue-700 mb-4">{{ step.title }}</h2>
                     <p class="text-gray-700 mb-6">{{ step.description }}</p>
                     
-                    <!-- Role-specific content -->
+                    <!-- Role-specific content based on the current step -->
                     {% if role == 'ITAdmin' %}
-                        <div class="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6">
-                            <h3 class="text-lg font-medium text-blue-800">IT Administrator Note</h3>
-                            <p class="text-blue-700">As an IT Administrator, you have full access to configure system settings, manage user accounts, and monitor system performance.</p>
-                        </div>
+                        {% if step_number == 1 %}
+                            <h3 class="text-lg font-medium text-gray-800 mb-3">Administrator Dashboard</h3>
+                            <p class="text-gray-700 mb-4">The administrator dashboard provides a comprehensive overview of the TerraFusion platform's health and activity.</p>
+                            <ul class="list-disc pl-5 mb-4 text-gray-700 space-y-2">
+                                <li>System health metrics display real-time information about CPU, memory, and disk usage</li>
+                                <li>Active user sessions show which users are currently logged in</li>
+                                <li>Recent sync operations list provides quick access to recent data synchronization activities</li>
+                                <li>System alerts highlight any issues requiring immediate attention</li>
+                            </ul>
+                        {% elif step_number == 2 %}
+                            <h3 class="text-lg font-medium text-gray-800 mb-3">User Management</h3>
+                            <p class="text-gray-700 mb-4">As an administrator, you have full control over user accounts and permissions.</p>
+                            <ul class="list-disc pl-5 mb-4 text-gray-700 space-y-2">
+                                <li>Create new user accounts with appropriate role assignments</li>
+                                <li>Modify existing user permissions and roles</li>
+                                <li>Reset passwords and manage account recovery</li>
+                                <li>View comprehensive user activity logs for security auditing</li>
+                            </ul>
+                        {% elif step_number == 3 %}
+                            <h3 class="text-lg font-medium text-gray-800 mb-3">System Monitoring</h3>
+                            <p class="text-gray-700 mb-4">Monitor system performance and health with advanced tools.</p>
+                            <ul class="list-disc pl-5 mb-4 text-gray-700 space-y-2">
+                                <li>View real-time metrics for all system components</li>
+                                <li>Monitor database performance and connection statistics</li>
+                                <li>Set up custom alerts for critical thresholds</li>
+                                <li>Schedule automatic reports for system health</li>
+                            </ul>
+                        {% elif step_number == 4 %}
+                            <h3 class="text-lg font-medium text-gray-800 mb-3">Backup & Recovery</h3>
+                            <p class="text-gray-700 mb-4">Ensure data integrity with comprehensive backup and recovery options.</p>
+                            <ul class="list-disc pl-5 mb-4 text-gray-700 space-y-2">
+                                <li>Configure automated backup schedules</li>
+                                <li>Perform manual backups before major system changes</li>
+                                <li>Test recovery procedures periodically</li>
+                                <li>Restore from backups in case of data corruption or loss</li>
+                            </ul>
+                        {% elif step_number == 5 %}
+                            <h3 class="text-lg font-medium text-gray-800 mb-3">Security Settings</h3>
+                            <p class="text-gray-700 mb-4">Manage security policies and settings to protect sensitive data.</p>
+                            <ul class="list-disc pl-5 mb-4 text-gray-700 space-y-2">
+                                <li>Configure password complexity and expiration policies</li>
+                                <li>Manage IP allowlist for restricted access</li>
+                                <li>Set up multi-factor authentication requirements</li>
+                                <li>Review security logs and audit trails</li>
+                            </ul>
+                        {% endif %}
                     {% elif role == 'Assessor' %}
-                        <div class="bg-purple-50 border-l-4 border-purple-500 p-4 mb-6">
-                            <h3 class="text-lg font-medium text-purple-800">Assessor Note</h3>
-                            <p class="text-purple-700">As a County Assessor, you are responsible for reviewing and approving property assessment changes before they are finalized.</p>
-                        </div>
+                        {% if step_number == 1 %}
+                            <h3 class="text-lg font-medium text-gray-800 mb-3">Assessor Dashboard</h3>
+                            <p class="text-gray-700 mb-4">The Assessor dashboard provides quick access to property assessment reviews and approvals.</p>
+                            <ul class="list-disc pl-5 mb-4 text-gray-700 space-y-2">
+                                <li>View pending assessment reviews requiring your attention</li>
+                                <li>Track approval statistics and performance metrics</li>
+                                <li>Access recently approved or rejected assessments</li>
+                                <li>Monitor assessment team workload and distribution</li>
+                            </ul>
+                        {% elif step_number == 2 %}
+                            <h3 class="text-lg font-medium text-gray-800 mb-3">Review Queue</h3>
+                            <p class="text-gray-700 mb-4">Efficiently manage property assessment reviews with priority sorting and filtering.</p>
+                            <ul class="list-disc pl-5 mb-4 text-gray-700 space-y-2">
+                                <li>Sort reviews by date, property value, or submission type</li>
+                                <li>Filter assessments by status, district, or assessor</li>
+                                <li>Assign reviews to specific team members</li>
+                                <li>Track review aging and prioritize older submissions</li>
+                            </ul>
+                        {% elif step_number == 3 %}
+                            <h3 class="text-lg font-medium text-gray-800 mb-3">Approval Process</h3>
+                            <p class="text-gray-700 mb-4">Learn the comprehensive approval workflow for property assessments.</p>
+                            <ul class="list-disc pl-5 mb-4 text-gray-700 space-y-2">
+                                <li>Review property details and comparables</li>
+                                <li>Validate assessment calculations and methodology</li>
+                                <li>Provide feedback for corrections if needed</li>
+                                <li>Approve or reject with detailed comments</li>
+                            </ul>
+                        {% elif step_number == 4 %}
+                            <h3 class="text-lg font-medium text-gray-800 mb-3">Data Validation</h3>
+                            <p class="text-gray-700 mb-4">Ensure assessment data quality with built-in validation tools.</p>
+                            <ul class="list-disc pl-5 mb-4 text-gray-700 space-y-2">
+                                <li>Check for data completeness and required fields</li>
+                                <li>Verify calculations against established formulas</li>
+                                <li>Compare against historical assessments for reasonability</li>
+                                <li>Identify outliers or potentially erroneous data</li>
+                            </ul>
+                        {% endif %}
                     {% elif role == 'Staff' %}
-                        <div class="bg-green-50 border-l-4 border-green-500 p-4 mb-6">
-                            <h3 class="text-lg font-medium text-green-800">Staff Note</h3>
-                            <p class="text-green-700">As County Staff, you can submit property assessment data for review and track the approval process.</p>
-                        </div>
+                        {% if step_number == 1 %}
+                            <h3 class="text-lg font-medium text-gray-800 mb-3">Staff Dashboard</h3>
+                            <p class="text-gray-700 mb-4">The Staff dashboard provides a centralized view of your submissions and tasks.</p>
+                            <ul class="list-disc pl-5 mb-4 text-gray-700 space-y-2">
+                                <li>Track your recent submissions and their statuses</li>
+                                <li>View pending tasks and assignments</li>
+                                <li>Access quick links to frequently used forms</li>
+                                <li>Monitor your submission performance metrics</li>
+                            </ul>
+                        {% elif step_number == 2 %}
+                            <h3 class="text-lg font-medium text-gray-800 mb-3">File Upload</h3>
+                            <p class="text-gray-700 mb-4">Learn how to upload property assessment data files efficiently.</p>
+                            <ul class="list-disc pl-5 mb-4 text-gray-700 space-y-2">
+                                <li>Support for multiple file formats (CSV, Excel, XML)</li>
+                                <li>Batch upload capabilities for multiple properties</li>
+                                <li>Template-based uploads for consistent formatting</li>
+                                <li>Pre-validation checks before submission</li>
+                            </ul>
+                        {% elif step_number == 3 %}
+                            <h3 class="text-lg font-medium text-gray-800 mb-3">Submission Status</h3>
+                            <p class="text-gray-700 mb-4">Track the status of your uploaded files throughout the process.</p>
+                            <ul class="list-disc pl-5 mb-4 text-gray-700 space-y-2">
+                                <li>Real-time status updates on your submissions</li>
+                                <li>Detailed timeline of each submission's progress</li>
+                                <li>Notification options for status changes</li>
+                                <li>Historical record of all past submissions</li>
+                            </ul>
+                        {% elif step_number == 4 %}
+                            <h3 class="text-lg font-medium text-gray-800 mb-3">Error Correction</h3>
+                            <p class="text-gray-700 mb-4">Efficiently address validation errors in your submissions.</p>
+                            <ul class="list-disc pl-5 mb-4 text-gray-700 space-y-2">
+                                <li>Detailed error descriptions with recommended fixes</li>
+                                <li>Inline editing of rejected submissions</li>
+                                <li>Bulk error correction for common issues</li>
+                                <li>Resubmission tracking and versioning</li>
+                            </ul>
+                        {% endif %}
                     {% elif role == 'Auditor' %}
-                        <div class="bg-amber-50 border-l-4 border-amber-500 p-4 mb-6">
-                            <h3 class="text-lg font-medium text-amber-800">Auditor Note</h3>
-                            <p class="text-amber-700">As a County Auditor, you can access comprehensive audit logs to review all system activities and generate compliance reports.</p>
-                        </div>
+                        {% if step_number == 1 %}
+                            <h3 class="text-lg font-medium text-gray-800 mb-3">Auditor Dashboard</h3>
+                            <p class="text-gray-700 mb-4">The Auditor dashboard provides comprehensive access to system activity and compliance reports.</p>
+                            <ul class="list-disc pl-5 mb-4 text-gray-700 space-y-2">
+                                <li>View recent system activity and audit events</li>
+                                <li>Access predefined compliance reports</li>
+                                <li>Monitor user activity across the platform</li>
+                                <li>Track assessment statistics and trends</li>
+                            </ul>
+                        {% elif step_number == 2 %}
+                            <h3 class="text-lg font-medium text-gray-800 mb-3">Audit Trail</h3>
+                            <p class="text-gray-700 mb-4">Explore the comprehensive audit trail of all system activities.</p>
+                            <ul class="list-disc pl-5 mb-4 text-gray-700 space-y-2">
+                                <li>Search and filter audit events by various criteria</li>
+                                <li>View detailed information about each action</li>
+                                <li>Export audit logs for external review</li>
+                                <li>Set up alerts for suspicious activities</li>
+                            </ul>
+                        {% elif step_number == 3 %}
+                            <h3 class="text-lg font-medium text-gray-800 mb-3">Compliance Reports</h3>
+                            <p class="text-gray-700 mb-4">Generate and export compliance reports for regulatory requirements.</p>
+                            <ul class="list-disc pl-5 mb-4 text-gray-700 space-y-2">
+                                <li>Predefined report templates for common requirements</li>
+                                <li>Custom report builder for specific needs</li>
+                                <li>Scheduled automatic report generation</li>
+                                <li>Multiple export formats (PDF, Excel, CSV)</li>
+                            </ul>
+                        {% elif step_number == 4 %}
+                            <h3 class="text-lg font-medium text-gray-800 mb-3">User Activity</h3>
+                            <p class="text-gray-700 mb-4">Monitor and review user activities and access patterns.</p>
+                            <ul class="list-disc pl-5 mb-4 text-gray-700 space-y-2">
+                                <li>User session tracking and analysis</li>
+                                <li>Access pattern visualization and reporting</li>
+                                <li>Anomaly detection for unusual behavior</li>
+                                <li>User productivity and performance metrics</li>
+                            </ul>
+                        {% endif %}
+                    {% else %}
+                        <h3 class="text-lg font-medium text-gray-800 mb-3">{{ step.title }}</h3>
+                        <p class="text-gray-700 mb-4">{{ step.description }}</p>
+                        <p class="text-gray-600 italic">Additional content for this step will be provided soon.</p>
                     {% endif %}
-                    
-                    <h3 class="text-xl font-medium text-gray-800 mb-2">What you'll learn in this step:</h3>
-                    <ul class="list-disc pl-6 mb-6">
-                        <li class="mb-2">How to navigate the {{ step.title }} interface</li>
-                        <li class="mb-2">Understanding key features available to you</li>
-                        <li class="mb-2">Best practices for your {{ role }} role</li>
-                    </ul>
                 </div>
-            </div>
-            
-            <div class="flex items-center justify-center">
-                <!-- Tutorial step image -->
-                <div class="max-w-md">
-                    <img src="{{ url_for('static', filename='images/onboarding/' + step.image) }}" 
-                         alt="{{ step.title }}" 
-                         class="w-full h-auto rounded-lg shadow-md">
+                <div class="md:w-1/2 p-4 flex items-center justify-center">
+                    <img src="{{ url_for('static', filename='images/onboarding/' + step.image) }}" alt="{{ step.title }}" class="max-h-80">
                 </div>
             </div>
         </div>
 
-        <!-- Navigation buttons -->
-        <div class="flex justify-between mt-8">
+        <div class="step-navigation flex justify-between items-center mt-8">
             {% if step_number > 1 %}
-                <a href="{{ url_for('onboarding_bp.view_step', step_number=step_number-1) }}" 
-                   class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors flex items-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                        <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
-                    </svg>
-                    Previous Step
-                </a>
+            <a href="{{ url_for('onboarding_bp.view_step', step_number=step_number-1) }}" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" />
+                </svg>
+                Previous Step
+            </a>
             {% else %}
-                <a href="{{ url_for('onboarding_bp.onboarding_home') }}" 
-                   class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors flex items-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                        <path fill-rule="evenodd" d="M10.707 3.293a1 1 0 010 1.414L6.414 9H17a1 1 0 110 2H6.414l4.293 4.293a1 1 0 01-1.414 1.414l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 0z" clip-rule="evenodd" />
-                    </svg>
-                    Back to Overview
-                </a>
+            <a href="{{ url_for('onboarding_bp.onboarding_home') }}" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" />
+                </svg>
+                Back to Tutorial
+            </a>
             {% endif %}
             
-            <button id="complete-step-btn" 
-                    class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center">
-                {% if step_number < total_steps %}
-                    Next Step
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 ml-1" viewBox="0 0 20 20" fill="currentColor">
-                        <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
-                    </svg>
-                {% else %}
-                    Complete Tutorial
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 ml-1" viewBox="0 0 20 20" fill="currentColor">
-                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
-                    </svg>
-                {% endif %}
+            <button id="complete-step-btn" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center">
+                Mark as Complete
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 ml-1" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                </svg>
             </button>
         </div>
     </div>
 </div>
+{% endblock %}
 
+{% block scripts %}
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const completeStepBtn = document.getElementById('complete-step-btn');
-        
-        completeStepBtn.addEventListener('click', function() {
-            // Send request to mark step as complete
-            fetch('{{ url_for("onboarding_bp.complete_step", step_number=step_number) }}', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // Redirect to next step or completion page
-                    window.location.href = data.redirect;
-                }
-            })
-            .catch(error => {
-                console.error('Error completing step:', error);
-            });
-        });
+document.getElementById('complete-step-btn').addEventListener('click', function() {
+    // Use fetch API to mark the step as complete
+    fetch('{{ url_for("onboarding_bp.complete_step", step_number=step_number) }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        credentials: 'same-origin'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success && data.redirect) {
+            // Redirect to the next step or completion page
+            window.location.href = data.redirect;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
     });
+});
 </script>
 {% endblock %}

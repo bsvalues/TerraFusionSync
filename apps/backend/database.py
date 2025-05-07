@@ -1,15 +1,28 @@
 """
-Database configuration for TerraFusion SyncService.
+TerraFusion Database Module
 
-This module provides the shared database instance for the application.
+This module provides a shared SQLAlchemy database instance for the application.
 """
 
+import logging
 from flask_sqlalchemy import SQLAlchemy
 
-# Create the database instance - but this should be initialized with app in the main app.py
+# Create a shared database instance
 db = SQLAlchemy()
 
-def set_shared_db(shared_db_instance):
-    """Set the shared database instance from the main application."""
+logger = logging.getLogger(__name__)
+
+def set_shared_db(app_db):
+    """
+    Set a shared database instance.
+    
+    This allows other modules to import the database instance from this module.
+    
+    Args:
+        app_db: The SQLAlchemy database instance
+    """
     global db
-    db = shared_db_instance
+    db = app_db
+    logger.info("Shared database instance configured")
+    
+    return db
