@@ -35,7 +35,9 @@ ROLE_PERMISSIONS = {
             "view_dashboard", 
             "view_sync_operations",
             "approve_sync_operations",
-            "view_reports"
+            "view_reports",
+            "view_sync_pairs",
+            "execute_sync"
         ],
         "description": "Property assessors who can view and approve sync operations"
     },
@@ -44,7 +46,10 @@ ROLE_PERMISSIONS = {
             "view_dashboard", 
             "view_sync_operations",
             "create_sync_operations",
+            "view_sync_pairs",
+            "create_sync_pairs",
             "edit_sync_pairs",
+            "execute_sync",
             "view_reports"
         ],
         "description": "Staff members who can create and manage sync operations"
@@ -54,7 +59,11 @@ ROLE_PERMISSIONS = {
             "view_dashboard",
             "view_sync_operations",
             "create_sync_operations",
+            "view_sync_pairs",
+            "create_sync_pairs",
             "edit_sync_pairs",
+            "manage_sync_pairs",
+            "execute_sync",
             "view_reports",
             "approve_sync_operations",
             "rollback_operations",
@@ -68,6 +77,7 @@ ROLE_PERMISSIONS = {
         "permissions": [
             "view_dashboard",
             "view_sync_operations",
+            "view_sync_pairs",
             "view_reports",
             "view_audit_logs"
         ],
