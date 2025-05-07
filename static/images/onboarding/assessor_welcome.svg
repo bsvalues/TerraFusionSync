@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="400" height="300" viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect x="0" y="0" width="400" height="300" fill="#f2f8ff" rx="10" ry="10"/>
+  
+  <!-- Assessor dashboard illustration -->
+  <rect x="50" y="50" width="300" height="200" fill="#ffffff" stroke="#003366" stroke-width="2" rx="5" ry="5"/>
+  
+  <!-- Header bar -->
+  <rect x="50" y="50" width="300" height="40" fill="#6c5ce7" rx="5" ry="5"/>
+  <text x="70" y="75" font-family="Arial" font-size="14" fill="#ffffff" font-weight="bold">County Property Assessment - Assessor Dashboard</text>
+  
+  <!-- User icon -->
+  <circle cx="330" cy="70" r="15" fill="#ffffff"/>
+  <path d="M330 60 Q330 55, 325 55 L335 55 Q330 55, 330 60" fill="#6c5ce7"/>
+  <circle cx="330" cy="67" r="6" fill="#6c5ce7"/>
+  <path d="M320 80 Q330 90, 340 80" fill="#6c5ce7"/>
+  
+  <!-- Approval Queue Section -->
+  <rect x="60" y="100" width="280" height="140" fill="#f8f9fa" stroke="#b3d7ff" stroke-width="1" rx="3" ry="3"/>
+  <text x="70" y="120" font-family="Arial" font-size="14" fill="#003366" font-weight="bold">Approval Queue</text>
+  
+  <!-- Table headers -->
+  <rect x="70" y="130" width="260" height="20" fill="#e9ecef" rx="2" ry="2"/>
+  <text x="80" y="145" font-family="Arial" font-size="10" fill="#495057" font-weight="bold">ID</text>
+  <text x="120" y="145" font-family="Arial" font-size="10" fill="#495057" font-weight="bold">File</text>
+  <text x="220" y="145" font-family="Arial" font-size="10" fill="#495057" font-weight="bold">Submitted</text>
+  <text x="290" y="145" font-family="Arial" font-size="10" fill="#495057" font-weight="bold">Action</text>
+  
+  <!-- Table row 1 -->
+  <rect x="70" y="150" width="260" height="25" fill="#ffffff" stroke="#dee2e6" stroke-width="1"/>
+  <text x="80" y="167" font-family="Arial" font-size="10" fill="#212529">101</text>
+  <text x="120" y="167" font-family="Arial" font-size="10" fill="#212529">south_zone_parcels.csv</text>
+  <text x="220" y="167" font-family="Arial" font-size="10" fill="#212529">Today</text>
+  <rect x="280" y="155" width="40" height="15" fill="#6c5ce7" rx="2" ry="2"/>
+  <text x="290" y="167" font-family="Arial" font-size="9" fill="#ffffff">Review</text>
+  
+  <!-- Table row 2 -->
+  <rect x="70" y="175" width="260" height="25" fill="#ffffff" stroke="#dee2e6" stroke-width="1"/>
+  <text x="80" y="192" font-family="Arial" font-size="10" fill="#212529">102</text>
+  <text x="120" y="192" font-family="Arial" font-size="10" fill="#212529">commercial_updates.csv</text>
+  <text x="220" y="192" font-family="Arial" font-size="10" fill="#212529">Today</text>
+  <rect x="280" y="180" width="40" height="15" fill="#6c5ce7" rx="2" ry="2"/>
+  <text x="290" y="192" font-family="Arial" font-size="9" fill="#ffffff">Review</text>
+  
+  <!-- Table row 3 -->
+  <rect x="70" y="200" width="260" height="25" fill="#ffffff" stroke="#dee2e6" stroke-width="1"/>
+  <text x="80" y="217" font-family="Arial" font-size="10" fill="#212529">103</text>
+  <text x="120" y="217" font-family="Arial" font-size="10" fill="#212529">property_valuation.csv</text>
+  <text x="220" y="217" font-family="Arial" font-size="10" fill="#212529">Yesterday</text>
+  <rect x="280" y="205" width="40" height="15" fill="#6c5ce7" rx="2" ry="2"/>
+  <text x="290" y="217" font-family="Arial" font-size="9" fill="#ffffff">Review</text>
+  
+  <!-- Title -->
+  <text x="200" y="275" font-family="Arial" font-size="14" text-anchor="middle" fill="#003366" font-weight="bold">
+    Welcome Assessor
+  </text>
+</svg>

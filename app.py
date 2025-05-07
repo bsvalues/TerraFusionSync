@@ -272,6 +272,16 @@ try:
 except ImportError:
     logger.warning("Rollback API blueprint not available")
 
+# Register onboarding module for interactive tutorials
+try:
+    from apps.backend.onboarding import init_onboarding
+    onboarding_module = init_onboarding()
+    onboarding_bp = onboarding_module["create_onboarding_blueprint"]()
+    app.register_blueprint(onboarding_bp)
+    logger.info("Registered onboarding module with interactive tutorials")
+except ImportError as e:
+    logger.warning(f"Onboarding module not available: {e}")
+
 # Add route for validation dashboard
 @app.route('/validation', methods=['GET'])
 def validation_dashboard():

@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="400" height="300" viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect x="0" y="0" width="400" height="300" fill="#f8f9fa" rx="10" ry="10"/>
+  
+  <!-- Auditor dashboard illustration -->
+  <rect x="50" y="50" width="300" height="200" fill="#ffffff" stroke="#003366" stroke-width="2" rx="5" ry="5"/>
+  
+  <!-- Header bar -->
+  <rect x="50" y="50" width="300" height="40" fill="#17a2b8" rx="5" ry="5"/>
+  <text x="70" y="75" font-family="Arial" font-size="14" fill="#ffffff" font-weight="bold">County Property Assessment - Auditor Dashboard</text>
+  
+  <!-- User icon -->
+  <circle cx="330" cy="70" r="15" fill="#ffffff"/>
+  <path d="M330 60 Q330 55, 325 55 L335 55 Q330 55, 330 60" fill="#17a2b8"/>
+  <circle cx="330" cy="67" r="6" fill="#17a2b8"/>
+  <path d="M320 80 Q330 90, 340 80" fill="#17a2b8"/>
+  
+  <!-- Audit logs section -->
+  <rect x="60" y="100" width="280" height="140" fill="#f8f9fa" stroke="#b3d7ff" stroke-width="1" rx="3" ry="3"/>
+  <text x="70" y="120" font-family="Arial" font-size="14" fill="#003366" font-weight="bold">Audit Logs</text>
+  
+  <!-- Filter bar -->
+  <rect x="70" y="130" width="270" height="25" fill="#e9ecef" rx="3" ry="3"/>
+  <text x="80" y="147" font-family="Arial" font-size="10" fill="#495057">Filter by:</text>
+  <rect x="130" y="134" width="60" height="17" fill="#ffffff" stroke="#ced4da" stroke-width="1" rx="2" ry="2"/>
+  <text x="135" y="147" font-family="Arial" font-size="10" fill="#495057">Date</text>
+  <rect x="200" y="134" width="60" height="17" fill="#ffffff" stroke="#ced4da" stroke-width="1" rx="2" ry="2"/>
+  <text x="205" y="147" font-family="Arial" font-size="10" fill="#495057">User</text>
+  <rect x="270" y="134" width="60" height="17" fill="#ffffff" stroke="#ced4da" stroke-width="1" rx="2" ry="2"/>
+  <text x="275" y="147" font-family="Arial" font-size="10" fill="#495057">Action</text>
+  
+  <!-- Table headers -->
+  <rect x="70" y="160" width="260" height="20" fill="#e9ecef" rx="2" ry="2"/>
+  <text x="80" y="175" font-family="Arial" font-size="10" fill="#495057" font-weight="bold">Time</text>
+  <text x="130" y="175" font-family="Arial" font-size="10" fill="#495057" font-weight="bold">User</text>
+  <text x="180" y="175" font-family="Arial" font-size="10" fill="#495057" font-weight="bold">Action</text>
+  <text x="280" y="175" font-family="Arial" font-size="10" fill="#495057" font-weight="bold">Status</text>
+  
+  <!-- Table row 1 -->
+  <rect x="70" y="180" width="260" height="20" fill="#ffffff" stroke="#dee2e6" stroke-width="1"/>
+  <text x="80" y="195" font-family="Arial" font-size="9" fill="#212529">10:45 AM</text>
+  <text x="130" y="195" font-family="Arial" font-size="9" fill="#212529">staff01</text>
+  <text x="180" y="195" font-family="Arial" font-size="9" fill="#212529">Upload</text>
+  <text x="280" y="195" font-family="Arial" font-size="9" fill="#28a745">Success</text>
+  
+  <!-- Table row 2 -->
+  <rect x="70" y="200" width="260" height="20" fill="#ffffff" stroke="#dee2e6" stroke-width="1"/>
+  <text x="80" y="215" font-family="Arial" font-size="9" fill="#212529">11:22 AM</text>
+  <text x="130" y="215" font-family="Arial" font-size="9" fill="#212529">assessor1</text>
+  <text x="180" y="215" font-family="Arial" font-size="9" fill="#212529">Approval</text>
+  <text x="280" y="215" font-family="Arial" font-size="9" fill="#28a745">Success</text>
+  
+  <!-- Table row 3 -->
+  <rect x="70" y="220" width="260" height="20" fill="#ffffff" stroke="#dee2e6" stroke-width="1"/>
+  <text x="80" y="235" font-family="Arial" font-size="9" fill="#212529">12:05 PM</text>
+  <text x="130" y="235" font-family="Arial" font-size="9" fill="#212529">admin</text>
+  <text x="180" y="235" font-family="Arial" font-size="9" fill="#212529">Config</text>
+  <text x="280" y="235" font-family="Arial" font-size="9" fill="#17a2b8">Info</text>
+  
+  <!-- Title -->
+  <text x="200" y="275" font-family="Arial" font-size="14" text-anchor="middle" fill="#003366" font-weight="bold">
+    Welcome Auditor
+  </text>
+</svg>
