@@ -308,20 +308,38 @@
                                 </li>
                                 <li class="list-group-item d-flex justify-content-between align-items-center">
                                     <div>
-                                        <span class="alert-indicator {% if system_metrics[0].response_time < 1.0 %}alert-normal{% elif system_metrics[0].response_time < 2.0 %}alert-warning{% else %}alert-critical{% endif %}"></span>
+                                        <span class="alert-indicator {% if system_metrics[0].average_response_time < 1.0 %}alert-normal{% elif system_metrics[0].average_response_time < 2.0 %}alert-warning{% else %}alert-critical{% endif %}"></span>
                                         Response Time
                                     </div>
-                                    <span class="badge {% if system_metrics[0].response_time < 1.0 %}bg-success{% elif system_metrics[0].response_time < 2.0 %}bg-warning{% else %}bg-danger{% endif %}">
-                                        {% if system_metrics[0].response_time < 1.0 %}Normal{% elif system_metrics[0].response_time < 2.0 %}Warning{% else %}Critical{% endif %}
+                                    <span class="badge {% if system_metrics[0].average_response_time < 1.0 %}bg-success{% elif system_metrics[0].average_response_time < 2.0 %}bg-warning{% else %}bg-danger{% endif %}">
+                                        {% if system_metrics[0].average_response_time < 1.0 %}Normal{% elif system_metrics[0].average_response_time < 2.0 %}Warning{% else %}Critical{% endif %}
                                     </span>
                                 </li>
                                 <li class="list-group-item d-flex justify-content-between align-items-center">
                                     <div>
-                                        <span class="alert-indicator {% if system_metrics[0].error_count == 0 %}alert-normal{% elif system_metrics[0].error_count < 5 %}alert-warning{% else %}alert-critical{% endif %}"></span>
+                                        <span class="alert-indicator {% if system_metrics[0].error_rate < 0.01 %}alert-normal{% elif system_metrics[0].error_rate < 0.05 %}alert-warning{% else %}alert-critical{% endif %}"></span>
                                         Error Rate
                                     </div>
-                                    <span class="badge {% if system_metrics[0].error_count == 0 %}bg-success{% elif system_metrics[0].error_count < 5 %}bg-warning{% else %}bg-danger{% endif %}">
-                                        {% if system_metrics[0].error_count == 0 %}No Errors{% elif system_metrics[0].error_count < 5 %}{{ system_metrics[0].error_count }} Errors{% else %}Critical{% endif %}
+                                    <span class="badge {% if system_metrics[0].error_rate < 0.01 %}bg-success{% elif system_metrics[0].error_rate < 0.05 %}bg-warning{% else %}bg-danger{% endif %}">
+                                        {% if system_metrics[0].error_rate < 0.01 %}Normal{% elif system_metrics[0].error_rate < 0.05 %}{{ (system_metrics[0].error_rate * 100)|round(1) }}%{% else %}Critical{% endif %}
+                                    </span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <span class="alert-indicator alert-normal"></span>
+                                        API Requests
+                                    </div>
+                                    <span class="badge bg-secondary">
+                                        {{ system_metrics[0].api_requests }}
+                                    </span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <span class="alert-indicator alert-normal"></span>
+                                        Active Users
+                                    </div>
+                                    <span class="badge bg-secondary">
+                                        {{ system_metrics[0].active_users }}
                                     </span>
                                 </li>
                             {% else %}
@@ -698,6 +716,33 @@
             setActiveButton('response-btn');
         });
         
+        document.getElementById('disk-btn').addEventListener('click', function() {
+            const diskGradient = generateGradient(ctx, 'disk');
+            updateChart('Disk Usage (%)', diskData, 'rgba(75, 192, 192, 1)', diskGradient, 'disk');
+            setActiveButton('disk-btn');
+        });
+        
+        document.getElementById('error-btn').addEventListener('click', function() {
+            const errorGradient = generateGradient(ctx, 'errors');
+            updateChart('Error Rate (%)', errorRateData.map(value => value * 100), 'rgba(220, 53, 69, 1)', errorGradient, 'errors');
+            setActiveButton('error-btn');
+        });
+        
+        document.getElementById('api-requests-btn').addEventListener('click', function() {
+            updateChart('API Requests', apiRequestsData, 'rgba(255, 193, 7, 1)', null, 'api');
+            setActiveButton('api-requests-btn');
+        });
+        
+        document.getElementById('active-syncs-btn').addEventListener('click', function() {
+            updateChart('Active Syncs', activeSyncsData, 'rgba(75, 192, 192, 1)', null, 'syncs');
+            setActiveButton('active-syncs-btn');
+        });
+        
+        document.getElementById('active-users-btn').addEventListener('click', function() {
+            updateChart('Active Users', activeUsersData, 'rgba(153, 102, 255, 1)', null, 'users');
+            setActiveButton('active-users-btn');
+        });
+        
         // Enhanced chart update function with threshold annotations
         function updateChart(label, data, borderColor, backgroundColor, metricType) {
             // Update dataset
@@ -707,10 +752,13 @@
             chart.data.datasets[0].backgroundColor = backgroundColor;
             chart.data.datasets[0].pointBackgroundColor = borderColor;
             
+            // Calculate a reasonable max value for the chart
+            const maxDataValue = Math.max(...data.filter(val => val !== null && val !== undefined)) || 0;
+            
             // Update Y axis and annotations based on metric type
             if (metricType === 'response') {
                 // Response time has different scale and thresholds
-                const maxValue = Math.max(...data) * 1.2 || 5.0;
+                const maxValue = Math.max(maxDataValue * 1.2, 5.0);
                 chart.options.scales.y.max = maxValue;
                 chart.options.scales.y.ticks.callback = function(value) {
                     return value + 's';
@@ -721,8 +769,12 @@
                 chart.options.plugins.annotation.annotations.warningLine.yMax = 1.0;
                 chart.options.plugins.annotation.annotations.criticalLine.yMin = 2.0;
                 chart.options.plugins.annotation.annotations.criticalLine.yMax = 2.0;
-            } else {
-                // CPU, Memory, Disk all use percentage scale
+                
+                // Show annotation lines for response time
+                chart.options.plugins.annotation.annotations.warningLine.display = true;
+                chart.options.plugins.annotation.annotations.criticalLine.display = true;
+            } else if (metricType === 'cpu' || metricType === 'memory' || metricType === 'disk' || metricType === 'errors') {
+                // CPU, Memory, Disk, Error Rate all use percentage scale
                 chart.options.scales.y.max = 100;
                 chart.options.scales.y.ticks.callback = function(value) {
                     return value + '%';
@@ -733,6 +785,21 @@
                 chart.options.plugins.annotation.annotations.warningLine.yMax = 70;
                 chart.options.plugins.annotation.annotations.criticalLine.yMin = 90;
                 chart.options.plugins.annotation.annotations.criticalLine.yMax = 90;
+                
+                // Show annotation lines for percentage metrics
+                chart.options.plugins.annotation.annotations.warningLine.display = true;
+                chart.options.plugins.annotation.annotations.criticalLine.display = true;
+            } else {
+                // For API Requests, Active Syncs, Active Users - use raw number scale
+                const maxValue = Math.max(maxDataValue * 1.2, 10);
+                chart.options.scales.y.max = maxValue;
+                chart.options.scales.y.ticks.callback = function(value) {
+                    return value;
+                };
+                
+                // Hide threshold lines for these metrics as they don't have clear thresholds
+                chart.options.plugins.annotation.annotations.warningLine.display = false;
+                chart.options.plugins.annotation.annotations.criticalLine.display = false;
             }
             
             // Apply changes
