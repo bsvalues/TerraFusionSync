@@ -81,8 +81,13 @@ except ImportError:
         """Fallback auth decorator that requires authentication and redirects to login page."""
         @wraps(f)
         def decorated(*args, **kwargs):
+            logger.debug(f"requires_auth checking authentication for {request.path}")
+            logger.debug(f"Session data in requires_auth: {session}")
+            logger.debug(f"Request cookies: {request.cookies}")
+            
             # Check if authenticated in session
             if 'token' not in session:
+                logger.debug("Token not in session, redirecting to login")
                 # Store the requested URL in session for redirect after login
                 session['next'] = request.path
                 
@@ -90,6 +95,8 @@ except ImportError:
                 # Regardless of whether it's an API or browser request
                 flash('Authentication required to access this page', 'error')
                 return redirect(url_for('login_page', next=request.path))
+            
+            logger.debug(f"User is authenticated, proceeding to {request.path}")
             return f(*args, **kwargs)
         return decorated
     
@@ -703,9 +710,13 @@ def check_and_ensure_service_health():
 @app.route('/login', methods=['GET', 'POST'])
 def login_page():
     """Login page for the API Gateway."""
+    logger.debug(f"login_page called with method: {request.method}")
+    logger.debug(f"Session data before: {session}")
+    
     # Check if logout action
     if request.args.get('action') == 'logout':
         # Clear session
+        logger.debug("Logout action detected")
         session.clear()
         flash('You have been logged out successfully', 'success')
         return redirect(url_for('root'))
@@ -713,11 +724,15 @@ def login_page():
     # Check if already authenticated
     if 'token' in session and request.method == 'GET':
         # Redirect to dashboard or next URL
+        logger.debug("Already authenticated, redirecting to dashboard")
         next_url = request.args.get('next', url_for('dashboard'))
         return redirect(next_url)
     
     # Handle login form submission
     if request.method == 'POST':
+        logger.debug(f"Login POST data: {request.form}")
+        logger.debug(f"Content type: {request.content_type}")
+        logger.debug(f"Headers: {request.headers}")
         username = request.form.get('username')
         password = request.form.get('password')
         next_url = request.form.get('next', url_for('dashboard'))
@@ -778,7 +793,11 @@ def login_page():
             session['role'] = 'ITAdmin'
             session['roles'] = ['ITAdmin']
             session['token'] = 'fallback_auth_' + str(uuid.uuid4())
-            return redirect(next_url)
+            logger.debug(f"Login successful for {username} with role ITAdmin")
+            logger.debug(f"Session after login: {session}")
+            response = redirect(next_url)
+            logger.debug(f"Response headers: {response.headers}")
+            return response
         elif username == 'assessor' and password == 'assessor123':
             session['username'] = username
             session['role'] = 'Assessor'
