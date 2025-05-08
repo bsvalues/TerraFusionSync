@@ -126,11 +126,15 @@
                 <div class="card metric-card h-100">
                     <div class="card-body text-center">
                         <div class="display-4 text-primary mb-2">
-                            {{ system_metrics[0].cpu_usage|round(1) }}%
+                            {% if system_metrics and system_metrics|length > 0 %}
+                                {{ system_metrics[0].cpu_usage|round(1) }}%
+                            {% else %}
+                                --.--%
+                            {% endif %}
                         </div>
                         <h5 class="card-title mb-0">CPU Usage</h5>
                         <p class="text-muted small">Current system processor usage</p>
-                        {% if system_metrics|length > 1 %}
+                        {% if system_metrics and system_metrics|length > 1 %}
                             {% if system_metrics[0].cpu_usage > system_metrics[1].cpu_usage %}
                                 <div class="small value-up"><i class="bi bi-arrow-up-right"></i> {{ ((system_metrics[0].cpu_usage - system_metrics[1].cpu_usage) / system_metrics[1].cpu_usage * 100)|round(1) }}% from previous</div>
                             {% else %}
@@ -140,7 +144,11 @@
                     </div>
                     <div class="card-footer bg-transparent">
                         <div class="progress" style="height: 5px;">
-                            <div class="progress-bar {% if system_metrics[0].cpu_usage > 80 %}bg-danger{% elif system_metrics[0].cpu_usage > 60 %}bg-warning{% else %}bg-success{% endif %}" role="progressbar" style="width: {{ system_metrics[0].cpu_usage }}%"></div>
+                            {% if system_metrics and system_metrics|length > 0 %}
+                                <div class="progress-bar {% if system_metrics[0].cpu_usage > 80 %}bg-danger{% elif system_metrics[0].cpu_usage > 60 %}bg-warning{% else %}bg-success{% endif %}" role="progressbar" style="width: {{ system_metrics[0].cpu_usage }}%"></div>
+                            {% else %}
+                                <div class="progress-bar bg-secondary" role="progressbar" style="width: 0%"></div>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
@@ -149,11 +157,15 @@
                 <div class="card metric-card h-100">
                     <div class="card-body text-center">
                         <div class="display-4 text-primary mb-2">
-                            {{ system_metrics[0].memory_usage|round(1) }}%
+                            {% if system_metrics and system_metrics|length > 0 %}
+                                {{ system_metrics[0].memory_usage|round(1) }}%
+                            {% else %}
+                                --.--%
+                            {% endif %}
                         </div>
                         <h5 class="card-title mb-0">Memory Usage</h5>
                         <p class="text-muted small">Current RAM utilization</p>
-                        {% if system_metrics|length > 1 %}
+                        {% if system_metrics and system_metrics|length > 1 %}
                             {% if system_metrics[0].memory_usage > system_metrics[1].memory_usage %}
                                 <div class="small value-up"><i class="bi bi-arrow-up-right"></i> {{ ((system_metrics[0].memory_usage - system_metrics[1].memory_usage) / system_metrics[1].memory_usage * 100)|round(1) }}% from previous</div>
                             {% else %}
@@ -163,7 +175,11 @@
                     </div>
                     <div class="card-footer bg-transparent">
                         <div class="progress" style="height: 5px;">
-                            <div class="progress-bar {% if system_metrics[0].memory_usage > 80 %}bg-danger{% elif system_metrics[0].memory_usage > 60 %}bg-warning{% else %}bg-success{% endif %}" role="progressbar" style="width: {{ system_metrics[0].memory_usage }}%"></div>
+                            {% if system_metrics and system_metrics|length > 0 %}
+                                <div class="progress-bar {% if system_metrics[0].memory_usage > 80 %}bg-danger{% elif system_metrics[0].memory_usage > 60 %}bg-warning{% else %}bg-success{% endif %}" role="progressbar" style="width: {{ system_metrics[0].memory_usage }}%"></div>
+                            {% else %}
+                                <div class="progress-bar bg-secondary" role="progressbar" style="width: 0%"></div>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
@@ -172,11 +188,15 @@
                 <div class="card metric-card h-100">
                     <div class="card-body text-center">
                         <div class="display-4 text-primary mb-2">
-                            {{ system_metrics[0].disk_usage|round(1) }}%
+                            {% if system_metrics and system_metrics|length > 0 %}
+                                {{ system_metrics[0].disk_usage|round(1) }}%
+                            {% else %}
+                                --.--%
+                            {% endif %}
                         </div>
                         <h5 class="card-title mb-0">Disk Usage</h5>
                         <p class="text-muted small">Storage space utilization</p>
-                        {% if system_metrics|length > 1 %}
+                        {% if system_metrics and system_metrics|length > 1 %}
                             {% if system_metrics[0].disk_usage > system_metrics[1].disk_usage %}
                                 <div class="small value-up"><i class="bi bi-arrow-up-right"></i> {{ ((system_metrics[0].disk_usage - system_metrics[1].disk_usage) / system_metrics[1].disk_usage * 100)|round(1) }}% from previous</div>
                             {% else %}
@@ -186,7 +206,11 @@
                     </div>
                     <div class="card-footer bg-transparent">
                         <div class="progress" style="height: 5px;">
-                            <div class="progress-bar {% if system_metrics[0].disk_usage > 85 %}bg-danger{% elif system_metrics[0].disk_usage > 70 %}bg-warning{% else %}bg-success{% endif %}" role="progressbar" style="width: {{ system_metrics[0].disk_usage }}%"></div>
+                            {% if system_metrics and system_metrics|length > 0 %}
+                                <div class="progress-bar {% if system_metrics[0].disk_usage > 85 %}bg-danger{% elif system_metrics[0].disk_usage > 70 %}bg-warning{% else %}bg-success{% endif %}" role="progressbar" style="width: {{ system_metrics[0].disk_usage }}%"></div>
+                            {% else %}
+                                <div class="progress-bar bg-secondary" role="progressbar" style="width: 0%"></div>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
@@ -195,11 +219,15 @@
                 <div class="card metric-card h-100">
                     <div class="card-body text-center">
                         <div class="display-4 text-primary mb-2">
-                            {{ system_metrics[0].response_time|round(2) }}s
+                            {% if system_metrics and system_metrics|length > 0 %}
+                                {{ system_metrics[0].response_time|round(2) }}s
+                            {% else %}
+                                -.-s
+                            {% endif %}
                         </div>
                         <h5 class="card-title mb-0">Response Time</h5>
                         <p class="text-muted small">Average API response latency</p>
-                        {% if system_metrics|length > 1 and system_metrics[1].response_time > 0 %}
+                        {% if system_metrics and system_metrics|length > 1 and system_metrics[1].response_time > 0 %}
                             {% if system_metrics[0].response_time > system_metrics[1].response_time %}
                                 <div class="small value-up"><i class="bi bi-arrow-up-right"></i> {{ ((system_metrics[0].response_time - system_metrics[1].response_time) / system_metrics[1].response_time * 100)|round(1) }}% from previous</div>
                             {% elif system_metrics[1].response_time > system_metrics[0].response_time %}
@@ -211,7 +239,11 @@
                     </div>
                     <div class="card-footer bg-transparent">
                         <div class="progress" style="height: 5px;">
-                            <div class="progress-bar {% if system_metrics[0].response_time > 2.0 %}bg-danger{% elif system_metrics[0].response_time > 1.0 %}bg-warning{% else %}bg-success{% endif %}" role="progressbar" style="width: {{ (system_metrics[0].response_time / 5.0 * 100)|round(0) }}%"></div>
+                            {% if system_metrics and system_metrics|length > 0 %}
+                                <div class="progress-bar {% if system_metrics[0].response_time > 2.0 %}bg-danger{% elif system_metrics[0].response_time > 1.0 %}bg-warning{% else %}bg-success{% endif %}" role="progressbar" style="width: {{ (system_metrics[0].response_time / 5.0 * 100)|round(0) }}%"></div>
+                            {% else %}
+                                <div class="progress-bar bg-secondary" role="progressbar" style="width: 0%"></div>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
@@ -241,42 +273,89 @@
                     </div>
                     <div class="card-body">
                         <ul class="list-group list-group-flush">
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                <div>
-                                    <span class="alert-indicator {% if system_metrics[0].cpu_usage < 70 %}alert-normal{% elif system_metrics[0].cpu_usage < 90 %}alert-warning{% else %}alert-critical{% endif %}"></span>
-                                    CPU Status
-                                </div>
-                                <span class="badge {% if system_metrics[0].cpu_usage < 70 %}bg-success{% elif system_metrics[0].cpu_usage < 90 %}bg-warning{% else %}bg-danger{% endif %}">
-                                    {% if system_metrics[0].cpu_usage < 70 %}Normal{% elif system_metrics[0].cpu_usage < 90 %}Warning{% else %}Critical{% endif %}
-                                </span>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                <div>
-                                    <span class="alert-indicator {% if system_metrics[0].memory_usage < 70 %}alert-normal{% elif system_metrics[0].memory_usage < 90 %}alert-warning{% else %}alert-critical{% endif %}"></span>
-                                    Memory Status
-                                </div>
-                                <span class="badge {% if system_metrics[0].memory_usage < 70 %}bg-success{% elif system_metrics[0].memory_usage < 90 %}bg-warning{% else %}bg-danger{% endif %}">
-                                    {% if system_metrics[0].memory_usage < 70 %}Normal{% elif system_metrics[0].memory_usage < 90 %}Warning{% else %}Critical{% endif %}
-                                </span>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                <div>
-                                    <span class="alert-indicator {% if system_metrics[0].disk_usage < 80 %}alert-normal{% elif system_metrics[0].disk_usage < 90 %}alert-warning{% else %}alert-critical{% endif %}"></span>
-                                    Disk Status
-                                </div>
-                                <span class="badge {% if system_metrics[0].disk_usage < 80 %}bg-success{% elif system_metrics[0].disk_usage < 90 %}bg-warning{% else %}bg-danger{% endif %}">
-                                    {% if system_metrics[0].disk_usage < 80 %}Normal{% elif system_metrics[0].disk_usage < 90 %}Warning{% else %}Critical{% endif %}
-                                </span>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                <div>
-                                    <span class="alert-indicator {% if system_metrics[0].response_time < 1.0 %}alert-normal{% elif system_metrics[0].response_time < 2.0 %}alert-warning{% else %}alert-critical{% endif %}"></span>
-                                    Response Time
-                                </div>
-                                <span class="badge {% if system_metrics[0].response_time < 1.0 %}bg-success{% elif system_metrics[0].response_time < 2.0 %}bg-warning{% else %}bg-danger{% endif %}">
-                                    {% if system_metrics[0].response_time < 1.0 %}Normal{% elif system_metrics[0].response_time < 2.0 %}Warning{% else %}Critical{% endif %}
-                                </span>
-                            </li>
+                            {% if system_metrics and system_metrics|length > 0 %}
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <span class="alert-indicator {% if system_metrics[0].cpu_usage < 70 %}alert-normal{% elif system_metrics[0].cpu_usage < 90 %}alert-warning{% else %}alert-critical{% endif %}"></span>
+                                        CPU Status
+                                    </div>
+                                    <span class="badge {% if system_metrics[0].cpu_usage < 70 %}bg-success{% elif system_metrics[0].cpu_usage < 90 %}bg-warning{% else %}bg-danger{% endif %}">
+                                        {% if system_metrics[0].cpu_usage < 70 %}Normal{% elif system_metrics[0].cpu_usage < 90 %}Warning{% else %}Critical{% endif %}
+                                    </span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <span class="alert-indicator {% if system_metrics[0].memory_usage < 70 %}alert-normal{% elif system_metrics[0].memory_usage < 90 %}alert-warning{% else %}alert-critical{% endif %}"></span>
+                                        Memory Status
+                                    </div>
+                                    <span class="badge {% if system_metrics[0].memory_usage < 70 %}bg-success{% elif system_metrics[0].memory_usage < 90 %}bg-warning{% else %}bg-danger{% endif %}">
+                                        {% if system_metrics[0].memory_usage < 70 %}Normal{% elif system_metrics[0].memory_usage < 90 %}Warning{% else %}Critical{% endif %}
+                                    </span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <span class="alert-indicator {% if system_metrics[0].disk_usage < 80 %}alert-normal{% elif system_metrics[0].disk_usage < 90 %}alert-warning{% else %}alert-critical{% endif %}"></span>
+                                        Disk Status
+                                    </div>
+                                    <span class="badge {% if system_metrics[0].disk_usage < 80 %}bg-success{% elif system_metrics[0].disk_usage < 90 %}bg-warning{% else %}bg-danger{% endif %}">
+                                        {% if system_metrics[0].disk_usage < 80 %}Normal{% elif system_metrics[0].disk_usage < 90 %}Warning{% else %}Critical{% endif %}
+                                    </span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <span class="alert-indicator {% if system_metrics[0].response_time < 1.0 %}alert-normal{% elif system_metrics[0].response_time < 2.0 %}alert-warning{% else %}alert-critical{% endif %}"></span>
+                                        Response Time
+                                    </div>
+                                    <span class="badge {% if system_metrics[0].response_time < 1.0 %}bg-success{% elif system_metrics[0].response_time < 2.0 %}bg-warning{% else %}bg-danger{% endif %}">
+                                        {% if system_metrics[0].response_time < 1.0 %}Normal{% elif system_metrics[0].response_time < 2.0 %}Warning{% else %}Critical{% endif %}
+                                    </span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <span class="alert-indicator {% if system_metrics[0].error_count == 0 %}alert-normal{% elif system_metrics[0].error_count < 5 %}alert-warning{% else %}alert-critical{% endif %}"></span>
+                                        Error Rate
+                                    </div>
+                                    <span class="badge {% if system_metrics[0].error_count == 0 %}bg-success{% elif system_metrics[0].error_count < 5 %}bg-warning{% else %}bg-danger{% endif %}">
+                                        {% if system_metrics[0].error_count == 0 %}No Errors{% elif system_metrics[0].error_count < 5 %}{{ system_metrics[0].error_count }} Errors{% else %}Critical{% endif %}
+                                    </span>
+                                </li>
+                            {% else %}
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <span class="alert-indicator alert-normal"></span>
+                                        CPU Status
+                                    </div>
+                                    <span class="badge bg-secondary">No Data</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <span class="alert-indicator alert-normal"></span>
+                                        Memory Status
+                                    </div>
+                                    <span class="badge bg-secondary">No Data</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <span class="alert-indicator alert-normal"></span>
+                                        Disk Status
+                                    </div>
+                                    <span class="badge bg-secondary">No Data</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <span class="alert-indicator alert-normal"></span>
+                                        Response Time
+                                    </div>
+                                    <span class="badge bg-secondary">No Data</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <span class="alert-indicator alert-normal"></span>
+                                        Error Rate
+                                    </div>
+                                    <span class="badge bg-secondary">No Data</span>
+                                </li>
+                            {% endif %}
                             <li class="list-group-item d-flex justify-content-between align-items-center">
                                 <div>
                                     <span class="alert-indicator alert-normal" id="metrics-collection-indicator"></span>
@@ -295,15 +374,6 @@
                                         <i class="bi bi-wrench-adjustable"></i> Health Check
                                     </button>
                                 </div>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                <div>
-                                    <span class="alert-indicator {% if system_metrics[0].error_count == 0 %}alert-normal{% elif system_metrics[0].error_count < 5 %}alert-warning{% else %}alert-critical{% endif %}"></span>
-                                    Error Rate
-                                </div>
-                                <span class="badge {% if system_metrics[0].error_count == 0 %}bg-success{% elif system_metrics[0].error_count < 5 %}bg-warning{% else %}bg-danger{% endif %}">
-                                    {% if system_metrics[0].error_count == 0 %}No Errors{% elif system_metrics[0].error_count < 5 %}{{ system_metrics[0].error_count }} Errors{% else %}Critical{% endif %}
-                                </span>
                             </li>
                         </ul>
                     </div>
