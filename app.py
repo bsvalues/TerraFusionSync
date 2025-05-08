@@ -759,12 +759,20 @@ def login_page():
             if COUNTY_RBAC_AVAILABLE:
                 user = authenticate_county_user(username, password)
                 if user:
+                    # Make the session permanent
+                    session.permanent = True
+                    
                     # Set session data
                     session['username'] = user['username']
                     session['role'] = user['primary_role']
                     session['roles'] = user['roles']
                     session['token'] = 'county_auth_' + str(uuid.uuid4())
                     session['county_auth'] = True
+                    
+                    # Log debug info
+                    logger.debug(f"County auth successful for {username} with role {user['primary_role']}")
+                    logger.debug(f"Session is permanent: {session.permanent}")
+                    logger.debug(f"Session data: {session}")
                     
                     # Create audit log entry
                     create_audit_log(

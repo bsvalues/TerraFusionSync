@@ -345,10 +345,17 @@ def init_auth_routes(app):
             user.record_login()
             db.session.commit()
             
-            # Set session
+            # Set session as permanent (will last for the duration defined in PERMANENT_SESSION_LIFETIME)
+            session.permanent = True
+            
+            # Set session values
             session['user_id'] = user.id
             session['username'] = user.username
             session['role'] = user.role
+            
+            # Log debug info
+            logger.debug(f"Login successful for {username} with role {user.role}")
+            logger.debug(f"Session is permanent: {session.permanent}")
             
             # Check if user needs onboarding
             from apps.backend.models.onboarding import UserOnboarding
