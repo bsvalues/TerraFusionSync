@@ -275,9 +275,8 @@ except ImportError:
 # Register onboarding module for interactive tutorials
 try:
     from apps.backend.onboarding import init_onboarding
-    onboarding_module = init_onboarding()
-    onboarding_bp = onboarding_module["create_onboarding_blueprint"]()
-    app.register_blueprint(onboarding_bp)
+    # Initialize onboarding module with the app instance
+    onboarding_module = init_onboarding(app)
     logger.info("Registered onboarding module with interactive tutorials")
 except ImportError as e:
     logger.warning(f"Onboarding module not available: {e}")

@@ -13,7 +13,7 @@ from apps.backend.onboarding.routes import onboarding_bp
 
 logger = logging.getLogger(__name__)
 
-def init_app(app: Flask):
+def init_onboarding(app: Flask):
     """
     Initialize the onboarding module and register its routes with the Flask app.
     
