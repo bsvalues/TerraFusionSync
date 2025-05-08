@@ -1251,7 +1251,7 @@ def sync_dashboard():
                           user=user,
                           sync_pairs=db.session.query(SyncPair).all(),
                           recent_operations=db.session.query(SyncOperation).order_by(
-                              SyncOperation.started_at.desc()).limit(10).all())
+                              SyncOperation.start_time.desc()).limit(10).all())
 
 
 @app.route('/sync/pairs')
@@ -1396,7 +1396,7 @@ def view_sync_pair(pair_id):
         # Get operations for this pair
         operations = db.session.query(SyncOperation).filter(
             SyncOperation.sync_pair_id == pair_id
-        ).order_by(SyncOperation.started_at.desc()).limit(10).all()
+        ).order_by(SyncOperation.start_time.desc()).limit(10).all()
         
         user = get_current_county_user()
         context = {
@@ -1587,7 +1587,7 @@ def run_sync_operation():
             sync_pair_id=pair.id,
             status='pending',
             sync_type='manual',
-            started_at=datetime.datetime.now(),
+            start_time=datetime.datetime.now(),
             created_by=user.get('username')
         )
         

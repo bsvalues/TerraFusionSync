@@ -220,18 +220,18 @@
                     <div class="card-body text-center">
                         <div class="display-4 text-primary mb-2">
                             {% if system_metrics and system_metrics|length > 0 %}
-                                {{ system_metrics[0].response_time|round(2) }}s
+                                {{ system_metrics[0].average_response_time|round(2) }}s
                             {% else %}
                                 -.-s
                             {% endif %}
                         </div>
                         <h5 class="card-title mb-0">Response Time</h5>
                         <p class="text-muted small">Average API response latency</p>
-                        {% if system_metrics and system_metrics|length > 1 and system_metrics[1].response_time > 0 %}
-                            {% if system_metrics[0].response_time > system_metrics[1].response_time %}
-                                <div class="small value-up"><i class="bi bi-arrow-up-right"></i> {{ ((system_metrics[0].response_time - system_metrics[1].response_time) / system_metrics[1].response_time * 100)|round(1) }}% from previous</div>
-                            {% elif system_metrics[1].response_time > system_metrics[0].response_time %}
-                                <div class="small value-down"><i class="bi bi-arrow-down-right"></i> {{ ((system_metrics[1].response_time - system_metrics[0].response_time) / system_metrics[1].response_time * 100)|round(1) }}% from previous</div>
+                        {% if system_metrics and system_metrics|length > 1 and system_metrics[1].average_response_time > 0 %}
+                            {% if system_metrics[0].average_response_time > system_metrics[1].average_response_time %}
+                                <div class="small value-up"><i class="bi bi-arrow-up-right"></i> {{ ((system_metrics[0].average_response_time - system_metrics[1].average_response_time) / system_metrics[1].average_response_time * 100)|round(1) }}% from previous</div>
+                            {% elif system_metrics[1].average_response_time > system_metrics[0].average_response_time %}
+                                <div class="small value-down"><i class="bi bi-arrow-down-right"></i> {{ ((system_metrics[1].average_response_time - system_metrics[0].average_response_time) / system_metrics[1].average_response_time * 100)|round(1) }}% from previous</div>
                             {% else %}
                                 <div class="small text-muted">No change from previous</div>
                             {% endif %}
@@ -240,7 +240,7 @@
                     <div class="card-footer bg-transparent">
                         <div class="progress" style="height: 5px;">
                             {% if system_metrics and system_metrics|length > 0 %}
-                                <div class="progress-bar {% if system_metrics[0].response_time > 2.0 %}bg-danger{% elif system_metrics[0].response_time > 1.0 %}bg-warning{% else %}bg-success{% endif %}" role="progressbar" style="width: {{ (system_metrics[0].response_time / 5.0 * 100)|round(0) }}%"></div>
+                                <div class="progress-bar {% if system_metrics[0].average_response_time > 2.0 %}bg-danger{% elif system_metrics[0].average_response_time > 1.0 %}bg-warning{% else %}bg-success{% endif %}" role="progressbar" style="width: {{ (system_metrics[0].average_response_time / 5.0 * 100)|round(0) }}%"></div>
                             {% else %}
                                 <div class="progress-bar bg-secondary" role="progressbar" style="width: 0%"></div>
                             {% endif %}
