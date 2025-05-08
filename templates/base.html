@@ -358,11 +358,11 @@
                 </li>
                 {% endif %}
                 <li class="nav-item">
-                    <a href="{{ url_for('logout') }}" class="nav-link">Logout ({{ session.get('username') }})</a>
+                    <a href="{{ url_for('login_page', action='logout') }}" class="nav-link">Logout ({{ session.get('username') }})</a>
                 </li>
                 {% else %}
                 <li class="nav-item">
-                    <a href="{{ url_for('login') }}" class="nav-link">Login</a>
+                    <a href="{{ url_for('login_page') }}" class="nav-link">Login</a>
                 </li>
                 {% endif %}
             </ul>

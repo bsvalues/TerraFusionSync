@@ -702,6 +702,13 @@ def check_and_ensure_service_health():
 @app.route('/login')
 def login_page():
     """Login page for the API Gateway."""
+    # Check if logout action
+    if request.args.get('action') == 'logout':
+        # Clear session
+        session.clear()
+        flash('You have been logged out successfully', 'success')
+        return redirect(url_for('root'))
+        
     # Check if already authenticated
     if 'token' in session:
         # Redirect to dashboard or next URL
