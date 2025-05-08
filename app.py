@@ -309,6 +309,14 @@ try:
 except ImportError as e:
     logger.warning(f"Onboarding module not available: {e}")
 
+# Register AI assistant for sync configuration guidance
+try:
+    from apps.backend.ai_assistant.routes import ai_assistant_bp
+    app.register_blueprint(ai_assistant_bp)
+    logger.info("Registered AI assistant for sync configuration guidance")
+except ImportError as e:
+    logger.warning(f"AI assistant module not available: {e}")
+
 # Add route for validation dashboard
 @app.route('/validation', methods=['GET'])
 def validation_dashboard():

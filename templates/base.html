@@ -345,6 +345,9 @@
                 <li class="nav-item">
                     <a href="{{ url_for('sync_dashboard') }}" class="nav-link">Sync Operations</a>
                 </li>
+                <li class="nav-item">
+                    <a href="{{ url_for('ai_assistant.assistant_home') }}" class="nav-link">AI Assistant</a>
+                </li>
                 {% if session.get('role') == 'ITAdmin' %}
                 <li class="nav-item">
                     <a href="{{ url_for('metrics_dashboard') }}" class="nav-link">Metrics</a>
