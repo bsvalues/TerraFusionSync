@@ -258,7 +258,12 @@
                         <div class="btn-group btn-group-sm" role="group">
                             <button type="button" class="btn btn-outline-secondary active" id="cpu-btn">CPU</button>
                             <button type="button" class="btn btn-outline-secondary" id="memory-btn">Memory</button>
+                            <button type="button" class="btn btn-outline-secondary" id="disk-btn">Disk</button>
                             <button type="button" class="btn btn-outline-secondary" id="response-btn">Response Time</button>
+                            <button type="button" class="btn btn-outline-secondary" id="error-btn">Error Rate</button>
+                            <button type="button" class="btn btn-outline-secondary" id="api-requests-btn">API Requests</button>
+                            <button type="button" class="btn btn-outline-secondary" id="active-syncs-btn">Active Syncs</button>
+                            <button type="button" class="btn btn-outline-secondary" id="active-users-btn">Active Users</button>
                         </div>
                     </div>
                     <div class="card-body">
@@ -735,7 +740,7 @@
         }
         
         function setActiveButton(activeId) {
-            ['cpu-btn', 'memory-btn', 'response-btn'].forEach(id => {
+            ['cpu-btn', 'memory-btn', 'response-btn', 'disk-btn', 'error-btn', 'api-requests-btn', 'active-syncs-btn', 'active-users-btn'].forEach(id => {
                 document.getElementById(id).classList.remove('active');
             });
             document.getElementById(activeId).classList.add('active');
