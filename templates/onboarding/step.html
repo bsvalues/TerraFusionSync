@@ -1,221 +1,327 @@
 {% extends "base.html" %}
 
-{% block title %}TerraFusion - Tutorial Step {{ step_number }}{% endblock %}
+{% block title %}{{ step.title }} - TerraFusion{% endblock %}
 
 {% block styles %}
-  {{ super() }}
-  <style>
+{{ super() }}
+<style>
     .step-container {
-      max-width: 800px;
-      margin: 0 auto;
-      padding: 2rem;
+        padding: 2rem 0;
+        max-width: 900px;
+        margin: 0 auto;
     }
     
     .step-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 2rem;
+        position: relative;
+        margin-bottom: 2rem;
     }
     
-    .step-title-container h1 {
-      margin-bottom: 0.5rem;
+    .step-back {
+        position: absolute;
+        left: 0;
+        top: 0.5rem;
+        display: flex;
+        align-items: center;
+        text-decoration: none;
+        color: var(--text-secondary);
+        font-weight: 500;
     }
     
-    .step-number {
-      font-size: 0.875rem;
-      color: #718096;
+    .step-back:hover {
+        color: var(--primary-color);
     }
     
-    .role-badge {
-      display: inline-block;
-      padding: 0.25rem 0.75rem;
-      border-radius: 1rem;
-      font-size: 0.875rem;
-      font-weight: 600;
+    .step-back-icon {
+        margin-right: 0.5rem;
     }
     
-    .role-badge.ITAdmin { background-color: #4299e1; color: white; }
-    .role-badge.Assessor { background-color: #48bb78; color: white; }
-    .role-badge.Staff { background-color: #ed8936; color: white; }
-    .role-badge.Auditor { background-color: #9f7aea; color: white; }
-    .role-badge.default { background-color: #a0aec0; color: white; }
-    
-    .progress-bar-container {
-      width: 100%;
-      height: 10px;
-      background-color: #e2e8f0;
-      border-radius: 5px;
-      margin-bottom: 2rem;
-      overflow: hidden;
+    .step-title-container {
+        text-align: center;
     }
     
-    .progress-bar {
-      height: 100%;
-      background-color: #4299e1;
-      transition: width 0.3s ease;
-    }
-    
-    .step-content {
-      margin-bottom: 2rem;
-      padding: 2rem;
-      border-radius: 0.5rem;
-      background-color: #f7fafc;
-      border: 1px solid #e2e8f0;
-    }
-    
-    .step-image {
-      max-width: 100%;
-      height: auto;
-      margin: 1.5rem 0;
-      border-radius: 0.25rem;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    .step-title {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--dark-color);
+        margin-bottom: 0.5rem;
     }
     
     .step-description {
-      font-size: 1.125rem;
-      line-height: 1.6;
-      color: #4a5568;
+        font-size: 1.25rem;
+        color: var(--text-secondary);
     }
     
-    .step-instruction {
-      margin-top: 1.5rem;
-      padding: 1rem;
-      background-color: #ebf8ff;
-      border-left: 4px solid #4299e1;
-      border-radius: 0.25rem;
+    .progress-container {
+        max-width: 800px;
+        margin: 0 auto 2rem;
+        text-align: center;
     }
     
-    .step-instruction h3 {
-      color: #2b6cb0;
-      margin-bottom: 0.5rem;
+    .progress-bar-outer {
+        height: 8px;
+        background-color: var(--border-color);
+        border-radius: 4px;
+        margin-bottom: 0.5rem;
+        overflow: hidden;
     }
     
-    .step-tip {
-      margin-top: 1.5rem;
-      padding: 1rem;
-      background-color: #fffaf0;
-      border-left: 4px solid #ed8936;
-      border-radius: 0.25rem;
+    .progress-bar-inner {
+        height: 100%;
+        background-color: var(--primary-color);
+        border-radius: 4px;
+        transition: width 0.3s ease;
     }
     
-    .step-tip h3 {
-      color: #c05621;
-      margin-bottom: 0.5rem;
+    .progress-text {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        display: flex;
+        justify-content: space-between;
+    }
+    
+    .step-content {
+        background-color: white;
+        border-radius: 0.5rem;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+        padding: 2rem;
+        margin-bottom: 2rem;
+        border: 1px solid var(--border-color);
+    }
+    
+    .step-content h3 {
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
+        color: var(--dark-color);
+    }
+    
+    .step-content p {
+        font-size: 1rem;
+        line-height: 1.6;
+        margin-bottom: 1rem;
+        color: var(--text-color);
+    }
+    
+    .step-content ul, .step-content ol {
+        margin-bottom: 1.5rem;
+        padding-left: 1.5rem;
+    }
+    
+    .step-content li {
+        margin-bottom: 0.5rem;
+    }
+    
+    .step-actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 2rem;
+    }
+    
+    .step-completed {
+        display: flex;
+        align-items: center;
+        color: var(--success-color);
+        font-weight: 600;
+    }
+    
+    .step-completed-icon {
+        margin-right: 0.5rem;
+        font-size: 1.25rem;
     }
     
     .step-navigation {
-      display: flex;
-      justify-content: space-between;
-      margin-top: 2rem;
+        display: flex;
+        justify-content: space-between;
+        margin-top: 1.5rem;
     }
     
-    .step-navigation a, .step-navigation button {
-      display: inline-block;
-      padding: 0.5rem 1rem;
-      border-radius: 0.25rem;
-      font-weight: 600;
-      text-align: center;
-      cursor: pointer;
-      border: none;
-      font-size: 1rem;
+    .step-nav-btn {
+        display: flex;
+        align-items: center;
+        padding: 0.75rem 1.25rem;
+        border-radius: 0.25rem;
+        font-weight: 600;
+        text-decoration: none;
+        transition: all 0.2s;
     }
     
-    .back-btn {
-      background-color: #e2e8f0;
-      color: #4a5568;
+    .step-prev {
+        color: var(--text-secondary);
     }
     
-    .complete-btn {
-      background-color: #48bb78;
-      color: white;
+    .step-prev:hover {
+        background-color: var(--light-color);
     }
     
-    .back-to-all {
-      text-align: center;
-      margin-top: 2rem;
+    .step-prev-icon {
+        margin-right: 0.5rem;
     }
     
-    .back-to-all a {
-      color: #4299e1;
-      text-decoration: underline;
+    .step-next {
+        background-color: var(--primary-color);
+        color: white;
     }
-  </style>
+    
+    .step-next:hover {
+        background-color: var(--primary-dark);
+        text-decoration: none;
+        color: white;
+    }
+    
+    .step-next-icon {
+        margin-left: 0.5rem;
+    }
+    
+    .step-complete-btn {
+        background-color: var(--success-color);
+        color: white;
+        border: none;
+        padding: 0.75rem 1.25rem;
+        border-radius: 0.25rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background-color 0.2s;
+        display: flex;
+        align-items: center;
+    }
+    
+    .step-complete-btn:hover {
+        background-color: #38a169;
+        text-decoration: none;
+        color: white;
+    }
+    
+    .step-complete-btn:disabled {
+        background-color: var(--secondary-color);
+        cursor: not-allowed;
+    }
+    
+    .step-complete-icon {
+        margin-right: 0.5rem;
+    }
+    
+    @media (max-width: 768px) {
+        .step-container {
+            padding: 1rem 0;
+        }
+        
+        .step-title {
+            font-size: 1.5rem;
+        }
+        
+        .step-description {
+            font-size: 1rem;
+        }
+        
+        .step-content {
+            padding: 1.5rem;
+        }
+        
+        .step-navigation {
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .step-nav-btn {
+            width: 100%;
+            justify-content: center;
+        }
+    }
+</style>
 {% endblock %}
 
 {% block content %}
-  <div class="step-container">
+<div class="step-container">
     <div class="step-header">
-      <div class="step-title-container">
-        <h1>{{ step.title }}</h1>
-        <div class="step-number">Step {{ step_number }} of {{ total_steps }}</div>
-      </div>
-      <span class="role-badge {{ role }}">{{ role }}</span>
+        <a href="{{ url_for('onboarding_bp.tutorial_home') }}" class="step-back">
+            <span class="step-back-icon">←</span> Back to Tutorial
+        </a>
+        
+        <div class="step-title-container">
+            <h1 class="step-title">{{ step.title }}</h1>
+            <p class="step-description">{{ step.description }}</p>
+        </div>
     </div>
     
-    <div class="progress-bar-container">
-      <div class="progress-bar" style="width: {{ (step_number / total_steps * 100)|int }}%;"></div>
+    <div class="progress-container">
+        <div class="progress-bar-outer">
+            <div class="progress-bar-inner" style="width: {{ progress }}%;"></div>
+        </div>
+        <div class="progress-text">
+            <span>{{ completed_steps|length }} of {{ tutorial.steps|length }} steps completed</span>
+            <span>{{ progress }}% Complete</span>
+        </div>
     </div>
     
     <div class="step-content">
-      <p class="step-description">{{ step.description }}</p>
-      
-      {% if step.image %}
-        <img src="{{ url_for('static', filename='images/onboarding/' + step.image) }}" 
-             alt="{{ step.title }}" class="step-image">
-      {% endif %}
-      
-      <div class="step-instruction">
-        <h3>Instructions</h3>
-        <p>Follow these steps to complete this part of the tutorial:</p>
-        <ol>
-          <li>Read through the information on this page carefully.</li>
-          <li>Try out the feature in the actual system by following the steps described.</li>
-          <li>Once you're comfortable with this feature, click "Mark as Complete" to proceed.</li>
-        </ol>
-      </div>
-      
-      <div class="step-tip">
-        <h3>Pro Tip</h3>
-        <p>You can always revisit completed tutorial steps later if you need a refresher on any feature.</p>
-      </div>
+        {{ step.content|safe }}
+    </div>
+    
+    <div class="step-actions">
+        {% if completed %}
+        <div class="step-completed">
+            <span class="step-completed-icon">✓</span> Step Completed
+        </div>
+        {% else %}
+        <button id="complete-step" class="step-complete-btn">
+            <span class="step-complete-icon">✓</span> Mark as Completed
+        </button>
+        {% endif %}
     </div>
     
     <div class="step-navigation">
-      {% if step_number > 1 %}
-        <a href="{{ url_for('onboarding_bp.view_step', step_number=step_number-1) }}" class="back-btn">← Previous Step</a>
-      {% else %}
-        <a href="{{ url_for('onboarding_bp.onboarding_home') }}" class="back-btn">← Back to Overview</a>
-      {% endif %}
-      
-      <button class="complete-btn" onclick="completeStep()">Mark as Complete</button>
+        {% if prev_step %}
+        <a href="{{ url_for('onboarding_bp.tutorial_step', step_id=prev_step.id) }}" class="step-nav-btn step-prev">
+            <span class="step-prev-icon">←</span> Previous: {{ prev_step.title }}
+        </a>
+        {% else %}
+        <div></div>
+        {% endif %}
+        
+        {% if next_step %}
+        <a href="{{ url_for('onboarding_bp.tutorial_step', step_id=next_step.id) }}" class="step-nav-btn step-next">
+            Next: {{ next_step.title }} <span class="step-next-icon">→</span>
+        </a>
+        {% else %}
+        <a href="{{ url_for('onboarding_bp.onboarding_complete') }}" class="step-nav-btn step-next">
+            Finish Tutorial <span class="step-next-icon">→</span>
+        </a>
+        {% endif %}
     </div>
-    
-    <div class="back-to-all">
-      <a href="{{ url_for('onboarding_bp.onboarding_home') }}">Back to all steps</a>
-    </div>
-  </div>
-  
-  <script>
-    function completeStep() {
-      fetch('{{ url_for("onboarding_bp.complete_step", step_number=step_number) }}', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      })
-      .then(response => response.json())
-      .then(data => {
-        if (data.success && data.redirect) {
-          window.location.href = data.redirect;
-        } else {
-          alert('Failed to complete step: ' + (data.error || 'Unknown error'));
-        }
-      })
-      .catch(error => {
-        console.error('Error:', error);
-        alert('An error occurred while completing the step.');
-      });
-    }
-  </script>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    {% if not completed %}
+    document.getElementById('complete-step').addEventListener('click', function() {
+        const button = this;
+        button.disabled = true;
+        button.innerHTML = 'Saving...';
+        
+        fetch('{{ url_for("onboarding_bp.complete_step", step_id=step.id) }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                button.innerHTML = '<span class="step-complete-icon">✓</span> Mark as Completed';
+                button.disabled = false;
+                alert('Error completing step. Please try again.');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            button.innerHTML = '<span class="step-complete-icon">✓</span> Mark as Completed';
+            button.disabled = false;
+            alert('Error completing step. Please try again.');
+        });
+    });
+    {% endif %}
+</script>
 {% endblock %}

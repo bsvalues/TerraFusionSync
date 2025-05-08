@@ -1,210 +1,304 @@
 {% extends "base.html" %}
 
-{% block title %}TerraFusion - Tutorial Completed{% endblock %}
+{% block title %}Onboarding Complete - TerraFusion{% endblock %}
 
 {% block styles %}
-  {{ super() }}
-  <style>
+{{ super() }}
+<style>
     .completion-container {
-      max-width: 800px;
-      margin: 0 auto;
-      padding: 2rem;
-      text-align: center;
+        padding: 3rem 0;
+        max-width: 800px;
+        margin: 0 auto;
+        text-align: center;
     }
     
     .completion-header {
-      margin-bottom: 2rem;
+        margin-bottom: 2rem;
     }
     
-    .completion-header h1 {
-      color: #2d3748;
-      margin-bottom: 1rem;
+    .completion-title {
+        font-size: 2.5rem;
+        font-weight: 700;
+        color: var(--dark-color);
+        margin-bottom: 1rem;
     }
     
-    .role-badge {
-      display: inline-block;
-      padding: 0.25rem 0.75rem;
-      border-radius: 1rem;
-      font-size: 0.875rem;
-      font-weight: 600;
-      margin-bottom: 1rem;
+    .completion-subtitle {
+        font-size: 1.5rem;
+        color: var(--text-secondary);
+        margin-bottom: 2rem;
     }
-    
-    .role-badge.ITAdmin { background-color: #4299e1; color: white; }
-    .role-badge.Assessor { background-color: #48bb78; color: white; }
-    .role-badge.Staff { background-color: #ed8936; color: white; }
-    .role-badge.Auditor { background-color: #9f7aea; color: white; }
-    .role-badge.default { background-color: #a0aec0; color: white; }
     
     .completion-image {
-      width: 300px;
-      height: auto;
-      margin: 0 auto 2rem;
-      display: block;
+        max-width: 300px;
+        margin: 0 auto 3rem;
+        display: block;
     }
     
     .completion-message {
-      font-size: 1.25rem;
-      line-height: 1.6;
-      color: #4a5568;
-      margin-bottom: 2rem;
+        background-color: white;
+        border-radius: 0.5rem;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+        padding: 2rem;
+        margin-bottom: 2rem;
+        border: 1px solid var(--border-color);
+        text-align: left;
     }
     
-    .next-steps {
-      margin: 2rem 0;
-      background-color: #f7fafc;
-      border-radius: 0.5rem;
-      padding: 1.5rem;
-      text-align: left;
-      border: 1px solid #e2e8f0;
+    .completion-message h3 {
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
+        color: var(--dark-color);
     }
     
-    .next-steps h2 {
-      color: #2d3748;
-      margin-bottom: 1rem;
-      font-size: 1.5rem;
+    .completion-message p {
+        font-size: 1rem;
+        line-height: 1.6;
+        margin-bottom: 1rem;
+        color: var(--text-color);
     }
     
-    .next-steps ul {
-      list-style-type: none;
-      padding: 0;
+    .completion-stats {
+        display: flex;
+        justify-content: center;
+        margin: 2rem 0;
+        gap: 2rem;
     }
     
-    .next-steps li {
-      margin-bottom: 1rem;
-      display: flex;
-      align-items: center;
+    .stat-item {
+        text-align: center;
     }
     
-    .next-steps li:before {
-      content: "→";
-      margin-right: 0.75rem;
-      color: #4299e1;
-      font-weight: bold;
+    .stat-value {
+        font-size: 2.5rem;
+        font-weight: 700;
+        color: var(--primary-color);
+        line-height: 1;
+        margin-bottom: 0.5rem;
     }
     
-    .buttons {
-      margin-top: 2rem;
-      display: flex;
-      justify-content: center;
-      gap: 1rem;
+    .stat-label {
+        font-size: 1rem;
+        color: var(--text-secondary);
     }
     
-    .dashboard-btn, .review-btn {
-      display: inline-block;
-      padding: 0.75rem 1.5rem;
-      border-radius: 0.25rem;
-      font-weight: 600;
-      text-align: center;
-      cursor: pointer;
-      font-size: 1rem;
+    .completion-actions {
+        margin-top: 2rem;
     }
     
-    .dashboard-btn {
-      background-color: #4299e1;
-      color: white;
+    .action-btn {
+        display: inline-block;
+        padding: 0.75rem 1.5rem;
+        font-size: 1.125rem;
+        font-weight: 600;
+        text-decoration: none;
+        border-radius: 0.25rem;
+        transition: all 0.2s;
     }
     
-    .review-btn {
-      background-color: #e2e8f0;
-      color: #4a5568;
+    .btn-primary {
+        background-color: var(--primary-color);
+        color: white;
     }
     
-    .certificate {
-      margin: 3rem auto 0;
-      max-width: 600px;
-      border: 2px solid #4299e1;
-      border-radius: 0.5rem;
-      padding: 2rem;
-      background-color: #f0f5fa;
-      position: relative;
+    .btn-primary:hover {
+        background-color: var(--primary-dark);
+        text-decoration: none;
+        color: white;
     }
     
-    .certificate:before {
-      content: "";
-      position: absolute;
-      top: 0.5rem;
-      left: 0.5rem;
-      right: 0.5rem;
-      bottom: 0.5rem;
-      border: 1px dashed #4299e1;
-      border-radius: 0.25rem;
-      pointer-events: none;
+    .resources-section {
+        margin-top: 3rem;
+        text-align: left;
     }
     
-    .certificate h2 {
-      margin-bottom: 1rem;
-      color: #2b6cb0;
+    .resources-title {
+        font-size: 1.5rem;
+        margin-bottom: 1.5rem;
+        color: var(--dark-color);
     }
     
-    .certificate-content {
-      margin-bottom: 1rem;
+    .resources-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 1.5rem;
     }
     
-    .certificate-date {
-      font-style: italic;
-      color: #718096;
-      font-size: 0.875rem;
+    .resource-item {
+        background-color: white;
+        border-radius: 0.5rem;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        padding: 1.5rem;
+        border: 1px solid var(--border-color);
+        transition: transform 0.2s, box-shadow 0.2s;
     }
-  </style>
+    
+    .resource-item:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+    
+    .resource-icon {
+        font-size: 2rem;
+        margin-bottom: 1rem;
+        color: var(--primary-color);
+    }
+    
+    .resource-title {
+        font-size: 1.125rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        color: var(--dark-color);
+    }
+    
+    .resource-description {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        margin-bottom: 1rem;
+    }
+    
+    .resource-link {
+        display: inline-flex;
+        align-items: center;
+        color: var(--primary-color);
+        font-weight: 500;
+        font-size: 0.875rem;
+    }
+    
+    .resource-link-icon {
+        margin-left: 0.25rem;
+    }
+    
+    @media (max-width: 768px) {
+        .completion-container {
+            padding: 2rem 0;
+        }
+        
+        .completion-title {
+            font-size: 2rem;
+        }
+        
+        .completion-subtitle {
+            font-size: 1.25rem;
+        }
+        
+        .completion-image {
+            max-width: 200px;
+        }
+        
+        .completion-stats {
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+        
+        .resources-list {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
 {% endblock %}
 
 {% block content %}
-  <div class="completion-container">
+<div class="completion-container">
     <div class="completion-header">
-      <h1>Tutorial Completed!</h1>
-      <span class="role-badge {{ role }}">{{ role }}</span>
-    </div>
-    
-    <img src="{{ url_for('static', filename='images/onboarding/' + image) }}" 
-         alt="Completion" class="completion-image">
-    
-    <p class="completion-message">{{ message }}</p>
-    
-    <div class="certificate">
-      <h2>Certificate of Completion</h2>
-      <div class="certificate-content">
-        This certifies that <strong>{{ user.full_name }}</strong> has successfully completed the 
-        TerraFusion SyncService onboarding tutorial for the <strong>{{ role }}</strong> role.
-      </div>
-      <div class="certificate-date">Completed on {{ onboarding.completion_date.strftime('%B %d, %Y') if onboarding.completion_date else 'Today' }}</div>
-    </div>
-    
-    <div class="next-steps">
-      <h2>Next Steps</h2>
-      <ul>
-        {% if role == 'ITAdmin' %}
-          <li>Explore the System Monitoring page to check system health</li>
-          <li>Review and manage user accounts</li>
-          <li>Configure system-wide settings and security policies</li>
-          <li>Set up automated backup schedules</li>
-        {% elif role == 'Assessor' %}
-          <li>Review pending assessment submissions</li>
-          <li>Access the approval queue for property assessments</li>
-          <li>Generate reports for completed assessments</li>
-          <li>Schedule recurring validation checks</li>
-        {% elif role == 'Staff' %}
-          <li>Upload your first property assessment data file</li>
-          <li>Create a new sync pair for data validation</li>
-          <li>Check the status of your submitted files</li>
-          <li>Set up notifications for sync operations</li>
-        {% elif role == 'Auditor' %}
-          <li>Access the audit trail to review recent system activities</li>
-          <li>Generate compliance reports for regulatory requirements</li>
-          <li>Review user activity patterns</li>
-          <li>Set up scheduled audit reports</li>
-        {% else %}
-          <li>Explore the dashboard to discover available features</li>
-          <li>Complete your user profile settings</li>
-          <li>Review the documentation for more information</li>
-          <li>Contact support if you have any questions</li>
+        <h1 class="completion-title">Tutorial Completed!</h1>
+        <p class="completion-subtitle">Congratulations, you've completed the {{ tutorial.title }}.</p>
+        
+        {% if tutorial.welcome_image %}
+        <img src="{{ url_for('static', filename='images/onboarding/' + tutorial.welcome_image) }}" alt="Completion" class="completion-image">
         {% endif %}
-      </ul>
     </div>
     
-    <div class="buttons">
-      <a href="{{ url_for('dashboard') }}" class="dashboard-btn">Go to Dashboard</a>
-      <a href="{{ url_for('onboarding_bp.onboarding_home') }}" class="review-btn">Review Tutorial</a>
+    <div class="completion-stats">
+        <div class="stat-item">
+            <div class="stat-value">{{ steps_completed }}</div>
+            <div class="stat-label">Steps Completed</div>
+        </div>
+        
+        <div class="stat-item">
+            <div class="stat-value">100%</div>
+            <div class="stat-label">Completion Rate</div>
+        </div>
     </div>
-  </div>
+    
+    <div class="completion-message">
+        <h3>Next Steps for {{ user.role }}</h3>
+        {% if user.role == 'ITAdmin' %}
+        <p>As an IT Administrator, you now have the knowledge to:</p>
+        <ul>
+            <li>Configure the connection to County Active Directory</li>
+            <li>Manage user roles and permissions</li>
+            <li>Monitor system health and performance</li>
+            <li>Troubleshoot sync operations</li>
+            <li>Set up data validation rules</li>
+        </ul>
+        {% elif user.role == 'Assessor' %}
+        <p>As a Property Assessor, you now have the knowledge to:</p>
+        <ul>
+            <li>Review property data changes</li>
+            <li>Approve valid data updates</li>
+            <li>Reject problematic data with explanations</li>
+            <li>Create new sync operations for property data</li>
+        </ul>
+        {% elif user.role == 'Staff' %}
+        <p>As a County Staff member, you now have the knowledge to:</p>
+        <ul>
+            <li>Upload property assessment data files</li>
+            <li>Monitor data validation results</li>
+            <li>Address validation errors and warnings</li>
+            <li>Track the status of sync operations</li>
+        </ul>
+        {% elif user.role == 'Auditor' %}
+        <p>As a County Auditor, you now have the knowledge to:</p>
+        <ul>
+            <li>Review the complete audit trail</li>
+            <li>Monitor data changes for compliance</li>
+            <li>Generate audit reports</li>
+            <li>Track user actions and approvals</li>
+        </ul>
+        {% else %}
+        <p>You're now ready to use the TerraFusion SyncService platform! Explore the dashboard to get started with your work.</p>
+        {% endif %}
+    </div>
+    
+    <div class="resources-section">
+        <h2 class="resources-title">Helpful Resources</h2>
+        
+        <div class="resources-list">
+            <div class="resource-item">
+                <div class="resource-icon">📚</div>
+                <h3 class="resource-title">User Guide</h3>
+                <p class="resource-description">Comprehensive documentation for all platform features.</p>
+                <a href="#" class="resource-link">View Documentation <span class="resource-link-icon">→</span></a>
+            </div>
+            
+            <div class="resource-item">
+                <div class="resource-icon">🎬</div>
+                <h3 class="resource-title">Video Tutorials</h3>
+                <p class="resource-description">Step-by-step videos for common tasks.</p>
+                <a href="#" class="resource-link">Watch Videos <span class="resource-link-icon">→</span></a>
+            </div>
+            
+            <div class="resource-item">
+                <div class="resource-icon">❓</div>
+                <h3 class="resource-title">Help Center</h3>
+                <p class="resource-description">Frequently asked questions and troubleshooting tips.</p>
+                <a href="#" class="resource-link">Get Help <span class="resource-link-icon">→</span></a>
+            </div>
+            
+            <div class="resource-item">
+                <div class="resource-icon">👥</div>
+                <h3 class="resource-title">Support</h3>
+                <p class="resource-description">Contact IT support for assistance with any issues.</p>
+                <a href="mailto:support@benton.wa.us" class="resource-link">Contact Support <span class="resource-link-icon">→</span></a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="completion-actions">
+        <form method="post" action="{{ url_for('onboarding_bp.onboarding_complete') }}">
+            <button type="submit" class="action-btn btn-primary">Go to Dashboard</button>
+        </form>
+    </div>
+</div>
 {% endblock %}
