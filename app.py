@@ -27,14 +27,19 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or "a secret key"
 
+# Configure ProxyFix for running behind Replit's proxy
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
 # Configure session cookies to ensure they're saved correctly
-app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
+app.config['SESSION_COOKIE_SECURE'] = True  # Enable secure cookies for HTTPS
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 hours in seconds
 app.config['SESSION_TYPE'] = 'filesystem'  # Store session data on the filesystem instead of just cookies
 app.config['SESSION_FILE_DIR'] = './flask_session'
 app.config['SESSION_PERMANENT'] = True
+app.config['SESSION_USE_SIGNER'] = True  # Sign the session cookie for additional security
 
 # Initialize Flask-Session
 from flask_session import Session
