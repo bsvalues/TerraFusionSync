@@ -458,8 +458,6 @@ def collect_syncservice_metrics():
         
         # Create a new SystemMetrics record
         metrics = SystemMetrics(
-            service="sync_service",
-            status="healthy",
             cpu_usage=system_data.get("cpu_usage_percent", 0.0),
             memory_usage=system_data.get("memory_usage_percent", 0.0),
             disk_usage=system_data.get("disk_usage_percent", 0.0),
