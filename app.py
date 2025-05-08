@@ -1662,6 +1662,28 @@ def new_sync_wizard():
     return render_template('new_sync_wizard.html', user=user)
 
 
+@app.route('/test-metrics')
+def test_metrics():
+    """Test endpoint to check metrics (development only)."""
+    metrics = db.session.query(SystemMetrics).order_by(
+        SystemMetrics.timestamp.desc()).limit(5).all()
+    result = []
+    for metric in metrics:
+        metric_dict = {
+            'id': metric.id,
+            'timestamp': metric.timestamp.isoformat(),
+            'cpu_usage': metric.cpu_usage,
+            'memory_usage': metric.memory_usage,
+            'disk_usage': metric.disk_usage,
+            'api_requests': metric.api_requests,
+            'active_syncs': metric.active_syncs,
+            'active_users': metric.active_users,
+            'average_response_time': metric.average_response_time,
+            'error_rate': metric.error_rate,
+        }
+        result.append(metric_dict)
+    return jsonify(result)
+
 @app.route('/dashboard/metrics')
 @requires_auth
 def metrics_dashboard():

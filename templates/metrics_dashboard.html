@@ -405,10 +405,12 @@
                                         <th>CPU Usage</th>
                                         <th>Memory Usage</th>
                                         <th>Disk Usage</th>
-                                        <th>Active Connections</th>
+                                        <th>API Requests</th>
+                                        <th>Active Syncs</th>
+                                        <th>Active Users</th>
                                         <th>Response Time</th>
-                                        <th>Error Count</th>
-                                        <th>Sync Operations</th>
+                                        <th>Error Rate</th>
+                                        <th>Health Status</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -418,10 +420,16 @@
                                         <td class="{% if metric.cpu_usage > 80 %}text-danger{% elif metric.cpu_usage > 60 %}text-warning{% endif %}">{{ metric.cpu_usage }}%</td>
                                         <td class="{% if metric.memory_usage > 80 %}text-danger{% elif metric.memory_usage > 60 %}text-warning{% endif %}">{{ metric.memory_usage }}%</td>
                                         <td class="{% if metric.disk_usage > 85 %}text-danger{% elif metric.disk_usage > 70 %}text-warning{% endif %}">{{ metric.disk_usage }}%</td>
-                                        <td>{{ metric.active_connections }}</td>
-                                        <td class="{% if metric.response_time > 2.0 %}text-danger{% elif metric.response_time > 1.0 %}text-warning{% endif %}">{{ metric.response_time }}s</td>
-                                        <td class="{% if metric.error_count > 5 %}text-danger{% elif metric.error_count > 0 %}text-warning{% endif %}">{{ metric.error_count }}</td>
-                                        <td>{{ metric.sync_operations_count }}</td>
+                                        <td>{{ metric.api_requests }}</td>
+                                        <td>{{ metric.active_syncs }}</td>
+                                        <td>{{ metric.active_users }}</td>
+                                        <td class="{% if metric.average_response_time > 2.0 %}text-danger{% elif metric.average_response_time > 1.0 %}text-warning{% endif %}">{{ metric.average_response_time }}s</td>
+                                        <td class="{% if metric.error_rate > 0.05 %}text-danger{% elif metric.error_rate > 0.01 %}text-warning{% endif %}">{{ (metric.error_rate * 100)|round(2) }}%</td>
+                                        <td>
+                                            <span class="badge {% if metric.syncservice_health == 'healthy' %}bg-success{% elif metric.syncservice_health == 'warning' %}bg-warning{% else %}bg-danger{% endif %}">
+                                                {{ metric.syncservice_health|title }}
+                                            </span>
+                                        </td>
                                     </tr>
                                     {% endfor %}
                                 </tbody>
@@ -444,14 +452,14 @@
         const timestamps = {{ system_metrics|map(attribute='timestamp')|list|tojson }};
         const cpuData = {{ system_metrics|map(attribute='cpu_usage')|list|tojson }};
         const memoryData = {{ system_metrics|map(attribute='memory_usage')|list|tojson }};
-        const responseTimeData = {{ system_metrics|map(attribute='response_time')|list|tojson }};
+        const responseTimeData = {{ system_metrics|map(attribute='average_response_time')|list|tojson }};
         const diskData = {{ system_metrics|map(attribute='disk_usage')|list|tojson }};
-        const activeConnectionsData = {{ system_metrics|map(attribute='active_connections')|list|tojson }};
-        const errorCountData = {{ system_metrics|map(attribute='error_count')|list|tojson }};
+        const apiRequestsData = {{ system_metrics|map(attribute='api_requests')|list|tojson }};
+        const errorRateData = {{ system_metrics|map(attribute='error_rate')|list|tojson }};
         
         // Collect advanced metrics if available
-        const syncOperationsCountData = {{ system_metrics|map(attribute='sync_operations_count')|list|tojson }};
-        const syncSuccessRateData = {{ system_metrics|map(attribute='sync_operations_success_rate')|list|tojson }};
+        const activeSyncsData = {{ system_metrics|map(attribute='active_syncs')|list|tojson }};
+        const activeUsersData = {{ system_metrics|map(attribute='active_users')|list|tojson }};
         
         // Reverse arrays to show chronological order (newest data last)
         timestamps.reverse();
@@ -459,10 +467,10 @@
         memoryData.reverse();
         responseTimeData.reverse();
         diskData.reverse();
-        activeConnectionsData.reverse();
-        errorCountData.reverse();
-        syncOperationsCountData.reverse();
-        syncSuccessRateData.reverse();
+        apiRequestsData.reverse();
+        errorRateData.reverse();
+        activeSyncsData.reverse();
+        activeUsersData.reverse();
         
         // Format timestamps for display
         const formattedLabels = timestamps.map(timestamp => {
