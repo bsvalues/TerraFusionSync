@@ -832,8 +832,23 @@ def login_page():
             logger.debug(f"Session after login: {session}")
             logger.debug(f"Session is permanent: {session.permanent}")
             
-            # Create response
+            # Create response with cookies explicitly set for Replit environment
             response = redirect(next_url)
+            session_id = session.sid if hasattr(session, 'sid') else None
+            if session_id:
+                # Explicitly set the session cookie with SameSite=None for Replit environment
+                # This is needed because Replit runs behind a proxy
+                response.set_cookie(
+                    app.config.get('SESSION_COOKIE_NAME', 'session'),
+                    session_id,
+                    max_age=app.config.get('PERMANENT_SESSION_LIFETIME').total_seconds() 
+                        if isinstance(app.config.get('PERMANENT_SESSION_LIFETIME'), timedelta) 
+                        else app.config.get('PERMANENT_SESSION_LIFETIME', 86400),
+                    path=app.config.get('SESSION_COOKIE_PATH', '/'),
+                    secure=True,
+                    httponly=True,
+                    samesite='None'
+                )
             logger.debug(f"Response headers: {response.headers}")
             return response
         elif username == 'assessor' and password == 'assessor123':
@@ -850,7 +865,24 @@ def login_page():
             logger.debug(f"Login successful for {username} with role Assessor")
             logger.debug(f"Session after login: {session}")
             
-            return redirect(next_url)
+            # Create response with cookies explicitly set for Replit environment
+            response = redirect(next_url)
+            session_id = session.sid if hasattr(session, 'sid') else None
+            if session_id:
+                # Explicitly set the session cookie with SameSite=None for Replit environment
+                response.set_cookie(
+                    app.config.get('SESSION_COOKIE_NAME', 'session'),
+                    session_id,
+                    max_age=app.config.get('PERMANENT_SESSION_LIFETIME').total_seconds() 
+                        if isinstance(app.config.get('PERMANENT_SESSION_LIFETIME'), timedelta) 
+                        else app.config.get('PERMANENT_SESSION_LIFETIME', 86400),
+                    path=app.config.get('SESSION_COOKIE_PATH', '/'),
+                    secure=True,
+                    httponly=True,
+                    samesite='None'
+                )
+            logger.debug(f"Response headers for Assessor: {response.headers}")
+            return response
         elif username == 'staff' and password == 'staff123':
             # Make the session permanent
             session.permanent = True
@@ -865,7 +897,24 @@ def login_page():
             logger.debug(f"Login successful for {username} with role Staff")
             logger.debug(f"Session after login: {session}")
             
-            return redirect(next_url)
+            # Create response with cookies explicitly set for Replit environment
+            response = redirect(next_url)
+            session_id = session.sid if hasattr(session, 'sid') else None
+            if session_id:
+                # Explicitly set the session cookie with SameSite=None for Replit environment
+                response.set_cookie(
+                    app.config.get('SESSION_COOKIE_NAME', 'session'),
+                    session_id,
+                    max_age=app.config.get('PERMANENT_SESSION_LIFETIME').total_seconds() 
+                        if isinstance(app.config.get('PERMANENT_SESSION_LIFETIME'), timedelta) 
+                        else app.config.get('PERMANENT_SESSION_LIFETIME', 86400),
+                    path=app.config.get('SESSION_COOKIE_PATH', '/'),
+                    secure=True,
+                    httponly=True,
+                    samesite='None'
+                )
+            logger.debug(f"Response headers for Staff: {response.headers}")
+            return response
         elif username == 'auditor' and password == 'auditor123':
             # Make the session permanent
             session.permanent = True
@@ -880,7 +929,24 @@ def login_page():
             logger.debug(f"Login successful for {username} with role Auditor")
             logger.debug(f"Session after login: {session}")
             
-            return redirect(next_url)
+            # Create response with cookies explicitly set for Replit environment
+            response = redirect(next_url)
+            session_id = session.sid if hasattr(session, 'sid') else None
+            if session_id:
+                # Explicitly set the session cookie with SameSite=None for Replit environment
+                response.set_cookie(
+                    app.config.get('SESSION_COOKIE_NAME', 'session'),
+                    session_id,
+                    max_age=app.config.get('PERMANENT_SESSION_LIFETIME').total_seconds() 
+                        if isinstance(app.config.get('PERMANENT_SESSION_LIFETIME'), timedelta) 
+                        else app.config.get('PERMANENT_SESSION_LIFETIME', 86400),
+                    path=app.config.get('SESSION_COOKIE_PATH', '/'),
+                    secure=True,
+                    httponly=True,
+                    samesite='None'
+                )
+            logger.debug(f"Response headers for Auditor: {response.headers}")
+            return response
         else:
             # Create audit log for failed login
             create_audit_log(
