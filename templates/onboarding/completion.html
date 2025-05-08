@@ -1,107 +1,210 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
 
-{% block title %}TerraFusion Onboarding - Completion{% endblock %}
+{% block title %}TerraFusion - Tutorial Completed{% endblock %}
+
+{% block styles %}
+  {{ super() }}
+  <style>
+    .completion-container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 2rem;
+      text-align: center;
+    }
+    
+    .completion-header {
+      margin-bottom: 2rem;
+    }
+    
+    .completion-header h1 {
+      color: #2d3748;
+      margin-bottom: 1rem;
+    }
+    
+    .role-badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 1rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+    }
+    
+    .role-badge.ITAdmin { background-color: #4299e1; color: white; }
+    .role-badge.Assessor { background-color: #48bb78; color: white; }
+    .role-badge.Staff { background-color: #ed8936; color: white; }
+    .role-badge.Auditor { background-color: #9f7aea; color: white; }
+    .role-badge.default { background-color: #a0aec0; color: white; }
+    
+    .completion-image {
+      width: 300px;
+      height: auto;
+      margin: 0 auto 2rem;
+      display: block;
+    }
+    
+    .completion-message {
+      font-size: 1.25rem;
+      line-height: 1.6;
+      color: #4a5568;
+      margin-bottom: 2rem;
+    }
+    
+    .next-steps {
+      margin: 2rem 0;
+      background-color: #f7fafc;
+      border-radius: 0.5rem;
+      padding: 1.5rem;
+      text-align: left;
+      border: 1px solid #e2e8f0;
+    }
+    
+    .next-steps h2 {
+      color: #2d3748;
+      margin-bottom: 1rem;
+      font-size: 1.5rem;
+    }
+    
+    .next-steps ul {
+      list-style-type: none;
+      padding: 0;
+    }
+    
+    .next-steps li {
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+    }
+    
+    .next-steps li:before {
+      content: "→";
+      margin-right: 0.75rem;
+      color: #4299e1;
+      font-weight: bold;
+    }
+    
+    .buttons {
+      margin-top: 2rem;
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+    }
+    
+    .dashboard-btn, .review-btn {
+      display: inline-block;
+      padding: 0.75rem 1.5rem;
+      border-radius: 0.25rem;
+      font-weight: 600;
+      text-align: center;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+    
+    .dashboard-btn {
+      background-color: #4299e1;
+      color: white;
+    }
+    
+    .review-btn {
+      background-color: #e2e8f0;
+      color: #4a5568;
+    }
+    
+    .certificate {
+      margin: 3rem auto 0;
+      max-width: 600px;
+      border: 2px solid #4299e1;
+      border-radius: 0.5rem;
+      padding: 2rem;
+      background-color: #f0f5fa;
+      position: relative;
+    }
+    
+    .certificate:before {
+      content: "";
+      position: absolute;
+      top: 0.5rem;
+      left: 0.5rem;
+      right: 0.5rem;
+      bottom: 0.5rem;
+      border: 1px dashed #4299e1;
+      border-radius: 0.25rem;
+      pointer-events: none;
+    }
+    
+    .certificate h2 {
+      margin-bottom: 1rem;
+      color: #2b6cb0;
+    }
+    
+    .certificate-content {
+      margin-bottom: 1rem;
+    }
+    
+    .certificate-date {
+      font-style: italic;
+      color: #718096;
+      font-size: 0.875rem;
+    }
+  </style>
+{% endblock %}
 
 {% block content %}
-<div class="container mx-auto p-4 max-w-4xl">
-    <div class="bg-white shadow-md rounded-lg p-6 mb-6">
-        <div class="flex items-center justify-between mb-6">
-            <h1 class="text-2xl font-bold text-gray-800">Tutorial Completion</h1>
-            <a href="{{ url_for('dashboard') }}" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                    <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
-                </svg>
-                Go to Dashboard
-            </a>
-        </div>
-
-        <div class="completion-section mb-8">
-            <div class="flex flex-col md:flex-row items-center">
-                <div class="md:w-1/2 p-4">
-                    <div class="bg-green-50 border-l-4 border-green-500 p-4 mb-6">
-                        <div class="flex">
-                            <div class="flex-shrink-0">
-                                <svg class="h-5 w-5 text-green-500" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-                                </svg>
-                            </div>
-                            <div class="ml-3">
-                                <p class="text-sm leading-5 text-green-700">
-                                    Completed on {{ onboarding.completion_date.strftime('%B %d, %Y') if onboarding.completion_date else 'Today' }}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <h2 class="text-xl font-semibold text-green-700 mb-4">Congratulations!</h2>
-                    <p class="text-gray-700 mb-4">{{ message }}</p>
-                    
-                    <div class="mt-6">
-                        <h3 class="text-lg font-medium text-gray-800 mb-3">What's Next?</h3>
-                        <ul class="list-disc pl-5 mb-4 text-gray-700 space-y-2">
-                            <li>Explore the dashboard and start using the features you've learned about</li>
-                            <li>Check out the documentation for more detailed information</li>
-                            <li>Contact your administrator if you have any questions</li>
-                        </ul>
-                    </div>
-                    
-                    {% if role == 'ITAdmin' %}
-                    <div class="mt-6 bg-blue-50 p-4 rounded-md">
-                        <h3 class="text-lg font-medium text-blue-800 mb-2">Administrator Resources</h3>
-                        <p class="text-gray-700 mb-3">As an IT Administrator, you have access to additional resources:</p>
-                        <ul class="list-disc pl-5 mb-3 text-gray-700 space-y-1">
-                            <li>System monitoring and configuration documentation</li>
-                            <li>Advanced security settings guide</li>
-                            <li>User management best practices</li>
-                        </ul>
-                        <p class="text-sm text-blue-600">These resources are available in the Admin section of the dashboard.</p>
-                    </div>
-                    {% endif %}
-                </div>
-                <div class="md:w-1/2 p-4 flex justify-center">
-                    <div class="certificate-container bg-gradient-to-r from-blue-50 to-green-50 p-6 border border-gray-200 rounded-lg shadow-sm">
-                        <div class="certificate text-center">
-                            <div class="text-xl font-bold text-green-800 mb-2">Certificate of Completion</div>
-                            <div class="text-gray-500 mb-4">TerraFusion SyncService</div>
-                            <div class="mb-3 text-gray-800">This certifies that</div>
-                            <div class="text-xl font-semibold text-gray-800 mb-3">{{ user.get('name', user.get('username', 'User')) }}</div>
-                            <div class="mb-3 text-gray-800">has successfully completed the</div>
-                            <div class="text-lg font-semibold text-blue-800 mb-4">
-                                {% if role == 'ITAdmin' %}
-                                IT Administrator Training
-                                {% elif role == 'Assessor' %}
-                                County Assessor Training
-                                {% elif role == 'Staff' %}
-                                County Staff Training
-                                {% elif role == 'Auditor' %}
-                                County Auditor Training
-                                {% else %}
-                                TerraFusion SyncService Training
-                                {% endif %}
-                            </div>
-                            <div class="mt-4 border-t pt-4 text-sm text-gray-600">
-                                {{ onboarding.completion_date.strftime('%B %d, %Y') if onboarding.completion_date else 'Today' }}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="flex justify-between items-center mt-8">
-            <a href="{{ url_for('onboarding_bp.onboarding_home') }}" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 flex items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                    <path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" />
-                </svg>
-                Back to Tutorial
-            </a>
-            <a href="{{ url_for('dashboard') }}" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center">
-                Get Started
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 ml-1" viewBox="0 0 20 20" fill="currentColor">
-                    <path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd" />
-                </svg>
-            </a>
-        </div>
+  <div class="completion-container">
+    <div class="completion-header">
+      <h1>Tutorial Completed!</h1>
+      <span class="role-badge {{ role }}">{{ role }}</span>
     </div>
-</div>
+    
+    <img src="{{ url_for('static', filename='images/onboarding/' + image) }}" 
+         alt="Completion" class="completion-image">
+    
+    <p class="completion-message">{{ message }}</p>
+    
+    <div class="certificate">
+      <h2>Certificate of Completion</h2>
+      <div class="certificate-content">
+        This certifies that <strong>{{ user.full_name }}</strong> has successfully completed the 
+        TerraFusion SyncService onboarding tutorial for the <strong>{{ role }}</strong> role.
+      </div>
+      <div class="certificate-date">Completed on {{ onboarding.completion_date.strftime('%B %d, %Y') if onboarding.completion_date else 'Today' }}</div>
+    </div>
+    
+    <div class="next-steps">
+      <h2>Next Steps</h2>
+      <ul>
+        {% if role == 'ITAdmin' %}
+          <li>Explore the System Monitoring page to check system health</li>
+          <li>Review and manage user accounts</li>
+          <li>Configure system-wide settings and security policies</li>
+          <li>Set up automated backup schedules</li>
+        {% elif role == 'Assessor' %}
+          <li>Review pending assessment submissions</li>
+          <li>Access the approval queue for property assessments</li>
+          <li>Generate reports for completed assessments</li>
+          <li>Schedule recurring validation checks</li>
+        {% elif role == 'Staff' %}
+          <li>Upload your first property assessment data file</li>
+          <li>Create a new sync pair for data validation</li>
+          <li>Check the status of your submitted files</li>
+          <li>Set up notifications for sync operations</li>
+        {% elif role == 'Auditor' %}
+          <li>Access the audit trail to review recent system activities</li>
+          <li>Generate compliance reports for regulatory requirements</li>
+          <li>Review user activity patterns</li>
+          <li>Set up scheduled audit reports</li>
+        {% else %}
+          <li>Explore the dashboard to discover available features</li>
+          <li>Complete your user profile settings</li>
+          <li>Review the documentation for more information</li>
+          <li>Contact support if you have any questions</li>
+        {% endif %}
+      </ul>
+    </div>
+    
+    <div class="buttons">
+      <a href="{{ url_for('dashboard') }}" class="dashboard-btn">Go to Dashboard</a>
+      <a href="{{ url_for('onboarding_bp.onboarding_home') }}" class="review-btn">Review Tutorial</a>
+    </div>
+  </div>
 {% endblock %}

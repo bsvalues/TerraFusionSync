@@ -1,42 +1,42 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg width="300" height="200" xmlns="http://www.w3.org/2000/svg">
+<svg width="400" height="300" viewBox="0 0 400 300" fill="none" xmlns="http://www.w3.org/2000/svg">
   <!-- Background -->
-  <rect width="300" height="200" fill="#f0f9ff" rx="15" ry="15"/>
+  <rect width="400" height="300" rx="10" fill="#EBF8FF"/>
   
   <!-- Server Rack -->
-  <rect x="50" y="50" width="80" height="120" fill="#2563eb" rx="5" ry="5"/>
-  <rect x="55" y="60" width="70" height="10" fill="#bfdbfe" rx="2" ry="2"/>
-  <rect x="55" y="80" width="70" height="10" fill="#bfdbfe" rx="2" ry="2"/>
-  <rect x="55" y="100" width="70" height="10" fill="#bfdbfe" rx="2" ry="2"/>
-  <rect x="55" y="120" width="70" height="10" fill="#bfdbfe" rx="2" ry="2"/>
-  <rect x="55" y="140" width="70" height="10" fill="#bfdbfe" rx="2" ry="2"/>
+  <rect x="140" y="80" width="120" height="160" rx="5" fill="#4A5568" stroke="#2D3748" stroke-width="2"/>
   
-  <!-- Admin Figure -->
-  <circle cx="200" cy="100" r="30" fill="#3b82f6"/>
-  <circle cx="200" cy="80" r="15" fill="#eff6ff"/>
-  <rect x="185" y="95" width="30" height="40" fill="#eff6ff" rx="5" ry="5"/>
+  <!-- Server Units -->
+  <rect x="150" y="95" width="100" height="25" rx="2" fill="#A0AEC0" stroke="#718096" stroke-width="1"/>
+  <rect x="150" y="130" width="100" height="25" rx="2" fill="#A0AEC0" stroke="#718096" stroke-width="1"/>
+  <rect x="150" y="165" width="100" height="25" rx="2" fill="#A0AEC0" stroke="#718096" stroke-width="1"/>
+  <rect x="150" y="200" width="100" height="25" rx="2" fill="#A0AEC0" stroke="#718096" stroke-width="1"/>
+  
+  <!-- Status Lights -->
+  <circle cx="160" cy="105" r="4" fill="#48BB78"/>
+  <circle cx="175" cy="105" r="4" fill="#4299E1"/>
+  <circle cx="160" cy="140" r="4" fill="#48BB78"/>
+  <circle cx="175" cy="140" r="4" fill="#4299E1"/>
+  <circle cx="160" cy="175" r="4" fill="#ECC94B"/>
+  <circle cx="175" cy="175" r="4" fill="#4299E1"/>
+  <circle cx="160" cy="210" r="4" fill="#48BB78"/>
+  <circle cx="175" cy="210" r="4" fill="#4299E1"/>
+  
+  <!-- Network Lines -->
+  <line x1="265" y1="100" x2="300" y2="100" stroke="#4299E1" stroke-width="2" stroke-dasharray="4 2"/>
+  <line x1="265" y1="140" x2="300" y2="140" stroke="#4299E1" stroke-width="2" stroke-dasharray="4 2"/>
+  <line x1="265" y1="180" x2="300" y2="180" stroke="#4299E1" stroke-width="2" stroke-dasharray="4 2"/>
+  <line x1="265" y1="220" x2="300" y2="220" stroke="#4299E1" stroke-width="2" stroke-dasharray="4 2"/>
+  
+  <!-- Cloud Symbol -->
+  <path d="M310 100 C310 90 320 80 330 80 C345 80 350 95 350 95 C350 95 365 90 375 100 C385 110 380 125 380 125 C380 125 390 130 390 140 C390 150 380 160 370 160 C370 160 370 170 360 175 C350 180 340 175 340 175 C340 175 335 190 320 190 C305 190 300 175 300 175 C300 175 290 180 280 175 C270 170 270 160 270 160 L310 160 L310 100 Z" fill="#BEE3F8" stroke="#4299E1" stroke-width="2"/>
   
   <!-- Gear Icons -->
-  <g transform="translate(160, 60) scale(0.8)">
-    <circle cx="0" cy="0" r="12" fill="#1e40af"/>
-    <path d="M0,-18 L0,-12 M0,12 L0,18 M-12.7,-12.7 L-8.5,-8.5 M12.7,-12.7 L8.5,-8.5 M-18,0 L-12,0 M12,0 L18,0 M-12.7,12.7 L-8.5,8.5 M12.7,12.7 L8.5,8.5" stroke="#1e40af" stroke-width="4" stroke-linecap="round"/>
-  </g>
+  <path d="M125,50 L135,50 L137,60 C139,60.5 141,61.5 143,62.5 L150,55 L157,62 L150,70 C151,72 152,74 152.5,76 L162,78 L162,88 L152,90 C151.5,92 150.5,94 149.5,96 L157,103 L150,110 L143,102.5 C141,103.5 139,104.5 137,105 L135,115 L125,115 L123,105 C121,104.5 119,103.5 117,102.5 L110,110 L103,103 L110.5,96 C109.5,94 108.5,92 108,90 L98,88 L98,78 L108,76 C108.5,74 109.5,72 110.5,70 L103,62 L110,55 L117,62.5 C119,61.5 121,60.5 123,60 L125,50 Z" fill="#4299E1" stroke="#2B6CB0" stroke-width="2"/>
+  <circle cx="130" cy="82.5" r="15" fill="#BEE3F8" stroke="#4299E1" stroke-width="2"/>
+  <circle cx="130" cy="82.5" r="5" fill="#2B6CB0"/>
   
-  <g transform="translate(240, 140) scale(0.6)">
-    <circle cx="0" cy="0" r="12" fill="#1e40af"/>
-    <path d="M0,-18 L0,-12 M0,12 L0,18 M-12.7,-12.7 L-8.5,-8.5 M12.7,-12.7 L8.5,-8.5 M-18,0 L-12,0 M12,0 L18,0 M-12.7,12.7 L-8.5,8.5 M12.7,12.7 L8.5,8.5" stroke="#1e40af" stroke-width="4" stroke-linecap="round"/>
-  </g>
-  
-  <!-- Connection Lines -->
-  <line x1="140" y1="100" x2="170" y2="100" stroke="#64748b" stroke-width="2" stroke-dasharray="5,3"/>
-  <line x1="230" y1="100" x2="260" y2="100" stroke="#64748b" stroke-width="2" stroke-dasharray="5,3"/>
-  
-  <g transform="translate(260, 100)">
-    <circle cx="0" cy="0" r="15" fill="#dbeafe"/>
-    <circle cx="0" cy="0" r="7" fill="#3b82f6"/>
-  </g>
-  
-  <!-- Text -->
-  <text x="150" y="30" font-family="Arial" font-size="16" font-weight="bold" fill="#1e40af">IT Administrator</text>
-  <text x="150" y="180" font-family="Arial" font-size="14" fill="#475569">System Control</text>
+  <!-- Title -->
+  <text x="200" y="40" font-family="Arial, sans-serif" font-size="24" font-weight="bold" text-anchor="middle" fill="#2B6CB0">IT Admin</text>
+  <text x="200" y="260" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="#2D3748">System Management</text>
 </svg>

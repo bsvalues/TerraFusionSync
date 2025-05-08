@@ -1,21 +1,10 @@
 """
-TerraFusion SyncService models package.
+TerraFusion SyncService - Models Package
 
-This package contains the database models for the TerraFusion SyncService.
+This package provides database models for the TerraFusion SyncService platform.
 """
 
-from .base import Base
-from .sync_pair import SyncPair
-from .sync_operation import SyncOperation
-from .audit import AuditEntry
-from .system_metrics import SystemMetrics
-from .onboarding import UserOnboarding
-
-__all__ = [
-    'Base',
-    'SyncPair',
-    'SyncOperation',
-    'AuditEntry',
-    'SystemMetrics',
-    'UserOnboarding',
-]
+# Import models for easier access
+from .user import User
+from .onboarding import UserOnboarding, OnboardingEvent
+from .sync import SyncPair, SyncOperation, AuditEntry, SystemMetrics

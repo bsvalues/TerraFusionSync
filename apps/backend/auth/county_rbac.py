@@ -1,608 +1,372 @@
 """
-County RBAC Authentication Module for TerraFusion SyncService.
+TerraFusion SyncService - County RBAC Authentication
 
-This module provides role-based access control (RBAC) authentication tailored for 
-County government usage, including:
+This module provides Role-Based Access Control authentication for the
+County Property Assessment system, including:
 
-1. Role definitions (Assessor, Staff, ITAdmin, Auditor)
-2. Permission sets for each role
-3. Integration with County Active Directory
-4. IP-based access restrictions (.benton.wa.us network range)
-5. Audit logging for all authentication activities
+1. LDAP integration with County Active Directory
+2. Role-specific permissions and access controls
+3. Authentication decorators for securing routes
+4. IP-based restriction to County networks
 """
 
-import os
-import json
 import logging
 import functools
-from datetime import datetime, timedelta
-from typing import Dict, List, Any, Callable, Optional, Set, Union
+from flask import request, redirect, url_for, session, g, flash, current_app
 
-from flask import Blueprint, request, jsonify, session, current_app, redirect, url_for, flash, render_template
-
-# Configure logging
+# Configure logger
 logger = logging.getLogger(__name__)
 
-# Mock AD integration with local file for development/testing
-# In production, this would use LDAP to connect to the County's Active Directory
-USERS_FILE = "county_users.json"
-COUNTY_RBAC_AVAILABLE = True
-
-# Role Definitions
-ROLE_PERMISSIONS = {
-    "Assessor": {
-        "permissions": [
-            "view_dashboard", 
-            "view_sync_operations",
-            "approve_sync_operations",
-            "view_reports",
-            "view_sync_pairs",
-            "execute_sync"
-        ],
-        "description": "Property assessors who can view and approve sync operations"
+# Role definitions
+ROLES = {
+    'ITAdmin': {
+        'description': 'IT Administrator with full system access',
+        'permissions': ['view', 'edit', 'approve', 'admin', 'system', 'audit']
     },
-    "Staff": {
-        "permissions": [
-            "view_dashboard", 
-            "view_sync_operations",
-            "create_sync_operations",
-            "view_sync_pairs",
-            "create_sync_pairs",
-            "edit_sync_pairs",
-            "execute_sync",
-            "view_reports"
-        ],
-        "description": "Staff members who can create and manage sync operations"
+    'Assessor': {
+        'description': 'Property Assessor with approval rights',
+        'permissions': ['view', 'approve']
     },
-    "ITAdmin": {
-        "permissions": [
-            "view_dashboard",
-            "view_sync_operations",
-            "create_sync_operations",
-            "view_sync_pairs",
-            "create_sync_pairs",
-            "edit_sync_pairs",
-            "manage_sync_pairs",
-            "execute_sync",
-            "view_reports",
-            "approve_sync_operations",
-            "rollback_operations",
-            "manage_users",
-            "view_audit_logs",
-            "edit_system_settings"
-        ],
-        "description": "IT administrators with full system access"
+    'Staff': {
+        'description': 'Staff member with upload capabilities',
+        'permissions': ['view', 'upload']
     },
-    "Auditor": {
-        "permissions": [
-            "view_dashboard",
-            "view_sync_operations",
-            "view_sync_pairs",
-            "view_reports",
-            "view_audit_logs"
-        ],
-        "description": "Auditors who can only view operations and reports"
+    'Auditor': {
+        'description': 'Auditor with view-only access',
+        'permissions': ['view', 'audit']
     }
 }
 
-# Map from Active Directory groups to application roles
-# This mapping allows us to determine which application roles
-# to assign based on the AD groups a user belongs to
-AD_GROUP_TO_ROLE_MAP = {
-    # IT Department
-    "IT Administrators": "ITAdmin",
-    "SysAdmins": "ITAdmin",
-    "Domain Admins": "ITAdmin",
-    
-    # Assessor's Office
-    "Property Assessors": "Assessor",
-    "Assessment Managers": "Assessor",
-    "Assessment Supervisors": "Assessor",
-    
-    # Staff groups
-    "Property Staff": "Staff",
-    "Assessment Clerks": "Staff",
-    "Data Entry": "Staff",
-    
-    # Auditor groups
-    "County Auditors": "Auditor",
-    "Financial Oversight": "Auditor",
-    "Compliance Officers": "Auditor"
+# LDAP configuration
+COUNTY_LDAP_GROUPS = {
+    'CN=IT Administrators,OU=Groups,DC=benton,DC=wa,DC=us': 'ITAdmin',
+    'CN=Property Assessors,OU=Groups,DC=benton,DC=wa,DC=us': 'Assessor',
+    'CN=Assessment Staff,OU=Groups,DC=benton,DC=wa,DC=us': 'Staff',
+    'CN=County Auditors,OU=Groups,DC=benton,DC=wa,DC=us': 'Auditor'
 }
 
-def map_ad_groups_to_roles(ad_groups: List[str]) -> List[str]:
+def requires_auth(f):
     """
-    Maps Active Directory groups to application roles.
+    Decorator to require authentication for a route.
+    
+    If the user is not authenticated, redirects to the login page.
+    """
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        # Check if user is logged in
+        if not session.get('user_id'):
+            flash('Please log in to access this page.', 'warning')
+            return redirect(url_for('login'))
+        
+        # Set current user in g for easy access
+        from apps.backend.models.user import User
+        user = User.query.get(session['user_id'])
+        if not user:
+            session.clear()
+            flash('User not found. Please log in again.', 'error')
+            return redirect(url_for('login'))
+        
+        # Check if user is active
+        if not user.is_active:
+            session.clear()
+            flash('Your account has been deactivated. Please contact support.', 'error')
+            return redirect(url_for('login'))
+        
+        # IP restriction check (only benton.wa.us networks)
+        if current_app.config.get('ENABLE_IP_RESTRICTION'):
+            client_ip = request.remote_addr
+            allowed_networks = current_app.config.get('ALLOWED_NETWORKS', ['127.0.0.1'])
+            if not any(ip in client_ip for ip in allowed_networks):
+                logger.warning(f"Access denied for IP {client_ip} to {request.path}")
+                flash('Access is only allowed from County networks.', 'error')
+                return redirect(url_for('login'))
+        
+        # Set current user in g
+        g.user = user
+        
+        return f(*args, **kwargs)
+    return decorated
+
+def requires_role(role):
+    """
+    Decorator to require a specific role for a route.
     
     Args:
-        ad_groups: List of Active Directory group names
-        
-    Returns:
-        List of application roles
-    """
-    roles = set()
-    
-    for group in ad_groups:
-        if group in AD_GROUP_TO_ROLE_MAP:
-            roles.add(AD_GROUP_TO_ROLE_MAP[group])
-    
-    # If no mappable roles found, use a restricted default
-    if not roles:
-        logger.warning(f"No role mappings found for AD groups: {ad_groups}")
-    
-    return list(roles)
-
-# County IP range (for development, allow all)
-COUNTY_IP_RANGES = [
-    "192.168.0.0/16",  # Example: Development environment
-    "10.0.0.0/8",      # Example: County network
-    "127.0.0.0/8"      # Localhost for testing
-]
-
-def load_mock_users():
-    """
-    Load mock user data.
-    In production, this would query Active Directory.
-    """
-    try:
-        if os.path.exists(USERS_FILE):
-            with open(USERS_FILE, "r") as f:
-                return json.load(f)
-        else:
-            # Create default users if file doesn't exist
-            default_users = {
-                "users": [
-                    {
-                        "username": "admin",
-                        "password": "admin123",  # In production, this would be securely hashed
-                        "email": "admin@county.gov",
-                        "full_name": "Admin User",
-                        "roles": ["ITAdmin"],
-                        "department": "IT",
-                        "active": True
-                    },
-                    {
-                        "username": "assessor",
-                        "password": "assessor123",
-                        "email": "assessor@county.gov",
-                        "full_name": "Property Assessor",
-                        "roles": ["Assessor"],
-                        "department": "Property Assessment",
-                        "active": True
-                    },
-                    {
-                        "username": "staff",
-                        "password": "staff123",
-                        "email": "staff@county.gov",
-                        "full_name": "Staff Member",
-                        "roles": ["Staff"],
-                        "department": "Property Assessment",
-                        "active": True
-                    },
-                    {
-                        "username": "auditor",
-                        "password": "auditor123",
-                        "email": "auditor@county.gov",
-                        "full_name": "County Auditor",
-                        "roles": ["Auditor"],
-                        "department": "Auditing",
-                        "active": True
-                    }
-                ]
-            }
-            with open(USERS_FILE, "w") as f:
-                json.dump(default_users, f, indent=4)
-            return default_users
-    except Exception as e:
-        logger.error(f"Error loading user data: {e}")
-        return {"users": []}
-
-# Load mock users
-mock_users = load_mock_users()
-
-def authenticate_user(username: str, password: str) -> Optional[Dict]:
-    """
-    Authenticate a user against the County Active Directory.
-    Uses LDAP to authenticate against the County AD server.
-    
-    Args:
-        username: The username to authenticate
-        password: The password to authenticate
-        
-    Returns:
-        User data dictionary if authenticated, None otherwise
-    """
-    # Get LDAP configuration from environment variables
-    ldap_server = os.environ.get('COUNTY_LDAP_SERVER', '')
-    ldap_base_dn = os.environ.get('COUNTY_LDAP_BASE_DN', '')
-    ldap_domain = os.environ.get('COUNTY_LDAP_DOMAIN', '')
-    
-    # Check if we're in development mode (no LDAP server configured)
-    if not ldap_server or not ldap_base_dn:
-        logger.warning("LDAP not configured. Using mock authentication.")
-        # Fall back to mock users for development
-        for user in mock_users.get("users", []):
-            if user.get("username") == username and user.get("password") == password and user.get("active", False):
-                # Create a clean user object to return (omit password)
-                return {
-                    "id": f"user-{username}",
-                    "username": username,
-                    "email": user.get("email"),
-                    "full_name": user.get("full_name"),
-                    "roles": user.get("roles", []),
-                    "department": user.get("department"),
-                    "permissions": get_user_permissions(user.get("roles", []))
-                }
-        return None
-    
-    try:
-        import ldap
-        
-        # Format user principal name
-        user_dn = f"{username}@{ldap_domain}" if ldap_domain else username
-        
-        # Initialize LDAP connection
-        conn = ldap.initialize(ldap_server)
-        conn.protocol_version = ldap.VERSION3
-        conn.set_option(ldap.OPT_REFERRALS, 0)
-        
-        # Bind with the provided credentials
-        conn.simple_bind_s(user_dn, password)
-        
-        # Search for the user to get their details
-        search_filter = f"(sAMAccountName={username})"
-        attrs = ['mail', 'displayName', 'department', 'memberOf']
-        
-        result = conn.search_s(ldap_base_dn, ldap.SCOPE_SUBTREE, search_filter, attrs)
-        
-        # No user found
-        if not result or not result[0][1]:
-            logger.warning(f"User {username} authenticated but not found in directory.")
-            return None
-        
-        # Extract user attributes
-        user_attrs = result[0][1]
-        email = user_attrs.get('mail', [b''])[0].decode('utf-8')
-        full_name = user_attrs.get('displayName', [b''])[0].decode('utf-8')
-        department = user_attrs.get('department', [b''])[0].decode('utf-8')
-        
-        # Extract AD groups
-        ad_groups = []
-        for group_dn in user_attrs.get('memberOf', []):
-            group_name = group_dn.decode('utf-8').split(',')[0].split('=')[1]
-            ad_groups.append(group_name)
-        
-        # Map AD groups to application roles
-        roles = map_ad_groups_to_roles(ad_groups)
-        
-        # Close the connection
-        conn.unbind_s()
-        
-        return {
-            "id": f"ad-{username}",
-            "username": username,
-            "email": email,
-            "full_name": full_name,
-            "roles": roles,
-            "department": department,
-            "permissions": get_user_permissions(roles)
-        }
-    except ldap.INVALID_CREDENTIALS:
-        logger.warning(f"Invalid credentials for user {username}")
-        return None
-    except Exception as e:
-        logger.error(f"LDAP authentication error for {username}: {str(e)}")
-        return None
-
-def get_user_permissions(roles: List[str]) -> List[str]:
-    """
-    Get the list of permissions for a user based on their roles.
-    
-    Args:
-        roles: List of role names
-        
-    Returns:
-        List of permission strings
-    """
-    permissions = set()
-    for role in roles:
-        if role in ROLE_PERMISSIONS:
-            role_perms = ROLE_PERMISSIONS[role].get("permissions", [])
-            permissions.update(role_perms)
-    # Convert set to list to ensure JSON serializability
-    return list(permissions)
-
-def check_ip_allowed(ip_address: str) -> bool:
-    """
-    Check if an IP address is allowed to access the system.
-    In production, this would check if the IP is in the County's network range.
-    
-    Args:
-        ip_address: The IP address to check
-        
-    Returns:
-        True if allowed, False otherwise
-    """
-    # For development, allow all IPs
-    # In production, this would implement proper IP range checking
-    return True
-
-def check_permission(permission: str) -> bool:
-    """
-    Check if the current user has a specific permission.
-    
-    Args:
-        permission: The permission to check
-        
-    Returns:
-        True if the user has the permission, False otherwise
-    """
-    if 'user' not in session:
-        return False
-    
-    user = session['user']
-    
-    # ITAdmin role has all permissions
-    if "ITAdmin" in user.get('roles', []):
-        return True
-    
-    # Check specific permissions - use a list instead of a set
-    user_permissions = []
-    for role in user.get('roles', []):
-        role_perms = ROLE_PERMISSIONS.get(role, {}).get("permissions", [])
-        user_permissions.extend(role_perms)
-    
-    return permission in user_permissions
-
-def requires_county_permission(permission: str):
-    """
-    Decorator to require a specific county permission for a route.
-    
-    Args:
-        permission: The permission required
+        role: Required role(s) as string or list
     """
     def decorator(f):
         @functools.wraps(f)
-        def wrapped(*args, **kwargs):
-            if not check_permission(permission):
-                if request.content_type == 'application/json':
-                    return jsonify({
-                        'error': 'Permission denied',
-                        'message': f'This action requires the {permission} permission'
-                    }), 403
-                else:
-                    flash(f'Permission denied: This page requires the {permission} permission', 'error')
-                    return redirect(url_for('county_auth_bp.login'))
+        @requires_auth
+        def decorated(*args, **kwargs):
+            if not g.user:
+                return redirect(url_for('login'))
+            
+            # Convert role to list if it's a string
+            required_roles = [role] if isinstance(role, str) else role
+            
+            # Check if user has any of the required roles
+            if g.user.role not in required_roles:
+                flash(f'Access denied. This page requires {" or ".join(required_roles)} role.', 'error')
+                return redirect(url_for('dashboard'))
+            
             return f(*args, **kwargs)
-        return wrapped
+        return decorated
     return decorator
 
-def create_county_auth_blueprint():
+def requires_permission(permission):
     """
-    Create and configure the County authentication blueprint.
+    Decorator to require a specific permission for a route.
     
-    Returns:
-        Flask Blueprint for County authentication
+    Args:
+        permission: Required permission(s) as string or list
     """
-    county_auth_bp = Blueprint('county_auth_bp', __name__, url_prefix='/county-auth')
-    
-    @county_auth_bp.route('/login', methods=['GET', 'POST'])
-    def login():
-        """
-        Handle County login requests.
-        """
-        if request.method == 'POST':
-            data = request.form if request.form else request.get_json() or {}
-            username = data.get('username')
-            password = data.get('password')
+    def decorator(f):
+        @functools.wraps(f)
+        @requires_auth
+        def decorated(*args, **kwargs):
+            if not g.user:
+                return redirect(url_for('login'))
             
-            if not username or not password:
-                if request.content_type == 'application/json':
-                    return jsonify({'error': 'Username and password required'}), 400
-                else:
-                    flash('Username and password required', 'error')
-                    return redirect(url_for('county_auth_bp.login'))
+            # Convert permission to list if it's a string
+            required_permissions = [permission] if isinstance(permission, str) else permission
             
-            # Check IP restrictions
-            ip_address = request.remote_addr
-            if not check_ip_allowed(ip_address):
-                logger.warning(f"Login attempt from unauthorized IP: {ip_address}")
-                if request.content_type == 'application/json':
-                    return jsonify({'error': 'Access denied from this network'}), 403
-                else:
-                    flash('Access denied from this network', 'error')
-                    return redirect(url_for('county_auth_bp.login'))
+            # Get user's permissions based on role
+            user_permissions = ROLES.get(g.user.role, {}).get('permissions', [])
             
-            # Authenticate user
-            user = authenticate_user(username, password)
-            if user:
-                # Create session
-                session['user'] = user
-                session['authenticated'] = True
-                
-                # Create JWT token for API access
-                expiry = datetime.utcnow() + timedelta(hours=8)  # 8 hour token validity
-                payload = {
-                    'sub': user['id'],
-                    'username': user['username'],
-                    'email': user['email'],
-                    'roles': user['roles'],
-                    'exp': expiry
-                }
-                
-                import jwt
-                token = jwt.encode(payload, current_app.secret_key, algorithm='HS256')
-                session['token'] = token
-                
-                # Create audit log
-                logger.info(f"County user login: {username} from {ip_address}")
-                
-                # Redirect or return JSON
-                if request.content_type == 'application/json':
-                    return jsonify({
-                        'success': True,
-                        'token': token,
-                        'user': user
-                    })
-                else:
-                    next_url = request.args.get('next') or url_for('dashboard')
-                    flash(f'Welcome {user["full_name"]}', 'success')
-                    return redirect(next_url)
-            else:
-                # Failed authentication
-                logger.warning(f"Failed county login attempt: {username} from {ip_address}")
-                
-                if request.content_type == 'application/json':
-                    return jsonify({'error': 'Invalid credentials'}), 401
-                else:
-                    flash('Invalid username or password', 'error')
-                    return redirect(url_for('county_auth_bp.login'))
-        else:
-            # GET request - show login form
-            return render_template('county_login.html')
-    
-    @county_auth_bp.route('/logout', methods=['GET', 'POST'])
-    def logout():
-        """
-        Handle County logout requests.
-        """
-        username = session.get('user', {}).get('username', 'Unknown')
-        ip_address = request.remote_addr
-        
-        # Clear session
-        session.clear()
-        
-        # Log the logout
-        logger.info(f"County user logout: {username} from {ip_address}")
-        
-        if request.content_type == 'application/json':
-            return jsonify({'success': True, 'message': 'Logged out successfully'})
-        else:
-            flash('You have been logged out', 'info')
-            return redirect(url_for('county_auth_bp.login'))
-    
-    @county_auth_bp.route('/roles', methods=['GET'])
-    @requires_county_permission('manage_users')
-    def list_roles():
-        """
-        List available roles and their permissions.
-        Only available to users with manage_users permission.
-        """
-        return jsonify({'roles': ROLE_PERMISSIONS})
-    
-    return county_auth_bp
+            # Check if user has any of the required permissions
+            if not any(perm in user_permissions for perm in required_permissions):
+                flash(f'Access denied. You do not have the required permissions.', 'error')
+                return redirect(url_for('dashboard'))
+            
+            return f(*args, **kwargs)
+        return decorated
+    return decorator
 
-def init_county_auth_routes(app):
+def validate_ldap_user(username, password):
     """
-    Initialize County authentication routes.
+    Validate user against County LDAP server.
+    
+    Args:
+        username: Username to authenticate
+        password: Password to authenticate
+        
+    Returns:
+        Tuple (success, user_data) where user_data contains role and other info
+    """
+    try:
+        # Check if LDAP is configured
+        if not current_app.config.get('COUNTY_LDAP_SERVER'):
+            logger.warning("LDAP not configured, falling back to mock authentication")
+            return _mock_authenticate(username, password)
+        
+        import ldap
+        
+        # LDAP configuration
+        ldap_server = current_app.config.get('COUNTY_LDAP_SERVER')
+        base_dn = current_app.config.get('COUNTY_LDAP_BASE_DN')
+        domain = current_app.config.get('COUNTY_LDAP_DOMAIN')
+        
+        # Connect to LDAP server
+        ldap_client = ldap.initialize(f"ldap://{ldap_server}")
+        ldap_client.set_option(ldap.OPT_REFERRALS, 0)
+        
+        # Build user DN
+        user_dn = f"{username}@{domain}" if '@' not in username else username
+        
+        # Attempt to bind with user credentials
+        ldap_client.simple_bind_s(user_dn, password)
+        
+        # Search for user details
+        search_filter = f"(sAMAccountName={username})"
+        attributes = ['memberOf', 'mail', 'givenName', 'sn']
+        result = ldap_client.search_s(base_dn, ldap.SCOPE_SUBTREE, search_filter, attributes)
+        
+        if not result:
+            logger.warning(f"User {username} authenticated but not found in directory")
+            return False, None
+        
+        # Extract user data
+        user_data = result[0][1]
+        groups = user_data.get('memberOf', [])
+        groups = [g.decode('utf-8') for g in groups]
+        
+        # Determine role based on group membership
+        role = None
+        for group_dn, role_name in COUNTY_LDAP_GROUPS.items():
+            if group_dn in groups:
+                role = role_name
+                break
+        
+        if not role:
+            logger.warning(f"User {username} is not a member of any mapped groups")
+            return False, None
+        
+        # Extract user details
+        email = user_data.get('mail', [b''])[0].decode('utf-8')
+        first_name = user_data.get('givenName', [b''])[0].decode('utf-8')
+        last_name = user_data.get('sn', [b''])[0].decode('utf-8')
+        
+        user_info = {
+            'username': username,
+            'email': email,
+            'first_name': first_name,
+            'last_name': last_name,
+            'role': role,
+            'is_ldap_user': True
+        }
+        
+        return True, user_info
+        
+    except ImportError:
+        logger.error("python-ldap module not available")
+        return _mock_authenticate(username, password)
+    except Exception as e:
+        logger.error(f"LDAP authentication error: {str(e)}")
+        return False, None
+
+def _mock_authenticate(username, password):
+    """
+    Mock authentication for development and testing.
+    
+    Args:
+        username: Username to authenticate
+        password: Password to authenticate
+        
+    Returns:
+        Tuple (success, user_data) where user_data contains role and other info
+    """
+    # Test accounts for development
+    test_accounts = {
+        'admin': {
+            'password': 'admin123',
+            'email': 'admin@benton.wa.us',
+            'first_name': 'Admin',
+            'last_name': 'User',
+            'role': 'ITAdmin'
+        },
+        'assessor': {
+            'password': 'assessor123',
+            'email': 'assessor@benton.wa.us',
+            'first_name': 'Assessment',
+            'last_name': 'Officer',
+            'role': 'Assessor'
+        },
+        'staff': {
+            'password': 'staff123',
+            'email': 'staff@benton.wa.us',
+            'first_name': 'Staff',
+            'last_name': 'Member',
+            'role': 'Staff'
+        },
+        'auditor': {
+            'password': 'auditor123',
+            'email': 'auditor@benton.wa.us',
+            'first_name': 'Audit',
+            'last_name': 'Officer',
+            'role': 'Auditor'
+        }
+    }
+    
+    if username in test_accounts and test_accounts[username]['password'] == password:
+        user_info = dict(test_accounts[username])
+        user_info.pop('password')  # Remove password from returned data
+        user_info['username'] = username
+        user_info['is_ldap_user'] = False
+        return True, user_info
+    
+    return False, None
+
+def init_auth_routes(app):
+    """
+    Initialize authentication routes for a Flask application.
     
     Args:
         app: Flask application instance
     """
-    # Use a consistent name to avoid blueprint name collisions
-    county_auth_bp = create_county_auth_blueprint()
-    app.register_blueprint(county_auth_bp)
-    logger.info("County auth routes initialized")
+    from flask import render_template, request, session, redirect, url_for, flash
+    from apps.backend.database import get_shared_db
+    from apps.backend.models.user import User
     
-    @app.context_processor
-    def inject_county_auth_utils():
-        """
-        Inject County authentication utilities into templates.
-        """
-        return {
-            'check_county_permission': check_permission,
-            'county_roles': ROLE_PERMISSIONS
-        }
-
-# Utility functions for external modules
-def get_county_current_user():
-    """
-    Get the current County user from the session.
+    db = get_shared_db()
     
-    Returns:
-        User dictionary if authenticated, None otherwise
-    """
-    try:
-        if hasattr(session, '_get_current_object'):
-            # We're in a request context, safe to access session
-            return session.get('user')
-        else:
-            # We're outside a request context
-            return None
-    except RuntimeError:
-        # Handle "working outside of request context" error
-        return None
-
-def get_county_current_roles():
-    """
-    Get the current County user's roles.
-    
-    Returns:
-        List of role names
-    """
-    try:
-        if hasattr(session, '_get_current_object'):
-            user = session.get('user', {})
-            return user.get('roles', [])
-        else:
-            return []
-    except RuntimeError:
-        return []
-
-def user_has_county_role(role: str) -> bool:
-    """
-    Check if the current user has a specific County role.
-    
-    Args:
-        role: The role to check
+    @app.route('/login', methods=['GET', 'POST'])
+    def login():
+        """Login route."""
+        if session.get('user_id'):
+            return redirect(url_for('dashboard'))
         
-    Returns:
-        True if the user has the role, False otherwise
-    """
-    try:
-        if hasattr(session, '_get_current_object'):
-            user = session.get('user', {})
-            return role in user.get('roles', [])
-        else:
-            return False
-    except RuntimeError:
-        return False
-
-def check_county_permission(permission: str) -> bool:
-    """
-    Check if the current user has a specific County permission.
-    
-    Args:
-        permission: The permission to check (e.g., 'view_sync_operations')
-        
-    Returns:
-        True if the user has the permission, False otherwise
-    """
-    try:
-        if hasattr(session, '_get_current_object'):
-            user = session.get('user', {})
+        if request.method == 'POST':
+            username = request.form['username']
+            password = request.form['password']
+            
+            success, user_data = validate_ldap_user(username, password)
+            
+            if not success:
+                flash('Invalid username or password.', 'error')
+                return render_template('county_login.html')
+            
+            # Check if user exists in database
+            user = User.query.filter_by(username=username).first()
+            
             if not user:
-                return False
+                # Create new user
+                user = User(
+                    username=username,
+                    email=user_data['email'],
+                    first_name=user_data['first_name'],
+                    last_name=user_data['last_name'],
+                    role=user_data['role'],
+                    is_ldap_user=user_data['is_ldap_user']
+                )
                 
-            # Get user roles
-            roles = user.get('roles', [])
+                # Set password for non-LDAP users
+                if not user_data['is_ldap_user']:
+                    user.set_password(password)
+                    
+                db.session.add(user)
+                db.session.commit()
+                logger.info(f"Created new user: {username}")
+            elif not user.is_active:
+                flash('Your account has been deactivated. Please contact support.', 'error')
+                return render_template('county_login.html')
+            elif not user.is_ldap_user and not user.check_password(password):
+                flash('Invalid username or password.', 'error')
+                return render_template('county_login.html')
             
-            # Define permissions for each role
-            role_permissions = {
-                'ITAdmin': ['view_sync_operations', 'create_sync_operations', 'approve_sync_operations', 
-                           'rollback_operations', 'view_reports', 'view_audit_logs', 'manage_users'],
-                'Assessor': ['view_sync_operations', 'approve_sync_operations', 'view_reports'],
-                'Staff': ['view_sync_operations', 'create_sync_operations'],
-                'Auditor': ['view_sync_operations', 'view_reports', 'view_audit_logs']
-            }
+            # Update user information if needed
+            if user.role != user_data['role'] or user.email != user_data['email']:
+                user.role = user_data['role']
+                user.email = user_data['email']
+                user.first_name = user_data['first_name']
+                user.last_name = user_data['last_name']
+                db.session.commit()
             
-            # Convert sets to lists for JSON serializability
-            user_permissions = []
-            for role in roles:
-                user_permissions.extend(role_permissions.get(role, []))
+            # Record login
+            user.record_login()
+            db.session.commit()
             
-            return permission in user_permissions
-        else:
-            return False
-    except RuntimeError:
-        return False
+            # Set session
+            session['user_id'] = user.id
+            session['username'] = user.username
+            session['role'] = user.role
+            
+            # Check if user needs onboarding
+            from apps.backend.models.onboarding import UserOnboarding
+            onboarding = UserOnboarding.query.filter_by(user_id=user.id).first()
+            
+            if not onboarding or (not onboarding.tutorial_complete and not onboarding.dismissed):
+                logger.info(f"Redirecting {username} to onboarding")
+                return redirect(url_for('onboarding_bp.onboarding_home'))
+            
+            return redirect(url_for('dashboard'))
+        
+        return render_template('county_login.html')
+    
+    @app.route('/logout')
+    def logout():
+        """Logout route."""
+        session.clear()
+        flash('You have been logged out.', 'success')
+        return redirect(url_for('login'))
+    
+    logger.info("County auth routes initialized")

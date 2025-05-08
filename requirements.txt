@@ -16,3 +16,6 @@ websockets
 werkzeug
 pyjwt
 python-ldap
+flask-login
+flask-sqlalchemy
+sqlalchemy

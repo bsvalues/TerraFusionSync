@@ -1,47 +1,42 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg width="300" height="200" xmlns="http://www.w3.org/2000/svg">
+<svg width="400" height="300" viewBox="0 0 400 300" fill="none" xmlns="http://www.w3.org/2000/svg">
   <!-- Background -->
-  <rect width="300" height="200" fill="#f0f7ff" rx="15" ry="15"/>
+  <rect width="400" height="300" rx="10" fill="#FFFAF0"/>
   
-  <!-- Document/Form Icon -->
-  <g transform="translate(90, 70)">
-    <rect x="0" y="0" width="70" height="90" fill="white" stroke="#4f46e5" stroke-width="2" rx="5" ry="5"/>
-    <line x1="15" y1="20" x2="55" y2="20" stroke="#4f46e5" stroke-width="2" stroke-linecap="round"/>
-    <line x1="15" y1="35" x2="55" y2="35" stroke="#4f46e5" stroke-width="2" stroke-linecap="round"/>
-    <line x1="15" y1="50" x2="40" y2="50" stroke="#4f46e5" stroke-width="2" stroke-linecap="round"/>
-    <rect x="15" y="60" width="40" height="20" fill="#e0e7ff" stroke="#4f46e5" stroke-width="1" rx="3" ry="3"/>
-    
-    <!-- Folded Corner -->
-    <path d="M70,0 L70,15 L55,0 Z" fill="#c7d2fe"/>
-  </g>
+  <!-- Upload Box -->
+  <rect x="120" y="100" width="160" height="140" rx="8" fill="white" stroke="#ED8936" stroke-width="2" stroke-dasharray="5 5"/>
   
-  <!-- Staff Figure -->
-  <g transform="translate(200, 100)">
-    <circle cx="0" cy="-20" r="15" fill="#f0f7ff"/>
-    <path d="M-15,0 Q0,20 15,0 L15,40 L-15,40 L-15,0 Z" fill="#4338ca"/>
-    <rect x="-20" y="5" width="40" height="6" fill="#f0f7ff" rx="3" ry="3"/>
-    <rect x="-20" y="15" width="40" height="6" fill="#f0f7ff" rx="3" ry="3"/>
-  </g>
+  <!-- Upload Icon -->
+  <circle cx="200" cy="140" r="35" fill="#FEEBC8"/>
+  <path d="M200 120 L200 160" stroke="#ED8936" stroke-width="4" stroke-linecap="round"/>
+  <path d="M180 140 L200 120 L220 140" stroke="#ED8936" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
   
-  <!-- Upload Arrow -->
-  <g transform="translate(50, 100)">
-    <circle cx="0" cy="0" r="20" fill="#e0e7ff"/>
-    <path d="M0,-10 L0,10 M-10,0 L0,-10 L10,0" stroke="#4338ca" stroke-width="3" stroke-linecap="round" fill="none"/>
-  </g>
+  <!-- File Icons -->
+  <rect x="170" y="180" width="25" height="30" rx="2" fill="#FEEBC8" stroke="#ED8936" stroke-width="1.5"/>
+  <path d="M170 187 L195 187" stroke="#ED8936" stroke-width="1.5"/>
+  <path d="M170 193 L195 193" stroke="#ED8936" stroke-width="1.5"/>
+  <path d="M170 199 L185 199" stroke="#ED8936" stroke-width="1.5"/>
   
-  <!-- Pencil Icon -->
-  <g transform="translate(230, 60) rotate(45)">
-    <rect x="-5" y="-15" width="10" height="30" fill="#818cf8"/>
-    <polygon points="0,-15 5,-15 5,-25 -5,-25 -5,-15" fill="#4f46e5"/>
-    <rect x="-5" y="15" width="10" height="2" fill="#c7d2fe"/>
-  </g>
+  <rect x="205" y="180" width="25" height="30" rx="2" fill="#FEEBC8" stroke="#ED8936" stroke-width="1.5"/>
+  <path d="M205 187 L230 187" stroke="#ED8936" stroke-width="1.5"/>
+  <path d="M205 193 L230 193" stroke="#ED8936" stroke-width="1.5"/>
+  <path d="M205 199 L220 199" stroke="#ED8936" stroke-width="1.5"/>
   
-  <!-- Text Box -->
-  <g transform="translate(125, 160) scale(0.7)">
-    <rect x="-50" y="0" width="100" height="30" fill="#e0e7ff" rx="5" ry="5"/>
-    <text x="0" y="20" font-family="Arial" font-size="14" fill="#4338ca" text-anchor="middle">DATA ENTRY</text>
-  </g>
+  <!-- Progress Bar 1 (Left Side) -->
+  <rect x="80" y="100" width="20" height="140" rx="4" fill="#F6AD55" opacity="0.3"/>
+  <rect x="80" y="170" width="20" height="70" rx="4" fill="#F6AD55"/>
   
-  <!-- Text -->
-  <text x="150" y="30" font-family="Arial" font-size="16" font-weight="bold" fill="#4338ca" text-anchor="middle">County Staff</text>
+  <!-- Progress Bar 2 (Right Side) -->
+  <rect x="300" y="100" width="20" height="140" rx="4" fill="#F6AD55" opacity="0.3"/>
+  <rect x="300" y="200" width="20" height="40" rx="4" fill="#F6AD55"/>
+  
+  <!-- Dots connecting bars to upload box -->
+  <circle cx="110" cy="140" r="5" fill="#ED8936"/>
+  <circle cx="290" cy="140" r="5" fill="#ED8936"/>
+  <line x1="100" y1="140" x2="120" y2="140" stroke="#ED8936" stroke-width="2"/>
+  <line x1="280" y1="140" x2="300" y2="140" stroke="#ED8936" stroke-width="2"/>
+  
+  <!-- Title -->
+  <text x="200" y="40" font-family="Arial, sans-serif" font-size="24" font-weight="bold" text-anchor="middle" fill="#C05621">Staff</text>
+  <text x="200" y="260" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="#2D3748">Data Upload</text>
 </svg>

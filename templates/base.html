@@ -4,55 +4,398 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}TerraFusion SyncService{% endblock %}</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    {% block styles %}{% endblock %}
+    {% block styles %}
+    <style>
+        :root {
+            --primary-color: #4299e1;
+            --primary-dark: #2b6cb0;
+            --secondary-color: #718096;
+            --success-color: #48bb78;
+            --warning-color: #ed8936;
+            --danger-color: #f56565;
+            --light-color: #f7fafc;
+            --dark-color: #2d3748;
+            --background-color: #f8fafc;
+            --card-color: #ffffff;
+            --text-color: #2d3748;
+            --text-secondary: #718096;
+            --border-color: #e2e8f0;
+            --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background-color: var(--background-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+            line-height: 1.5;
+        }
+
+        a {
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 1rem;
+        }
+
+        .navbar {
+            background-color: var(--dark-color);
+            color: white;
+            padding: 1rem 0;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .navbar-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 1rem;
+        }
+
+        .navbar-brand {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: white;
+            text-decoration: none;
+        }
+
+        .navbar-nav {
+            display: flex;
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .nav-item {
+            margin-left: 1.5rem;
+        }
+
+        .nav-link {
+            color: rgba(255, 255, 255, 0.8);
+            text-decoration: none;
+        }
+
+        .nav-link:hover {
+            color: white;
+            text-decoration: none;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            font-size: 0.75rem;
+            font-weight: bold;
+            border-radius: 0.25rem;
+            color: white;
+        }
+
+        .badge-primary { background-color: var(--primary-color); }
+        .badge-success { background-color: var(--success-color); }
+        .badge-warning { background-color: var(--warning-color); }
+        .badge-danger { background-color: var(--danger-color); }
+        .badge-secondary { background-color: var(--secondary-color); }
+
+        .btn {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            font-size: 1rem;
+            font-weight: 500;
+            text-align: center;
+            border-radius: 0.25rem;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: all 0.15s ease-in-out;
+        }
+
+        .btn-primary {
+            background-color: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+
+        .btn-primary:hover {
+            background-color: var(--primary-dark);
+            border-color: var(--primary-dark);
+        }
+
+        .btn-success {
+            background-color: var(--success-color);
+            color: white;
+            border-color: var(--success-color);
+        }
+
+        .btn-warning {
+            background-color: var(--warning-color);
+            color: white;
+            border-color: var(--warning-color);
+        }
+
+        .btn-danger {
+            background-color: var(--danger-color);
+            color: white;
+            border-color: var(--danger-color);
+        }
+
+        .btn-secondary {
+            background-color: var(--secondary-color);
+            color: white;
+            border-color: var(--secondary-color);
+        }
+
+        .btn-outline {
+            background-color: transparent;
+            color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+
+        .btn-outline:hover {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        .card {
+            background-color: var(--card-color);
+            border-radius: 0.5rem;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            margin-bottom: 1.5rem;
+            border: 1px solid var(--border-color);
+        }
+
+        .card-header {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            font-weight: 600;
+        }
+
+        .card-body {
+            padding: 1rem;
+        }
+
+        .card-footer {
+            padding: 1rem;
+            border-top: 1px solid var(--border-color);
+            background-color: rgba(247, 250, 252, 0.5);
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+
+        .form-control {
+            display: block;
+            width: 100%;
+            padding: 0.5rem 0.75rem;
+            font-size: 1rem;
+            line-height: 1.5;
+            color: var(--text-color);
+            background-color: white;
+            border: 1px solid var(--border-color);
+            border-radius: 0.25rem;
+            transition: border-color 0.15s ease-in-out;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.15);
+        }
+
+        .form-text {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-top: 0.25rem;
+        }
+
+        .alert {
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0.25rem;
+            border: 1px solid transparent;
+        }
+
+        .alert-success {
+            background-color: #f0fff4;
+            border-color: #c6f6d5;
+            color: #2f855a;
+        }
+
+        .alert-warning {
+            background-color: #fffaf0;
+            border-color: #feebc8;
+            color: #c05621;
+        }
+
+        .alert-danger {
+            background-color: #fff5f5;
+            border-color: #fed7d7;
+            color: #c53030;
+        }
+
+        .alert-info {
+            background-color: #ebf8ff;
+            border-color: #bee3f8;
+            color: #2c5282;
+        }
+
+        footer {
+            background-color: var(--light-color);
+            padding: 2rem 0;
+            border-top: 1px solid var(--border-color);
+            margin-top: 3rem;
+        }
+
+        .footer-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 1rem;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .footer-copyright {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+
+        .footer-links {
+            display: flex;
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .footer-links li {
+            margin-left: 1.5rem;
+        }
+
+        /* Utils */
+        .text-center { text-align: center; }
+        .mb-1 { margin-bottom: 0.5rem; }
+        .mb-2 { margin-bottom: 1rem; }
+        .mb-3 { margin-bottom: 1.5rem; }
+        .mb-4 { margin-bottom: 2rem; }
+        .mt-1 { margin-top: 0.5rem; }
+        .mt-2 { margin-top: 1rem; }
+        .mt-3 { margin-top: 1.5rem; }
+        .mt-4 { margin-top: 2rem; }
+        .flex { display: flex; }
+        .justify-between { justify-content: space-between; }
+        .items-center { align-items: center; }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .navbar-container {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .navbar-nav {
+                margin-top: 1rem;
+                flex-direction: column;
+            }
+
+            .nav-item {
+                margin-left: 0;
+                margin-top: 0.5rem;
+            }
+
+            .footer-content {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .footer-links {
+                margin-top: 1rem;
+            }
+
+            .footer-links li {
+                margin-left: 0.75rem;
+                margin-right: 0.75rem;
+            }
+        }
+    </style>
+    {% endblock %}
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-        <div class="container">
-            <a class="navbar-brand" href="/">TerraFusion SyncService</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav">
-                    <li class="nav-item">
-                        <a class="nav-link" href="/">Home</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/dashboard">Dashboard</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/dashboard/sync">Sync Operations</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/dashboard/metrics">Metrics</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/validation">Validation</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/architecture">Architecture</a>
-                    </li>
-                </ul>
-            </div>
+    <nav class="navbar">
+        <div class="navbar-container">
+            <a href="{{ url_for('root') }}" class="navbar-brand">TerraFusion SyncService</a>
+            <ul class="navbar-nav">
+                {% if session.get('user_id') %}
+                <li class="nav-item">
+                    <a href="{{ url_for('dashboard') }}" class="nav-link">Dashboard</a>
+                </li>
+                <li class="nav-item">
+                    <a href="{{ url_for('sync_dashboard') }}" class="nav-link">Sync Operations</a>
+                </li>
+                {% if session.get('role') == 'ITAdmin' %}
+                <li class="nav-item">
+                    <a href="{{ url_for('metrics_dashboard') }}" class="nav-link">Metrics</a>
+                </li>
+                <li class="nav-item">
+                    <a href="{{ url_for('audit_dashboard') }}" class="nav-link">Audit</a>
+                </li>
+                {% elif session.get('role') == 'Auditor' %}
+                <li class="nav-item">
+                    <a href="{{ url_for('audit_dashboard') }}" class="nav-link">Audit</a>
+                </li>
+                {% endif %}
+                <li class="nav-item">
+                    <a href="{{ url_for('logout') }}" class="nav-link">Logout ({{ session.get('username') }})</a>
+                </li>
+                {% else %}
+                <li class="nav-item">
+                    <a href="{{ url_for('login') }}" class="nav-link">Login</a>
+                </li>
+                {% endif %}
+            </ul>
         </div>
     </nav>
 
-    {% block content %}{% endblock %}
+    <div class="container mt-4">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category if category != 'message' else 'info' }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
 
-    <footer class="mt-5 py-3 bg-light">
-        <div class="container">
-            <p class="text-center text-muted">
-                &copy; 2025 TerraFusion SyncService
-            </p>
+        {% block content %}{% endblock %}
+    </div>
+
+    <footer>
+        <div class="footer-content">
+            <div class="footer-copyright">
+                &copy; {{ now.year if now else '2025' }} TerraFusion SyncService. All rights reserved.
+            </div>
+            <ul class="footer-links">
+                <li><a href="{{ url_for('api_docs') }}">API Documentation</a></li>
+                <li><a href="{{ url_for('status') }}">System Status</a></li>
+                <li><a href="{{ url_for('architecture_visualization') }}">System Architecture</a></li>
+            </ul>
         </div>
     </footer>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -1,122 +1,245 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
 
-{% block title %}TerraFusion Onboarding - Tutorial{% endblock %}
+{% block title %}TerraFusion - Interactive Tutorial{% endblock %}
 
-{% block content %}
-<div class="container mx-auto p-4 max-w-6xl">
-    <div class="bg-white shadow-md rounded-lg p-6 mb-6">
-        <div class="flex items-center justify-between mb-6">
-            <h1 class="text-2xl font-bold text-gray-800">Interactive Onboarding Tutorial</h1>
-            <form action="{{ url_for('onboarding_bp.dismiss_onboarding') }}" method="post" id="dismiss-form">
-                <button type="button" class="px-4 py-2 bg-gray-200 rounded-md text-gray-700 hover:bg-gray-300" id="dismiss-btn">Skip Tutorial</button>
-            </form>
-        </div>
-
-        <div class="welcome-section mb-8">
-            <div class="flex flex-col md:flex-row items-center">
-                <div class="md:w-1/2 p-4">
-                    <h2 class="text-xl font-semibold text-blue-700 mb-4">Welcome to TerraFusion SyncService</h2>
-                    {% set welcome = get_welcome_for_role(role) %}
-                    <p class="text-gray-700 mb-4">{{ welcome.message }}</p>
-                    <p class="text-gray-600 italic">This tutorial will guide you through the key features relevant to your role.</p>
-                </div>
-                <div class="md:w-1/2 p-4 flex justify-center">
-                    <img src="{{ url_for('static', filename='images/onboarding/' + welcome.image) }}" alt="Welcome" class="max-h-64">
-                </div>
-            </div>
-        </div>
-
-        <div class="tutorial-progress mb-8">
-            <h3 class="text-lg font-semibold text-gray-800 mb-2">Your Progress</h3>
-            <div class="w-full bg-gray-200 rounded-full h-4 mb-2">
-                <div class="bg-blue-600 h-4 rounded-full" style="width: {{ onboarding.get_progress_percentage() }}%"></div>
-            </div>
-            <div class="text-right text-sm text-gray-600">{{ onboarding.get_progress_percentage() }}% Complete</div>
-        </div>
-
-        <div class="tutorial-steps">
-            <h3 class="text-lg font-semibold text-gray-800 mb-4">Tutorial Steps</h3>
-            
-            <ul class="space-y-4">
-                {% for step in steps %}
-                {% set step_num = loop.index %}
-                {% set is_completed = step_num in onboarding.progress_dict %}
-                {% set is_current = step_num == onboarding.current_step %}
-                {% set is_future = step_num > onboarding.current_step %}
-                
-                <li class="border rounded-lg p-4 {% if is_completed %}bg-green-50 border-green-200{% elif is_current %}bg-blue-50 border-blue-200{% else %}bg-gray-50 border-gray-200{% endif %}">
-                    <div class="flex items-start">
-                        <div class="mr-4 pt-1">
-                            {% if is_completed %}
-                            <span class="flex items-center justify-center w-8 h-8 rounded-full bg-green-500 text-white">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
-                                </svg>
-                            </span>
-                            {% else %}
-                            <span class="flex items-center justify-center w-8 h-8 rounded-full {% if is_current %}bg-blue-500{% else %}bg-gray-300{% endif %} text-white">
-                                {{ step_num }}
-                            </span>
-                            {% endif %}
-                        </div>
-                        <div class="flex-1">
-                            <h4 class="text-lg font-medium {% if is_completed %}text-green-700{% elif is_current %}text-blue-700{% else %}text-gray-700{% endif %}">{{ step.title }}</h4>
-                            <p class="text-gray-600 mb-3">{{ step.description }}</p>
-                            
-                            {% if is_completed %}
-                            <div class="flex justify-between items-center">
-                                <span class="text-sm text-green-600 flex items-center">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-                                    </svg>
-                                    Completed
-                                </span>
-                                <a href="{{ url_for('onboarding_bp.view_step', step_number=step_num) }}" class="text-sm text-blue-600 hover:text-blue-800">Review</a>
-                            </div>
-                            {% elif is_current %}
-                            <a href="{{ url_for('onboarding_bp.view_step', step_number=step_num) }}" class="inline-block px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Start This Step</a>
-                            {% else %}
-                            <span class="text-sm text-gray-500">Available after completing previous steps</span>
-                            {% endif %}
-                        </div>
-                    </div>
-                </li>
-                {% endfor %}
-            </ul>
-        </div>
-
-        {% if onboarding.tutorial_complete %}
-        <div class="mt-8 text-center">
-            <a href="{{ url_for('onboarding_bp.completion_page') }}" class="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700">View Completion Certificate</a>
-        </div>
-        {% endif %}
-    </div>
-</div>
+{% block styles %}
+  {{ super() }}
+  <style>
+    .onboarding-container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+    
+    .onboarding-header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    
+    .onboarding-welcome {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 3rem;
+    }
+    
+    .welcome-image {
+      width: 250px;
+      height: auto;
+      margin-bottom: 1.5rem;
+    }
+    
+    .role-badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 1rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+    }
+    
+    .role-badge.ITAdmin { background-color: #4299e1; color: white; }
+    .role-badge.Assessor { background-color: #48bb78; color: white; }
+    .role-badge.Staff { background-color: #ed8936; color: white; }
+    .role-badge.Auditor { background-color: #9f7aea; color: white; }
+    .role-badge.default { background-color: #a0aec0; color: white; }
+    
+    .tutorial-steps {
+      margin-top: 2rem;
+    }
+    
+    .step-item {
+      display: flex;
+      margin-bottom: 1.5rem;
+      padding: 1rem;
+      border-radius: 0.5rem;
+      border: 1px solid #e2e8f0;
+      background-color: #f7fafc;
+      position: relative;
+    }
+    
+    .step-item.completed {
+      border-color: #48bb78;
+      background-color: #f0fff4;
+    }
+    
+    .step-number {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background-color: #a0aec0;
+      color: white;
+      font-weight: 600;
+      margin-right: 1rem;
+      flex-shrink: 0;
+    }
+    
+    .step-item.completed .step-number {
+      background-color: #48bb78;
+    }
+    
+    .step-content {
+      flex-grow: 1;
+    }
+    
+    .step-title {
+      font-weight: 600;
+      font-size: 1.125rem;
+      margin-bottom: 0.5rem;
+    }
+    
+    .step-description {
+      color: #4a5568;
+      margin-bottom: 1rem;
+    }
+    
+    .step-status {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      font-size: 0.875rem;
+    }
+    
+    .start-btn, .continue-btn, .completed-btn {
+      display: inline-block;
+      padding: 0.5rem 1rem;
+      border-radius: 0.25rem;
+      font-weight: 600;
+      text-align: center;
+      cursor: pointer;
+    }
+    
+    .start-btn {
+      background-color: #4299e1;
+      color: white;
+    }
+    
+    .continue-btn {
+      background-color: #48bb78;
+      color: white;
+    }
+    
+    .completed-btn {
+      background-color: #a0aec0;
+      color: white;
+      cursor: not-allowed;
+    }
+    
+    .progress-bar-container {
+      width: 100%;
+      height: 10px;
+      background-color: #e2e8f0;
+      border-radius: 5px;
+      margin-top: 2rem;
+      overflow: hidden;
+    }
+    
+    .progress-bar {
+      height: 100%;
+      background-color: #4299e1;
+      transition: width 0.3s ease;
+    }
+    
+    .dismiss-tutorial {
+      text-align: center;
+      margin-top: 2rem;
+      font-size: 0.875rem;
+    }
+    
+    .dismiss-btn {
+      color: #a0aec0;
+      text-decoration: underline;
+      cursor: pointer;
+    }
+    
+    .dismiss-btn:hover {
+      color: #718096;
+    }
+  </style>
 {% endblock %}
 
-{% block scripts %}
-<script>
-document.getElementById('dismiss-btn').addEventListener('click', function() {
-    if (confirm('Are you sure you want to skip the tutorial? You can access it later from your account settings.')) {
-        // Use fetch API to submit the form
+{% block content %}
+  <div class="onboarding-container">
+    <div class="onboarding-header">
+      <h1>Interactive Tutorial</h1>
+      <span class="role-badge {{ role }}">{{ role }}</span>
+    </div>
+    
+    <div class="onboarding-welcome">
+      <img src="{{ url_for('static', filename='images/onboarding/' + (welcome_message.image if welcome_message else 'default_welcome.svg')) }}" 
+           alt="Welcome" class="welcome-image">
+      <p>{{ welcome_message.message if welcome_message else 'Welcome to the TerraFusion interactive tutorial!' }}</p>
+    </div>
+    
+    <div class="progress-bar-container">
+      <div class="progress-bar" style="width: {{ onboarding.get_progress_percentage() }}%;"></div>
+    </div>
+    
+    <div class="tutorial-steps">
+      <h2>Tutorial Steps</h2>
+      
+      {% for i, step in enumerate(steps, 1) %}
+        {% set completed = i|string in onboarding.progress_dict %}
+        {% set current = i == onboarding.current_step %}
+        
+        <div class="step-item {{ 'completed' if completed else '' }}">
+          <div class="step-number">{{ i }}</div>
+          <div class="step-content">
+            <div class="step-title">{{ step.title }}</div>
+            <div class="step-description">{{ step.description }}</div>
+            
+            {% if completed %}
+              <a href="{{ url_for('onboarding_bp.view_step', step_number=i) }}" class="completed-btn">Completed</a>
+            {% elif current %}
+              <a href="{{ url_for('onboarding_bp.view_step', step_number=i) }}" class="start-btn">Start</a>
+            {% elif i < onboarding.current_step %}
+              <a href="{{ url_for('onboarding_bp.view_step', step_number=i) }}" class="continue-btn">Review</a>
+            {% else %}
+              <span class="start-btn" style="opacity: 0.5; cursor: not-allowed;">Locked</span>
+            {% endif %}
+          </div>
+          
+          {% if completed %}
+            <div class="step-status">✓ Completed</div>
+          {% elif current %}
+            <div class="step-status">Current Step</div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+    
+    {% if not onboarding.tutorial_complete %}
+      <div class="dismiss-tutorial">
+        <a href="#" class="dismiss-btn" onclick="dismissTutorial()">Dismiss tutorial (you can restart it later)</a>
+      </div>
+    {% endif %}
+  </div>
+  
+  <script>
+    function dismissTutorial() {
+      if (confirm('Are you sure you want to dismiss the tutorial? You can restart it later from your profile.')) {
         fetch('{{ url_for("onboarding_bp.dismiss_onboarding") }}', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            credentials: 'same-origin'
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
         })
         .then(response => response.json())
         .then(data => {
-            if (data.success) {
-                // Redirect to dashboard
-                window.location.href = '{{ url_for("dashboard") }}';
-            }
+          if (data.success) {
+            window.location.href = '{{ url_for("dashboard") }}';
+          } else {
+            alert('Failed to dismiss tutorial: ' + (data.error || 'Unknown error'));
+          }
         })
         .catch(error => {
-            console.error('Error:', error);
+          console.error('Error:', error);
+          alert('An error occurred while dismissing the tutorial.');
         });
+      }
     }
-});
-</script>
+  </script>
 {% endblock %}
