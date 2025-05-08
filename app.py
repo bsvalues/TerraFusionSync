@@ -11,6 +11,7 @@ import requests
 import subprocess
 import threading
 import time
+import uuid
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 from urllib.parse import urljoin
@@ -699,7 +700,7 @@ def check_and_ensure_service_health():
         return syncservice_status
 
 
-@app.route('/login')
+@app.route('/login', methods=['GET', 'POST'])
 def login_page():
     """Login page for the API Gateway."""
     # Check if logout action
@@ -708,14 +709,106 @@ def login_page():
         session.clear()
         flash('You have been logged out successfully', 'success')
         return redirect(url_for('root'))
-        
+    
     # Check if already authenticated
-    if 'token' in session:
+    if 'token' in session and request.method == 'GET':
         # Redirect to dashboard or next URL
         next_url = request.args.get('next', url_for('dashboard'))
         return redirect(next_url)
     
-    # Render login page
+    # Handle login form submission
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        next_url = request.form.get('next', url_for('dashboard'))
+        
+        # Try County RBAC first, fall back to standard
+        try:
+            from apps.backend.auth import authenticate_county_user, COUNTY_RBAC_AVAILABLE
+            if COUNTY_RBAC_AVAILABLE:
+                user = authenticate_county_user(username, password)
+                if user:
+                    # Set session data
+                    session['username'] = user['username']
+                    session['role'] = user['primary_role']
+                    session['roles'] = user['roles']
+                    session['token'] = 'county_auth_' + str(uuid.uuid4())
+                    session['county_auth'] = True
+                    
+                    # Create audit log entry
+                    create_audit_log(
+                        event_type='login_success',
+                        resource_type='auth',
+                        description=f"User {username} logged in successfully",
+                        username=username
+                    )
+                    
+                    # Check if user needs onboarding
+                    try:
+                        from apps.backend.onboarding.routes import start_or_continue_onboarding
+                        redirect_url = start_or_continue_onboarding(user)
+                        if redirect_url:
+                            return redirect(redirect_url)
+                    except ImportError:
+                        pass  # Onboarding module not available
+                    except Exception as e:
+                        logger.error(f"Error checking onboarding status: {e}")
+                        
+                    # Redirect to next URL or dashboard
+                    return redirect(next_url)
+                
+                # County auth available but user failed to authenticate
+                create_audit_log(
+                    event_type='login_failed',
+                    resource_type='auth',
+                    description=f"Failed login attempt for user {username}",
+                    username=username,
+                    severity='warning'
+                )
+                return render_template('login.html', error="Invalid username or password")
+        except ImportError:
+            # County auth module not available
+            pass
+        except Exception as e:
+            logger.error(f"Error in county auth: {e}")
+            
+        # Fallback to test accounts
+        if username == 'admin' and password == 'admin123':
+            session['username'] = username
+            session['role'] = 'ITAdmin'
+            session['roles'] = ['ITAdmin']
+            session['token'] = 'fallback_auth_' + str(uuid.uuid4())
+            return redirect(next_url)
+        elif username == 'assessor' and password == 'assessor123':
+            session['username'] = username
+            session['role'] = 'Assessor'
+            session['roles'] = ['Assessor']
+            session['token'] = 'fallback_auth_' + str(uuid.uuid4())
+            return redirect(next_url)
+        elif username == 'staff' and password == 'staff123':
+            session['username'] = username
+            session['role'] = 'Staff'
+            session['roles'] = ['Staff']
+            session['token'] = 'fallback_auth_' + str(uuid.uuid4())
+            return redirect(next_url)
+        elif username == 'auditor' and password == 'auditor123':
+            session['username'] = username
+            session['role'] = 'Auditor'
+            session['roles'] = ['Auditor']
+            session['token'] = 'fallback_auth_' + str(uuid.uuid4())
+            return redirect(next_url)
+        else:
+            # Create audit log for failed login
+            create_audit_log(
+                event_type='login_failed',
+                resource_type='auth',
+                description=f"Failed login attempt for user {username}",
+                username=username,
+                severity='warning'
+            )
+            return render_template('login.html', error="Invalid username or password")
+    
+    # Render login page for GET requests
     return render_template('login.html', error=request.args.get('error'))
 
 
