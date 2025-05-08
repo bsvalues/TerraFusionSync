@@ -27,6 +27,22 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or "a secret key"
 
+# Configure session cookies to ensure they're saved correctly
+app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 hours in seconds
+app.config['SESSION_TYPE'] = 'filesystem'  # Store session data on the filesystem instead of just cookies
+app.config['SESSION_FILE_DIR'] = './flask_session'
+app.config['SESSION_PERMANENT'] = True
+
+# Initialize Flask-Session
+from flask_session import Session
+Session(app)
+
+# Create session directory if it doesn't exist
+os.makedirs('./flask_session', exist_ok=True)
+
 # Import database models
 from flask_sqlalchemy import SQLAlchemy
 
@@ -789,32 +805,68 @@ def login_page():
             
         # Fallback to test accounts
         if username == 'admin' and password == 'admin123':
+            # Make the session permanent
+            session.permanent = True
+            
+            # Set session values
             session['username'] = username
             session['role'] = 'ITAdmin'
             session['roles'] = ['ITAdmin']
             session['token'] = 'fallback_auth_' + str(uuid.uuid4())
+            
+            # Log debug info
             logger.debug(f"Login successful for {username} with role ITAdmin")
             logger.debug(f"Session after login: {session}")
+            logger.debug(f"Session is permanent: {session.permanent}")
+            
+            # Create response
             response = redirect(next_url)
             logger.debug(f"Response headers: {response.headers}")
             return response
         elif username == 'assessor' and password == 'assessor123':
+            # Make the session permanent
+            session.permanent = True
+            
+            # Set session values
             session['username'] = username
             session['role'] = 'Assessor'
             session['roles'] = ['Assessor']
             session['token'] = 'fallback_auth_' + str(uuid.uuid4())
+            
+            # Log debug info
+            logger.debug(f"Login successful for {username} with role Assessor")
+            logger.debug(f"Session after login: {session}")
+            
             return redirect(next_url)
         elif username == 'staff' and password == 'staff123':
+            # Make the session permanent
+            session.permanent = True
+            
+            # Set session values
             session['username'] = username
             session['role'] = 'Staff'
             session['roles'] = ['Staff']
             session['token'] = 'fallback_auth_' + str(uuid.uuid4())
+            
+            # Log debug info
+            logger.debug(f"Login successful for {username} with role Staff")
+            logger.debug(f"Session after login: {session}")
+            
             return redirect(next_url)
         elif username == 'auditor' and password == 'auditor123':
+            # Make the session permanent
+            session.permanent = True
+            
+            # Set session values
             session['username'] = username
             session['role'] = 'Auditor'
             session['roles'] = ['Auditor']
             session['token'] = 'fallback_auth_' + str(uuid.uuid4())
+            
+            # Log debug info
+            logger.debug(f"Login successful for {username} with role Auditor")
+            logger.debug(f"Session after login: {session}")
+            
             return redirect(next_url)
         else:
             # Create audit log for failed login

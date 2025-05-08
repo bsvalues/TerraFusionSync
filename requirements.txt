@@ -24,3 +24,4 @@ flask-sqlalchemy
 python-ldap
 sqlalchemy
 werkzeug
+flask-session
