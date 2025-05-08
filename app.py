@@ -461,10 +461,15 @@ def collect_syncservice_metrics():
             cpu_usage=system_data.get("cpu_usage_percent", 0.0),
             memory_usage=system_data.get("memory_usage_percent", 0.0),
             disk_usage=system_data.get("disk_usage_percent", 0.0),
-            active_connections=system_data.get("active_connections", 0),
-            response_time=metrics_data.get("performance", {}).get("response_time_avg_ms", 0.0) / 1000,
-            error_count=metrics_data.get("performance", {}).get("error_count", 0),
-            sync_operations_count=metrics_data.get("performance", {}).get("sync_operations_count", 0)
+            api_requests=system_data.get("api_requests", 0),
+            active_syncs=metrics_data.get("performance", {}).get("active_syncs", 0),
+            active_users=metrics_data.get("performance", {}).get("active_users", 0),
+            average_response_time=metrics_data.get("performance", {}).get("response_time_avg_ms", 0.0) / 1000,
+            error_rate=metrics_data.get("performance", {}).get("error_rate", 0.0),
+            database_health="healthy",
+            syncservice_health="healthy",
+            api_gateway_health="healthy",
+            raw_metrics=json.dumps(metrics_data)
         )
         # Set timestamp separately
         metrics.timestamp = timestamp
@@ -487,9 +492,11 @@ def collect_syncservice_metrics():
                         "cpu_usage": metrics.cpu_usage,
                         "memory_usage": metrics.memory_usage,
                         "disk_usage": metrics.disk_usage,
-                        "active_connections": metrics.active_connections,
-                        "error_count": metrics.error_count,
-                        "sync_operations_count": metrics.sync_operations_count
+                        "api_requests": metrics.api_requests,
+                        "active_syncs": metrics.active_syncs,
+                        "active_users": metrics.active_users,
+                        "average_response_time": metrics.average_response_time,
+                        "error_rate": metrics.error_rate
                     }
                 )
                 logger.info("Created audit log entry for metrics collection")
