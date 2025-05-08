@@ -1,316 +1,245 @@
 """
-TerraFusion SyncService - Onboarding Routes
+Onboarding Routes
 
-This module provides routes for the onboarding experience and tutorial.
+This module defines the routes for the user onboarding experience.
 """
 
-import json
-from datetime import datetime
+from typing import Optional, Tuple, Dict
 
-from flask import render_template, redirect, url_for, session, request, jsonify, current_app, flash
+from flask import render_template, session, redirect, url_for, request, jsonify, flash, current_app
+from flask_login import current_user, login_required
 
-from apps.backend.database import get_shared_db
-from apps.backend.models import User, UserOnboarding, OnboardingEvent
-from apps.backend.onboarding import onboarding_bp
-from apps.backend.onboarding.config import get_tutorial_for_role
+from . import onboarding_bp
+from .config import get_tutorial_for_role
+from apps.backend.models.onboarding import UserOnboarding, OnboardingEvent
 
-db = get_shared_db()
 
 @onboarding_bp.route('/')
-def onboarding_home():
-    """Onboarding home page - redirects to tutorial or completion page."""
-    user_id = session.get('user_id')
-    if not user_id:
-        flash('Please log in to access the onboarding tutorial.', 'warning')
-        return redirect(url_for('login'))
-    
-    # Get user onboarding record
-    onboarding = UserOnboarding.query.filter_by(user_id=user_id).first()
-    
-    # If no onboarding record, create one
-    if not onboarding:
-        user = User.query.get(user_id)
-        if not user:
-            flash('User not found.', 'error')
-            return redirect(url_for('dashboard'))
-            
-        onboarding = UserOnboarding(
-            user_id=user_id,
-            current_step='overview',
-            progress_data=json.dumps({
-                'completed_steps': [],
-                'total_steps': len(get_tutorial_for_role(user.role)['steps'])
-            })
-        )
-        db.session.add(onboarding)
-        
-        # Create an onboarding started event
-        event = OnboardingEvent(
-            onboarding_id=onboarding.id,
-            event_type='onboarding_started'
-        )
-        db.session.add(event)
-        db.session.commit()
-    
-    # If onboarding is completed, redirect to completion page
-    if onboarding.is_completed:
-        return redirect(url_for('onboarding_bp.onboarding_complete'))
-    
-    # Redirect to current step
-    return redirect(url_for('onboarding_bp.tutorial_step', step_id=onboarding.current_step or 'overview'))
-
-@onboarding_bp.route('/tutorial')
+@login_required
 def tutorial_home():
-    """Tutorial home page."""
-    user_id = session.get('user_id')
-    if not user_id:
-        flash('Please log in to access the onboarding tutorial.', 'warning')
-        return redirect(url_for('login'))
-    
-    # Get user onboarding record
-    user = User.query.get(user_id)
-    if not user:
-        flash('User not found.', 'error')
+    """
+    Display the onboarding home page with tutorial overview.
+    """
+    # Get tutorial for user's role
+    tutorial = get_tutorial_for_role(current_user.role)
+    if not tutorial:
+        flash("No tutorial available for your role.", "warning")
         return redirect(url_for('dashboard'))
     
-    onboarding = UserOnboarding.query.filter_by(user_id=user_id).first()
+    # Get or create user onboarding record
+    onboarding = UserOnboarding.get_for_user(current_user.id, tutorial.id)
     
-    # If no onboarding record, redirect to start
-    if not onboarding:
-        return redirect(url_for('onboarding_bp.onboarding_home'))
+    # Calculate progress
+    completed_steps = onboarding.completed_step_ids
+    progress = onboarding.get_progress_percentage(len(tutorial.steps))
     
-    # Get tutorial for user role
-    tutorial = get_tutorial_for_role(user.role)
+    # If onboarding is complete, redirect to completion page
+    if onboarding.is_complete:
+        return redirect(url_for('onboarding_bp.onboarding_complete'))
     
-    # Get steps and mark completed ones
-    steps = tutorial['steps']
-    completed_steps = onboarding.completed_steps
-    
-    for step in steps:
-        step['completed'] = step['id'] in completed_steps
-    
-    # Create an event for viewing the tutorial
-    event = OnboardingEvent(
-        onboarding_id=onboarding.id,
-        event_type='tutorial_viewed'
-    )
-    db.session.add(event)
-    db.session.commit()
+    # Process steps to mark as completed or not
+    steps = []
+    for step in tutorial.steps:
+        steps.append({
+            'id': step.id,
+            'title': step.title,
+            'description': step.description,
+            'completed': step.id in completed_steps
+        })
     
     return render_template(
-        'onboarding/tutorial.html',
+        'tutorial.html',
         tutorial=tutorial,
         steps=steps,
-        user=user,
-        progress=onboarding.progress
+        progress=progress,
+        completed_steps=completed_steps
     )
 
+
 @onboarding_bp.route('/step/<step_id>')
-def tutorial_step(step_id):
-    """Display a specific tutorial step."""
-    user_id = session.get('user_id')
-    if not user_id:
-        flash('Please log in to access the onboarding tutorial.', 'warning')
-        return redirect(url_for('login'))
+@login_required
+def tutorial_step(step_id: str):
+    """
+    Display a single tutorial step.
     
-    # Get user onboarding record
-    user = User.query.get(user_id)
-    if not user:
-        flash('User not found.', 'error')
+    Args:
+        step_id: ID of the step to display
+    """
+    # Get tutorial for user's role
+    tutorial = get_tutorial_for_role(current_user.role)
+    if not tutorial:
+        flash("No tutorial available for your role.", "warning")
         return redirect(url_for('dashboard'))
     
-    onboarding = UserOnboarding.query.filter_by(user_id=user_id).first()
-    
-    # If no onboarding record, redirect to start
-    if not onboarding:
-        return redirect(url_for('onboarding_bp.onboarding_home'))
-    
-    # If onboarding is completed, redirect to completion page
-    if onboarding.is_completed:
-        return redirect(url_for('onboarding_bp.onboarding_complete'))
-    
-    # Get tutorial for user role
-    tutorial = get_tutorial_for_role(user.role)
-    
-    # Find the requested step
+    # Find the step
     step = None
-    next_step = None
-    prev_step = None
     step_index = -1
-    
-    for i, s in enumerate(tutorial['steps']):
-        if s['id'] == step_id:
+    for i, s in enumerate(tutorial.steps):
+        if s.id == step_id:
             step = s
             step_index = i
             break
     
-    # If step not found, redirect to first step
     if not step:
-        return redirect(url_for('onboarding_bp.tutorial_step', step_id=tutorial['steps'][0]['id']))
-    
-    # Find next and previous steps
-    if step_index > 0:
-        prev_step = tutorial['steps'][step_index - 1]
-    
-    if step_index < len(tutorial['steps']) - 1:
-        next_step = tutorial['steps'][step_index + 1]
-    
-    # Update current step
-    onboarding.current_step = step_id
-    db.session.commit()
-    
-    # Create an event for viewing this step
-    event = OnboardingEvent(
-        onboarding_id=onboarding.id,
-        event_type='step_viewed',
-        step_id=step_id
-    )
-    db.session.add(event)
-    db.session.commit()
-    
-    # Get completed steps
-    completed_steps = onboarding.completed_steps
-    
-    return render_template(
-        'onboarding/step.html',
-        tutorial=tutorial,
-        step=step,
-        next_step=next_step,
-        prev_step=prev_step,
-        user=user,
-        progress=onboarding.progress,
-        completed=step['id'] in completed_steps,
-        completed_steps=completed_steps
-    )
-
-@onboarding_bp.route('/complete_step/<step_id>', methods=['POST'])
-def complete_step(step_id):
-    """Mark a step as completed."""
-    user_id = session.get('user_id')
-    if not user_id:
-        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
-    
-    # Get user onboarding record
-    onboarding = UserOnboarding.query.filter_by(user_id=user_id).first()
-    
-    if not onboarding:
-        return jsonify({'success': False, 'error': 'Onboarding record not found'}), 404
-    
-    # Mark step as completed
-    onboarding.mark_step_completed(step_id)
-    
-    # Update last activity
-    onboarding.last_activity_at = datetime.utcnow()
-    db.session.commit()
-    
-    return jsonify({
-        'success': True, 
-        'progress': onboarding.progress,
-        'completed_steps': onboarding.completed_steps
-    })
-
-@onboarding_bp.route('/complete', methods=['GET', 'POST'])
-def onboarding_complete():
-    """Onboarding completion page."""
-    user_id = session.get('user_id')
-    if not user_id:
-        flash('Please log in to access the onboarding tutorial.', 'warning')
-        return redirect(url_for('login'))
-    
-    # Get user onboarding record
-    user = User.query.get(user_id)
-    if not user:
-        flash('User not found.', 'error')
-        return redirect(url_for('dashboard'))
-    
-    onboarding = UserOnboarding.query.filter_by(user_id=user_id).first()
-    
-    # If no onboarding record, redirect to start
-    if not onboarding:
-        return redirect(url_for('onboarding_bp.onboarding_home'))
-    
-    # Handle POST request to complete onboarding
-    if request.method == 'POST':
-        onboarding.complete_onboarding()
-        db.session.commit()
-        flash('Onboarding completed successfully!', 'success')
-        return redirect(url_for('dashboard'))
-    
-    # Get tutorial for user role
-    tutorial = get_tutorial_for_role(user.role)
-    
-    # Mark as completed if all steps are done
-    completed_steps = onboarding.completed_steps
-    all_completed = len(completed_steps) == len(tutorial['steps'])
-    
-    # If not all steps are completed, redirect to tutorial
-    if not all_completed and not onboarding.is_completed:
-        flash('Please complete all steps before finishing the tutorial.', 'warning')
+        flash("Tutorial step not found.", "error")
         return redirect(url_for('onboarding_bp.tutorial_home'))
     
+    # Get user onboarding record
+    onboarding = UserOnboarding.get_for_user(current_user.id, tutorial.id)
+    
+    # Update last visited step
+    onboarding.last_step_id = step_id
+    
+    # Check if step is completed
+    completed = step_id in onboarding.completed_step_ids
+    completed_steps = onboarding.completed_step_ids
+    
+    # Get previous and next steps
+    prev_step = tutorial.steps[step_index - 1] if step_index > 0 else None
+    next_step = tutorial.steps[step_index + 1] if step_index < len(tutorial.steps) - 1 else None
+    
+    # Calculate progress
+    progress = onboarding.get_progress_percentage(len(tutorial.steps))
+    
     return render_template(
-        'onboarding/completion.html',
+        'step.html',
         tutorial=tutorial,
-        user=user,
-        steps_completed=len(completed_steps),
-        total_steps=len(tutorial['steps'])
+        step=step,
+        prev_step=prev_step,
+        next_step=next_step,
+        completed=completed,
+        completed_steps=completed_steps,
+        progress=progress
     )
+
+
+@onboarding_bp.route('/step/<step_id>/complete', methods=['POST'])
+@login_required
+def complete_step(step_id: str):
+    """
+    Mark a step as completed.
+    
+    Args:
+        step_id: ID of the step to mark as completed
+    """
+    # Get tutorial for user's role
+    tutorial = get_tutorial_for_role(current_user.role)
+    if not tutorial:
+        return jsonify({'success': False, 'error': 'No tutorial available for your role'}), 400
+    
+    # Find the step
+    step = None
+    for s in tutorial.steps:
+        if s.id == step_id:
+            step = s
+            break
+    
+    if not step:
+        return jsonify({'success': False, 'error': 'Tutorial step not found'}), 404
+    
+    # Get user onboarding record
+    onboarding = UserOnboarding.get_for_user(current_user.id, tutorial.id)
+    
+    # Mark step as completed
+    onboarding.mark_step_complete(step_id)
+    
+    # Check if all steps are completed
+    completed_steps = set(onboarding.completed_step_ids)
+    all_steps = set(s.id for s in tutorial.steps)
+    
+    # If all steps are completed, mark onboarding as complete
+    if completed_steps == all_steps:
+        onboarding.mark_complete()
+    
+    return jsonify({'success': True})
+
+
+@onboarding_bp.route('/complete', methods=['GET', 'POST'])
+@login_required
+def onboarding_complete():
+    """
+    Display the onboarding completion page.
+    """
+    # Get tutorial for user's role
+    tutorial = get_tutorial_for_role(current_user.role)
+    if not tutorial:
+        flash("No tutorial available for your role.", "warning")
+        return redirect(url_for('dashboard'))
+    
+    # Get user onboarding record
+    onboarding = UserOnboarding.get_for_user(current_user.id, tutorial.id)
+    
+    if request.method == 'POST':
+        # Mark onboarding as complete if not already
+        if not onboarding.is_complete:
+            onboarding.mark_complete()
+        
+        # Redirect to dashboard
+        flash("Onboarding completed! Welcome to the TerraFusion platform.", "success")
+        return redirect(url_for('dashboard'))
+    
+    # Get number of steps completed
+    completed_steps = len(onboarding.completed_step_ids)
+    total_steps = len(tutorial.steps)
+    
+    return render_template(
+        'completion.html',
+        tutorial=tutorial,
+        user=current_user,
+        steps_completed=completed_steps,
+        total_steps=total_steps
+    )
+
 
 @onboarding_bp.route('/skip', methods=['POST'])
+@login_required
 def skip_onboarding():
-    """Skip the onboarding process."""
-    user_id = session.get('user_id')
-    if not user_id:
-        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+    """
+    Skip the onboarding tutorial.
+    
+    This will mark all steps as complete and redirect to the dashboard.
+    """
+    # Get tutorial for user's role
+    tutorial = get_tutorial_for_role(current_user.role)
+    if not tutorial:
+        return jsonify({'success': False, 'error': 'No tutorial available for your role'}), 400
     
     # Get user onboarding record
-    onboarding = UserOnboarding.query.filter_by(user_id=user_id).first()
+    onboarding = UserOnboarding.get_for_user(current_user.id, tutorial.id)
     
-    if not onboarding:
-        # Create a new record marked as completed
-        onboarding = UserOnboarding(
-            user_id=user_id,
-            is_completed=True,
-            completed_at=datetime.utcnow()
-        )
-        db.session.add(onboarding)
-    else:
-        # Mark existing record as completed
-        onboarding.is_completed = True
-        onboarding.completed_at = datetime.utcnow()
+    # Mark all steps as completed
+    for step in tutorial.steps:
+        onboarding.mark_step_complete(step.id)
     
-    # Create an event for skipping onboarding
-    event = OnboardingEvent(
-        onboarding_id=onboarding.id,
-        event_type='onboarding_skipped'
-    )
-    db.session.add(event)
-    db.session.commit()
-    
-    return jsonify({'success': True, 'redirect': url_for('dashboard')})
-
-@onboarding_bp.route('/status')
-def onboarding_status():
-    """Get the onboarding status for the current user."""
-    user_id = session.get('user_id')
-    if not user_id:
-        return jsonify({'error': 'Not authenticated'}), 401
-    
-    # Get user onboarding record
-    onboarding = UserOnboarding.query.filter_by(user_id=user_id).first()
-    
-    if not onboarding:
-        return jsonify({
-            'started': False,
-            'completed': False,
-            'progress': 0,
-            'current_step': None
-        })
+    # Mark onboarding as complete
+    onboarding.mark_complete()
     
     return jsonify({
-        'started': True,
-        'completed': onboarding.is_completed,
-        'progress': onboarding.progress,
-        'current_step': onboarding.current_step,
-        'completed_steps': onboarding.completed_steps
+        'success': True,
+        'redirect': url_for('dashboard')
+    })
+
+
+@onboarding_bp.route('/reset', methods=['POST'])
+@login_required
+def reset_onboarding():
+    """
+    Reset the onboarding progress.
+    
+    This will clear all completed steps and allow the user to start over.
+    """
+    # Get tutorial for user's role
+    tutorial = get_tutorial_for_role(current_user.role)
+    if not tutorial:
+        return jsonify({'success': False, 'error': 'No tutorial available for your role'}), 400
+    
+    # Get user onboarding record
+    onboarding = UserOnboarding.get_for_user(current_user.id, tutorial.id)
+    
+    # Reset progress
+    onboarding.reset_progress()
+    
+    return jsonify({
+        'success': True,
+        'redirect': url_for('onboarding_bp.tutorial_home')
     })

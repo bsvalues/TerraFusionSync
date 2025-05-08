@@ -1,145 +1,191 @@
 """
-TerraFusion SyncService - Onboarding Models
+Onboarding Database Models
 
-This module provides models for the onboarding experience and tutorial progress tracking.
+This module defines the database models used to track user onboarding progress.
 """
 
 from datetime import datetime
-import json
+from typing import List, Optional
 
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, JSON
+import sqlalchemy as sa
 from sqlalchemy.orm import relationship
 
 from apps.backend.database import get_shared_db
 
+# Get the shared database instance
 db = get_shared_db()
+
 
 class UserOnboarding(db.Model):
     """
-    User onboarding progress model.
+    Tracks a user's overall onboarding progress.
     
-    Tracks a user's progress through the onboarding process.
+    Each user has at most one UserOnboarding record.
     """
     __tablename__ = 'user_onboarding'
     
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    id = sa.Column(sa.Integer, primary_key=True)
+    user_id = sa.Column(sa.Integer, sa.ForeignKey('users.id'), unique=True, nullable=False)
+    user = relationship("User", back_populates="onboarding")
     
-    # Onboarding status
-    is_completed = Column(Boolean, default=False)
-    current_step = Column(String(50))  # ID of the current onboarding step
-    
-    # Timestamps
-    started_at = Column(DateTime, default=datetime.utcnow)
-    completed_at = Column(DateTime, nullable=True)
-    last_activity_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    # Onboarding data
-    progress_data = Column(Text)  # JSON encoded progress data
+    tutorial_id = sa.Column(sa.String(50), nullable=False)  # ID of the tutorial assigned to the user
+    started_at = sa.Column(sa.DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = sa.Column(sa.DateTime, nullable=True)
+    last_step_id = sa.Column(sa.String(50), nullable=True)  # ID of the last step accessed
     
     # Relationships
-    user = relationship("User")
-    events = relationship("OnboardingEvent", back_populates="onboarding", cascade="all, delete-orphan")
-    
-    def __repr__(self):
-        return f"<UserOnboarding user_id={self.user_id} completed={self.is_completed}>"
+    completed_steps = relationship("OnboardingEvent", back_populates="user_onboarding")
     
     @property
-    def progress(self):
-        """Get user's progress as a percentage."""
-        if self.is_completed:
+    def is_complete(self) -> bool:
+        """Check if onboarding is complete."""
+        return self.completed_at is not None
+    
+    @property
+    def completed_step_ids(self) -> List[str]:
+        """Get IDs of completed steps."""
+        return [event.step_id for event in self.completed_steps if event.step_id]
+    
+    def get_progress_percentage(self, total_steps: int) -> int:
+        """
+        Calculate the onboarding progress as a percentage.
+        
+        Args:
+            total_steps: Total number of steps in the tutorial
+            
+        Returns:
+            Progress percentage (0-100)
+        """
+        if self.is_complete:
             return 100
-        
-        if not self.progress_data:
-            return 0
-        
-        try:
-            data = json.loads(self.progress_data)
-            completed = data.get('completed_steps', [])
-            total = data.get('total_steps', 1)
             
-            if total == 0:
-                return 0
+        if total_steps <= 0:
+            return 0
+            
+        completed = len(self.completed_step_ids)
+        return min(int((completed / total_steps) * 100), 100)
+    
+    def mark_step_complete(self, step_id: str) -> "OnboardingEvent":
+        """
+        Mark a step as completed.
+        
+        Args:
+            step_id: The ID of the completed step
+            
+        Returns:
+            The created OnboardingEvent
+        """
+        # Check if step already completed
+        for event in self.completed_steps:
+            if event.step_id == step_id:
+                # Already completed, return existing event
+                return event
                 
-            return round((len(completed) / total) * 100)
-        except Exception:
-            return 0
-    
-    @property
-    def completed_steps(self):
-        """Get list of completed step IDs."""
-        if not self.progress_data:
-            return []
-            
-        try:
-            data = json.loads(self.progress_data)
-            return data.get('completed_steps', [])
-        except Exception:
-            return []
-    
-    def mark_step_completed(self, step_id):
-        """Mark a step as completed."""
-        data = {}
-        if self.progress_data:
-            try:
-                data = json.loads(self.progress_data)
-            except Exception:
-                data = {}
-        
-        completed = data.get('completed_steps', [])
-        if step_id not in completed:
-            completed.append(step_id)
-            
-        data['completed_steps'] = completed
-        self.progress_data = json.dumps(data)
-        
-        # Create event
+        # Create new event
         event = OnboardingEvent(
-            onboarding_id=self.id,
-            event_type='step_completed',
-            step_id=step_id
+            user_onboarding_id=self.id,
+            step_id=step_id,
+            event_type="step_completed",
+            timestamp=datetime.utcnow()
         )
-        db.session.add(event)
         
-        return True
+        # Update last step
+        self.last_step_id = step_id
+        
+        # Add to session
+        db.session.add(event)
+        db.session.commit()
+        
+        return event
     
-    def complete_onboarding(self):
-        """Mark onboarding as completed."""
-        self.is_completed = True
+    def mark_complete(self) -> None:
+        """Mark the entire onboarding as complete."""
         self.completed_at = datetime.utcnow()
         
-        # Create event
+        # Create completion event
         event = OnboardingEvent(
-            onboarding_id=self.id,
-            event_type='onboarding_completed'
+            user_onboarding_id=self.id,
+            event_type="onboarding_completed",
+            timestamp=datetime.utcnow()
         )
-        db.session.add(event)
         
-        return True
+        db.session.add(event)
+        db.session.commit()
+    
+    def reset_progress(self) -> None:
+        """Reset onboarding progress."""
+        # Clear existing events
+        OnboardingEvent.query.filter_by(user_onboarding_id=self.id).delete()
+        
+        # Reset fields
+        self.completed_at = None
+        self.last_step_id = None
+        self.started_at = datetime.utcnow()
+        
+        # Create reset event
+        event = OnboardingEvent(
+            user_onboarding_id=self.id,
+            event_type="onboarding_reset",
+            timestamp=datetime.utcnow()
+        )
+        
+        db.session.add(event)
+        db.session.commit()
+    
+    @classmethod
+    def get_for_user(cls, user_id: int, tutorial_id: str) -> Optional["UserOnboarding"]:
+        """
+        Get or create an onboarding record for a user.
+        
+        Args:
+            user_id: The user's ID
+            tutorial_id: The ID of the tutorial to assign
+            
+        Returns:
+            The UserOnboarding instance
+        """
+        # Try to find existing record
+        onboarding = cls.query.filter_by(user_id=user_id).first()
+        
+        if onboarding:
+            return onboarding
+            
+        # Create new record
+        onboarding = cls(
+            user_id=user_id,
+            tutorial_id=tutorial_id
+        )
+        
+        # Create started event
+        event = OnboardingEvent(
+            user_onboarding=onboarding,
+            event_type="onboarding_started",
+            timestamp=datetime.utcnow()
+        )
+        
+        db.session.add(onboarding)
+        db.session.add(event)
+        db.session.commit()
+        
+        return onboarding
+
 
 class OnboardingEvent(db.Model):
     """
-    Model for onboarding events.
+    Tracks onboarding events for a user.
     
-    Records interactions and progress during the onboarding process.
+    Each event represents an action or milestone in the onboarding process.
     """
-    __tablename__ = 'onboarding_events'
+    __tablename__ = 'onboarding_event'
     
-    id = Column(Integer, primary_key=True)
-    onboarding_id = Column(Integer, ForeignKey('user_onboarding.id'), nullable=False)
+    id = sa.Column(sa.Integer, primary_key=True)
+    user_onboarding_id = sa.Column(sa.Integer, sa.ForeignKey('user_onboarding.id'), nullable=False)
+    user_onboarding = relationship("UserOnboarding", back_populates="completed_steps")
     
-    # Event details
-    event_type = Column(String(50), nullable=False)  # e.g., 'step_viewed', 'step_completed', etc.
-    step_id = Column(String(50), nullable=True)  # ID of the related step (if applicable)
+    event_type = sa.Column(sa.String(50), nullable=False)  # e.g., "step_completed", "onboarding_started"
+    step_id = sa.Column(sa.String(50), nullable=True)  # Optional, only for step completion events
+    timestamp = sa.Column(sa.DateTime, default=datetime.utcnow, nullable=False)
+    event_data = sa.Column(sa.JSON, nullable=True)  # Optional additional data
     
-    # Event data
-    data = Column(Text, nullable=True)  # JSON encoded event data
-    
-    # Timestamp
-    created_at = Column(DateTime, default=datetime.utcnow)
-    
-    # Relationships
-    onboarding = relationship("UserOnboarding", back_populates="events")
-    
-    def __repr__(self):
-        return f"<OnboardingEvent {self.event_type} {self.step_id}>"
+    def __repr__(self) -> str:
+        return f"<OnboardingEvent {self.event_type} at {self.timestamp}>"

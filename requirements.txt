@@ -19,3 +19,8 @@ python-ldap
 flask-login
 flask-sqlalchemy
 sqlalchemy
+flask-login
+flask-sqlalchemy
+python-ldap
+sqlalchemy
+werkzeug

@@ -46,6 +46,9 @@ class User(db.Model, UserMixin):
     # Settings and preferences
     settings = Column(Text)  # JSON encoded user settings
     
+    # Onboarding relationship
+    onboarding = relationship("UserOnboarding", uselist=False, back_populates="user")
+    
     def __repr__(self):
         return f"<User {self.username} ({self.role})>"
     
