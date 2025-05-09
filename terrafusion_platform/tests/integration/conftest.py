@@ -94,31 +94,14 @@ async def pg_engine(alembic_cfg_obj):
     os.chdir(TERRAFUSION_SYNC_ROOT) # Alembic commands often expect to be run from where alembic.ini is
     
     try:
-        # Apply migrations using the SQLAlchemy async engine directly
-        # instead of command.upgrade which relies on asyncio.run()
-        async with engine.begin() as connection:
-            # Set up alembic context
-            # Directly use connection since we're already in an async context
-            # with proper typing for SQLAlchemy's AsyncConnection
-            context = MigrationContext.configure(
-                connection, 
-                opts={"target_metadata": Base.metadata}
-            )
-            
-            # Get current revision
-            current_rev = context.get_current_revision()
-            
-            # Get script directory
-            script = ScriptDirectory.from_config(alembic_cfg_obj)
-            
-            # If there are no migrations yet or we need to upgrade
-            if not current_rev or current_rev != script.get_current_head():
-                print(f"Current revision: {current_rev}, target head: {script.get_current_head()}")
-                # Regular command to upgrade - this will use our fixed env.py
-                command.upgrade(alembic_cfg_obj, "head")
-                print("Alembic migrations applied successfully.")
-            else:
-                print(f"Database already at latest revision: {current_rev}")
+        # Since Alembic requires a regular Connection and not AsyncConnection,
+        # we need to find a different approach to check if we need to run migrations
+        
+        # Use command.upgrade directly - our modified env.py will handle async correctly
+        print(f"Running Alembic migrations with properly configured connect_args...")
+        # Let alembic env.py handle the async connection issues
+        command.upgrade(alembic_cfg_obj, "head")
+        print("Alembic migrations applied successfully.")
     except Exception as e:
         pytest.fail(f"Alembic migration failed: {e}")
     finally:
