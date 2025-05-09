@@ -1,34 +1,14 @@
+# prometheus.yml
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
-alerting:
-  alertmanagers:
-    - static_configs:
-        - targets: []
-
-# Load rules once and periodically evaluate them
-rule_files:
-  # - "first_rules.yml"
-  # - "second_rules.yml"
-
 scrape_configs:
-  - job_name: 'prometheus'
+  - job_name: "prometheus"
     static_configs:
-      - targets: ['localhost:9090']
+      - targets: ["localhost:9090"]
 
-  - job_name: 'api-gateway'
-    metrics_path: '/metrics'
-    scrape_interval: 10s
+  - job_name: "syncservice_standalone"
+    metrics_path: /metrics
     static_configs:
-      - targets: ['api-gateway:5000']
-
-  - job_name: 'sync-service'
-    metrics_path: '/metrics'
-    scrape_interval: 10s
-    static_configs:
-      - targets: ['sync-service:8080']
-
-  - job_name: 'postgres'
-    static_configs:
-      - targets: ['db:5432']
+      - targets: ["localhost:8080"]  # Sync service port in Replit
