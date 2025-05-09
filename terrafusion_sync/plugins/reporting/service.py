@@ -46,9 +46,9 @@ async def create_report_job(
     Returns:
         ReportJob: The created job object
     """
-    # Create job with the correct field names from the model definition
+    # Create job with field names matching the database schema
     job = ReportJob(
-        job_id=str(uuid.uuid4()),
+        report_id=str(uuid.uuid4()),
         report_type=report_type,
         county_id=county_id,
         status="PENDING",
@@ -62,7 +62,7 @@ async def create_report_job(
         db.add(job)
         await db.commit()
         await db.refresh(job)
-        logger.info(f"Created report job {job.job_id} of type {report_type} for county {county_id}")
+        logger.info(f"Created report job {job.report_id} of type {report_type} for county {county_id}")
         
         # Record job submission metric
         REPORT_JOBS_SUBMITTED.labels(
@@ -92,8 +92,8 @@ async def get_report_job(db: AsyncSession, report_id: str) -> Optional[ReportJob
         Optional[ReportJob]: The report job if found, None otherwise
     """
     try:
-        # Use the job_id field instead of report_id
-        query = select(ReportJob).where(ReportJob.job_id == report_id)
+        # Use the report_id field 
+        query = select(ReportJob).where(ReportJob.report_id == report_id)
         result = await db.execute(query)
         job = result.scalars().first()
         return job
@@ -246,10 +246,10 @@ async def update_report_job_status(
             file_size_bytes = result_metadata.get("file_size_kb", 0) * 1024
             values["result_size"] = int(file_size_bytes)
         
-        # Execute update - use job_id field instead of report_id
+        # Execute update with report_id field
         stmt = (
             update(ReportJob)
-            .where(ReportJob.job_id == report_id)
+            .where(ReportJob.report_id == report_id)
             .values(**values)
             .returning(ReportJob)
         )
