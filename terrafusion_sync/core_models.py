@@ -255,44 +255,38 @@ class ReportJob(Base):
     
     __tablename__ = 'report_jobs'
     
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    job_id: Mapped[str] = mapped_column(String(36), unique=True, default=lambda: str(uuid.uuid4()))
+    # Primary key and identifiers - matching database schema
+    # The database uses report_id as the public identifier
+    report_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     report_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    report_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text)
-    
-    # Who requested the report
-    user_id: Mapped[Optional[str]] = mapped_column(String(100))
-    username: Mapped[Optional[str]] = mapped_column(String(100))
+    county_id: Mapped[str] = mapped_column(String(50), nullable=False)
     
     # When the report job was created/updated
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    # Parameters and filters for the report
-    parameters: Mapped[Optional[Dict]] = mapped_column(JSON)
-    
-    # Report output options
-    format: Mapped[str] = mapped_column(String(20), default=ReportFormat.PDF.value)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # When processing started
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # When processing completed
     
     # Processing status
     status: Mapped[str] = mapped_column(String(20), default=ReportStatus.PENDING.value)
-    progress: Mapped[float] = mapped_column(Float, default=0.0)  # Percentage complete (0-100)
+    
+    # Parameters JSON for the report
+    parameters_json: Mapped[Optional[Dict]] = mapped_column(JSON)
     
     # Result storage
-    result_url: Mapped[Optional[str]] = mapped_column(String(255))  # URL to the generated report
-    result_size: Mapped[Optional[int]] = mapped_column(Integer)  # Size in bytes
+    result_location: Mapped[Optional[str]] = mapped_column(String(255))  # URL to the generated report
+    result_metadata_json: Mapped[Optional[Dict]] = mapped_column(JSON)  # Metadata about the result
     
     # Error tracking
-    error_message: Mapped[Optional[str]] = mapped_column(Text)
-    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    message: Mapped[Optional[str]] = mapped_column(Text)  # Error message or status details
     
-    # Performance tracking
-    processing_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    processing_completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    # Note: The started_at and completed_at fields replace these fields
+    # We keep them for backward compatibility with existing code
+    # Eventually these should be removed when all code is updated
+    processing_started_at = property(lambda self: self.started_at)
+    processing_completed_at = property(lambda self: self.completed_at)
     
-    # Additional metadata
-    county_id: Mapped[Optional[str]] = mapped_column(String(50))  # County for the report
+    # Additional metadata for cross-service tracking
     correlation_id: Mapped[Optional[str]] = mapped_column(String(100))  # For cross-service tracking
     
     def to_dict(self) -> Dict[str, Any]:
@@ -304,42 +298,27 @@ class ReportJob(Base):
             return value
             
         result = {
-            "id": self.id,
-            "job_id": self.job_id,
+            "report_id": self.report_id,
             "report_type": self.report_type,
-            "report_name": self.report_name,
-            "description": self.description,
-            
-            "user": {
-                "user_id": self.user_id,
-                "username": self.username
-            },
+            "county_id": self.county_id,
             
             "timestamps": {
                 "created_at": serialize_value(self.created_at),
                 "updated_at": serialize_value(self.updated_at),
-                "processing_started_at": serialize_value(self.processing_started_at),
-                "processing_completed_at": serialize_value(self.processing_completed_at)
+                "started_at": serialize_value(self.started_at),
+                "completed_at": serialize_value(self.completed_at)
             },
             
-            "parameters": self.parameters,
-            "format": self.format,
+            "parameters": self.parameters_json,
             
             "status": {
                 "current": self.status,
-                "progress": self.progress,
-                "error_message": self.error_message,
-                "retry_count": self.retry_count
+                "message": self.message
             },
             
             "result": {
-                "url": self.result_url,
-                "size": self.result_size
-            },
-            
-            "metadata": {
-                "county_id": self.county_id,
-                "correlation_id": self.correlation_id
+                "location": self.result_location,
+                "metadata": self.result_metadata_json
             }
         }
         
@@ -347,35 +326,29 @@ class ReportJob(Base):
     
     async def get_processing_time(self) -> Optional[float]:
         """Calculate the processing time in seconds, if available."""
-        if self.processing_started_at and self.processing_completed_at:
-            return (self.processing_completed_at - self.processing_started_at).total_seconds()
+        if self.started_at and self.completed_at:
+            return (self.completed_at - self.started_at).total_seconds()
         return None
     
     async def start_processing(self) -> None:
         """Mark the job as processing and record the start time."""
         self.status = ReportStatus.PROCESSING.value
-        self.processing_started_at = datetime.utcnow()
+        self.started_at = datetime.utcnow()
         self.updated_at = datetime.utcnow()
     
-    async def complete_processing(self, result_url: str, result_size: int) -> None:
+    async def complete_processing(self, result_location: str, result_metadata: Dict[str, Any]) -> None:
         """Mark the job as completed and record the results."""
         self.status = ReportStatus.COMPLETED.value
-        self.progress = 100.0
-        self.result_url = result_url
-        self.result_size = result_size
-        self.processing_completed_at = datetime.utcnow()
+        self.result_location = result_location
+        self.result_metadata_json = result_metadata
+        self.completed_at = datetime.utcnow()
         self.updated_at = datetime.utcnow()
     
     async def fail_processing(self, error_message: str) -> None:
         """Mark the job as failed with an error message."""
         self.status = ReportStatus.FAILED.value
-        self.error_message = error_message
-        self.processing_completed_at = datetime.utcnow()
-        self.updated_at = datetime.utcnow()
-    
-    async def update_progress(self, progress: float) -> None:
-        """Update the progress percentage of the report generation."""
-        self.progress = min(max(progress, 0.0), 99.9)  # Keep between 0 and 99.9%
+        self.message = error_message
+        self.completed_at = datetime.utcnow()
         self.updated_at = datetime.utcnow()
 
 # All duplicate model definitions have been removed
