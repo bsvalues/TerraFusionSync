@@ -76,6 +76,49 @@ VALUATION_CONFIDENCE_SCORE = Summary(
     ['county_id', 'valuation_method']
 )
 
+# === Reporting Plugin Metrics ===
+
+# Counter for report jobs submitted
+REPORT_JOBS_SUBMITTED = Counter(
+    'report_jobs_submitted_total',
+    'Total number of report jobs submitted',
+    ['county_id', 'report_type']
+)
+
+# Counter for report job completions
+REPORT_JOBS_COMPLETED = Counter(
+    'report_jobs_completed_total',
+    'Total number of report jobs completed',
+    ['county_id', 'report_type', 'status']
+)
+
+# Counter for report job failures
+REPORT_JOBS_FAILED = Counter(
+    'report_jobs_failed_total',
+    'Total number of report jobs that failed',
+    ['county_id', 'report_type', 'error_type']
+)
+
+# Histogram for report processing duration
+REPORT_PROCESSING_DURATION = Histogram(
+    'report_processing_duration_seconds',
+    'Report processing duration in seconds',
+    ['county_id', 'report_type'],
+    buckets=[0.1, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600, 1800, 3600]
+)
+
+# Gauge for pending report jobs
+REPORT_JOBS_PENDING = Gauge(
+    'report_jobs_pending',
+    'Number of report jobs in pending state'
+)
+
+# Gauge for report jobs in progress
+REPORT_JOBS_IN_PROGRESS = Gauge(
+    'report_jobs_in_progress',
+    'Number of report jobs currently being processed'
+)
+
 
 def track_api_request(endpoint: str):
     """
@@ -174,6 +217,75 @@ def track_valuation_job(func: Callable) -> Callable:
     return wrapper
 
 
+def track_report_job(func: Callable) -> Callable:
+    """
+    Decorator to track report job metrics.
+    
+    This will record job submission, completion, duration metrics, and update gauges.
+    """
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        county_id = kwargs.get('county_id', 'unknown')
+        report_type = kwargs.get('report_type', 'unknown')
+        
+        # Record job submission
+        REPORT_JOBS_SUBMITTED.labels(
+            county_id=county_id,
+            report_type=report_type
+        ).inc()
+        
+        # Increment pending jobs
+        REPORT_JOBS_PENDING.inc()
+        
+        start_time = time.time()
+        
+        try:
+            # Just before processing starts, update gauges
+            REPORT_JOBS_PENDING.dec()
+            REPORT_JOBS_IN_PROGRESS.inc()
+            
+            # Process the job
+            result = await func(*args, **kwargs)
+            
+            # Record completion with success status
+            REPORT_JOBS_COMPLETED.labels(
+                county_id=county_id,
+                report_type=report_type,
+                status='success'
+            ).inc()
+            
+            return result
+            
+        except Exception as e:
+            # Record completion with error status
+            REPORT_JOBS_COMPLETED.labels(
+                county_id=county_id,
+                report_type=report_type,
+                status='error'
+            ).inc()
+            
+            # Record failure with error type
+            error_type = type(e).__name__
+            REPORT_JOBS_FAILED.labels(
+                county_id=county_id,
+                report_type=report_type,
+                error_type=error_type
+            ).inc()
+            
+            raise e
+            
+        finally:
+            # Always decrement in-progress counter and record duration
+            REPORT_JOBS_IN_PROGRESS.dec()
+            duration = time.time() - start_time
+            REPORT_PROCESSING_DURATION.labels(
+                county_id=county_id,
+                report_type=report_type
+            ).observe(duration)
+    
+    return wrapper
+
+
 def update_metrics_from_database(db_metrics: Dict[str, Any]):
     """
     Update metrics based on data from the database.
@@ -187,6 +299,13 @@ def update_metrics_from_database(db_metrics: Dict[str, Any]):
     
     if 'valuation_jobs_in_progress' in db_metrics:
         VALUATION_JOBS_IN_PROGRESS.set(db_metrics['valuation_jobs_in_progress'])
+    
+    # Update report job counts from DB
+    if 'report_jobs_pending' in db_metrics:
+        REPORT_JOBS_PENDING.set(db_metrics['report_jobs_pending'])
+    
+    if 'report_jobs_in_progress' in db_metrics:
+        REPORT_JOBS_IN_PROGRESS.set(db_metrics['report_jobs_in_progress'])
     
     # Update active DB connections
     if 'db_connections_active' in db_metrics:

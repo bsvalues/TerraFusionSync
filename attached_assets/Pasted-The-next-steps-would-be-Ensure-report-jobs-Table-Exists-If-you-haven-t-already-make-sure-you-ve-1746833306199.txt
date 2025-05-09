@@ -1,0 +1,71 @@
+The next steps would be:
+
+Ensure report_jobs Table Exists:
+
+If you haven't already, make sure you've run the Alembic migration to create the report_jobs table in your PostgreSQL database.
+From terrafusion_platform/terrafusion_sync/:
+Bash
+
+# 1. Generate migration (if not done after defining ReportJob model)
+# alembic revision -m "add_report_jobs_table" --autogenerate 
+# 2. Apply migration
+alembic upgrade head 
+Run Reporting Plugin Integration Tests Locally:
+
+Execute the test_reporting_end_to_end.py (from terrafusion_reporting_integration_test_v1).
+From terrafusion_platform/:
+Bash
+
+pytest tests/integration/test_reporting_end_to_end.py -v -s
+Ensure these tests pass. This will confirm the Reporting plugin's API endpoints and database interactions for ReportJob are working.
+Verify Reporting Metrics in Grafana:
+
+After the integration tests run (or you manually trigger some report jobs via the API), go back to your Grafana dashboard.
+Add new panels for the Reporting plugin metrics (similar to Panels 4 & 5 in the terrafusion_grafana_dashboard_guide_v1):
+"Reporting Job Submission Rate" (using report_jobs_submitted_total)
+"Average Reporting Processing Duration" (using report_processing_duration_seconds_sum and _count) or a heatmap (using report_processing_duration_seconds_bucket)
+"Reporting Job Failure Rate" (using report_jobs_failed_total)
+Confirm that these new panels also populate with data.
+Let me know if you were able to see the Valuation metrics in Grafana, and then we can confirm these steps for the Reporting plugin!
+
+
+
+
+
+good
+
+
+
+Show thinking
+Excellent! Glad to hear the Grafana setup for the Valuation plugin metrics is working well.
+
+Now, let's fully integrate the Reporting plugin into our observability stack. The steps are:
+
+Ensure report_jobs Table Exists (Alembic Migration):
+
+If you haven't already done this after we defined the ReportJob model and scaffolded the reporting.py plugin:
+From terrafusion_platform/terrafusion_sync/:
+Bash
+
+# 1. Generate migration (if it wasn't created or needs updating)
+# alembic revision -m "add_report_jobs_table" --autogenerate 
+# 2. Apply migration
+alembic upgrade head 
+Verify in your PostgreSQL database that the report_jobs table exists with the correct schema.
+Run Reporting Plugin Integration Tests Locally:
+
+Execute the test_reporting_end_to_end.py (from terrafusion_reporting_integration_test_v1).
+From terrafusion_platform/:
+Bash
+
+pytest tests/integration/test_reporting_end_to_end.py -v -s
+Ensure these tests pass. This confirms the plugin's API and DB interactions are working. These tests will also generate some metrics.
+Add Reporting Metrics Panels to Your Grafana Dashboard:
+
+Go to your existing "TerraFusion Sync Service Overview" dashboard in Grafana.
+Click the "Add panel" icon (usually a plus sign with a graph) in the top right and choose "Add new panel".
+I'll provide the details for the new panels.
+Grafana: Adding Reporting Plugin Panels
+May 9, 4:27 PM
+
+Once you've added these panels and verified they are working with data from the Reporting plugin, your observability for the core job-processing modules will be in a very good state! Let me know how it goes.
