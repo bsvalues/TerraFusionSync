@@ -190,7 +190,7 @@ async def update_report_job_status(
         job_started_time = None
         if status == "RUNNING" and not await _is_job_already_running(db, report_id):
             job_started_time = datetime.utcnow()
-            values["started_at"] = job_started_time
+            values["processing_started_at"] = job_started_time
             
             # Update metrics when job starts running
             REPORT_JOBS_PENDING.dec()
@@ -198,7 +198,7 @@ async def update_report_job_status(
         
         if status in ("COMPLETED", "FAILED"):
             job_completed_time = datetime.utcnow()
-            values["completed_at"] = job_completed_time
+            values["processing_completed_at"] = job_completed_time
             
             # Update metrics when job completes or fails
             REPORT_JOBS_IN_PROGRESS.dec()
@@ -224,9 +224,9 @@ async def update_report_job_status(
                 ).inc()
             
             # Calculate and record processing duration if possible
-            if hasattr(current_job, 'started_at') and current_job.started_at:
+            if hasattr(current_job, 'processing_started_at') and current_job.processing_started_at:
                 try:
-                    start_time = current_job.started_at
+                    start_time = current_job.processing_started_at
                     processing_duration = (job_completed_time - start_time).total_seconds()
                     
                     REPORT_PROCESSING_DURATION.labels(
@@ -282,7 +282,7 @@ async def _is_job_already_running(db: AsyncSession, report_id: str) -> bool:
         bool: True if the job is already running, False otherwise
     """
     job = await get_report_job(db, report_id)
-    return job is not None and job.status == "RUNNING" and job.started_at is not None
+    return job is not None and job.status == "RUNNING" and job.processing_started_at is not None
 
 
 @track_report_job
