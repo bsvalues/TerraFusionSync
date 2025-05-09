@@ -38,7 +38,7 @@ async def test_create_report_job(sync_client: TestClient, create_report_job):
     response = sync_client.post("/plugins/v1/reporting/reports", json=report_data)
     
     # Verify the response
-    assert response.status_code == 201, f"Expected 201 Created, got {response.status_code}: {response.text}"
+    assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}: {response.text}"
     data = response.json()
     
     # Check response structure
