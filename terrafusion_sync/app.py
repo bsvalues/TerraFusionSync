@@ -265,6 +265,88 @@ async def get_property(
         await session.close()
 
 
+# County configuration endpoints
+@app.get("/counties", tags=["Counties"], response_model=List[Dict[str, Any]])
+async def get_counties():
+    """
+    Get a list of all configured counties.
+    
+    Returns:
+        List of county dictionaries with basic information
+    """
+    # Check if county_manager is available
+    if county_manager is None:
+        logger.warning("CountyConfigManager is not available. Unable to retrieve county configurations.")
+        return []
+    
+    try:
+        county_list = county_manager.list_available_counties()
+        result = []
+        
+        for county_name in county_list:
+            try:
+                config = county_manager.get_county_config(county_name)
+                result.append({
+                    "county_id": config.get_county_id(),
+                    "county_name": config.get_county_name(),
+                    "legacy_system_type": config.get_legacy_system_type()
+                })
+            except Exception as e:
+                logger.error(f"Error loading county configuration for '{county_name}': {e}")
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error retrieving county list: {e}")
+        return []
+
+
+@app.get("/counties/{county_id}", tags=["Counties"], response_model=Dict[str, Any])
+async def get_county_config(county_id: str):
+    """
+    Get detailed configuration information for a specific county.
+    
+    Args:
+        county_id: The county ID
+        
+    Returns:
+        County configuration dictionary
+        
+    Raises:
+        HTTPException: If county configuration not found
+    """
+    # Check if county_manager is available
+    if county_manager is None:
+        raise HTTPException(
+            status_code=503,  # Service Unavailable
+            detail="County configuration service is not available"
+        )
+    
+    try:
+        config = county_manager.get_county_config(county_id)
+        return {
+            "county_id": config.get_county_id(),
+            "county_name": config.get_county_name(),
+            "legacy_system_type": config.get_legacy_system_type(),
+            "connection_params": config.get_legacy_connection_params(),
+            "users_count": len(config.get_users()),
+            "roles_count": len(config.get_role_definitions()),
+            "mappings": {
+                "tables": list(config.get_field_mappings().keys())
+            }
+        }
+    except ValueError as e:
+        raise HTTPException(
+            status_code=404,  # Not Found
+            detail=f"County configuration not found: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Error retrieving county configuration for '{county_id}': {e}")
+        raise HTTPException(
+            status_code=500,  # Internal Server Error
+            detail=f"Error retrieving county configuration: {str(e)}"
+        )
+
+
 # Sync Source System endpoints
 @app.get("/sync-sources", tags=["Sync"], response_model=List[Dict[str, Any]])
 async def get_sync_sources(

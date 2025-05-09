@@ -1,0 +1,47 @@
+Okay, let's generate the code for the pytest fixtures: pg_engine and create_property_operational.
+
+These fixtures are essential for setting up the necessary database state for your integration tests. We'll place them in a conftest.py file, typically located in your tests/integration/ directory or a shared tests/ directory.
+
+Assumptions:
+
+You have pytest, pytest-asyncio, sqlalchemy, and asyncpg (or your chosen async driver) in your development/test requirements.
+Your SQLAlchemy models (specifically PropertyOperational and the Base they inherit from) are defined in terrafusion_sync.core_models.
+You'll have a separate test database or a mechanism to isolate test data. For this example, we'll use an environment variable TEST_TERRAFUSION_OPERATIONAL_DB_URL for the test database connection string.
+The docker-compose.yml can be adapted to spin up this test database, or you might point it to a dedicated test instance.
+TerraFusion - Pytest Integration Test Fixtures
+May 9, 12:06 PM
+Explanation and How to Use:
+
+terrafusion_platform/tests/integration/conftest.py:
+
+Environment Loading: It loads .env to get TEST_TERRAFUSION_OPERATIONAL_DB_URL.
+Model Import: Attempts to import Base and PropertyOperational from your application. Ensure the import paths are correct based on how you run pytest and your PYTHONPATH setup. If the import fails, it currently defines minimal stubs (this should be fixed by ensuring correct paths in a real setup).
+event_loop (Session-scoped): Standard fixture for pytest-asyncio.
+pg_engine (Session-scoped):
+Reads TEST_TERRAFUSION_OPERATIONAL_DB_URL.
+Creates an AsyncEngine.
+Crucially, it runs Base.metadata.create_all(engine) once per test session. This ensures all your tables (defined by models inheriting from Base) are created in the test database before any tests run. You might want to drop_all first for a truly clean slate each session.
+db_session (Function-scoped):
+Takes the pg_engine.
+Creates an AsyncSession for each test function.
+It begins a (potentially nested) transaction and rolls it back after the test yields. This is key for test isolation: changes made by one test don't affect others.
+create_property_operational (Function-scoped Factory):
+Takes the db_session.
+It's a factory (returns a function) that you can call in your tests to create PropertyOperational records with custom data or defaults.
+It adds the record to the session and flushes to get DB-generated values. The actual commit/rollback is handled by the db_session fixture.
+sync_app_for_test (Session-scoped): Provides the FastAPI application instance from terrafusion_sync.app.
+sync_client (Function-scoped): Provides a fastapi.testclient.TestClient for making HTTP requests directly to your terrafusion_sync FastAPI application during tests, bypassing the network.
+Environment Variable for Test Database:
+
+You must set TEST_TERRAFUSION_OPERATIONAL_DB_URL in your .env file (or your CI environment) to point to a separate database used only for testing. This is critical to avoid wiping or corrupting your development or production data.
+Example for .env:
+Ini, TOML
+
+TEST_TERRAFUSION_OPERATIONAL_DB_URL="postgresql+asyncpg://test_user:test_password@localhost:5431/terrafusion_test_db"
+(Assuming you have a separate PostgreSQL instance or database for tests, possibly running on a different port like 5431 via Docker Compose).
+Running Tests:
+
+Install pytest and pytest-asyncio (pip install pytest pytest-asyncio httpx).
+Navigate to your terrafusion_platform directory.
+Run pytest or pytest tests/integration/.
+This conftest.py provides the core database fixtures needed for writing robust integration tests for your terrafusion_sync service and its plugins. The agent's suggested integration test for the valuation workflow can now be built using these fixtures.

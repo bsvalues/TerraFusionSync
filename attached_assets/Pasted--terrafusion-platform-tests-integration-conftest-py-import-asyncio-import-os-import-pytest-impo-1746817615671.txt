@@ -1,0 +1,226 @@
+# terrafusion_platform/tests/integration/conftest.py
+import asyncio
+import os
+import pytest
+import pytest_asyncio # For async fixtures
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+from dotenv import load_dotenv
+from typing import AsyncGenerator, Callable, Dict, Any
+import uuid
+
+# Add project root to sys.path to allow importing application modules
+# This assumes conftest.py is in tests/integration/ and project root is two levels up.
+PROJECT_ROOT_FOR_TESTS = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+import sys
+sys.path.insert(0, PROJECT_ROOT_FOR_TESTS)
+
+# Attempt to import Base and PropertyOperational model
+# This path needs to be correct relative to where pytest is run or how PYTHONPATH is set.
+try:
+    from terrafusion_sync.core_models import Base, PropertyOperational
+except ImportError:
+    # Fallback for different execution contexts or if models are structured differently
+    # This might occur if 'terrafusion_sync' is not directly on the path during test runs.
+    # Ensure your project structure and PYTHONPATH are set up for tests to find modules.
+    print("Warning: Could not directly import from terrafusion_sync.core_models. "
+          "Ensure PYTHONPATH is set correctly or adjust import paths for tests.")
+    # As a last resort for the example, define minimal stubs if import fails,
+    # but in a real setup, fixing the import path is crucial.
+    from sqlalchemy.orm import declarative_base
+    from sqlalchemy import Column, String, Integer, Float, DateTime
+    Base = declarative_base()
+    class PropertyOperational(Base):
+        __tablename__ = "properties_operational_test_stub" # Use a distinct name if stubbing
+        id = Column(Integer, primary_key=True)
+        property_id = Column(String, unique=True, index=True, nullable=False)
+        county_id = Column(String, index=True, nullable=False)
+        situs_address_full = Column(String, nullable=True)
+        current_assessed_value_total = Column(Float, nullable=True)
+        year_built = Column(Integer, nullable=True)
+        created_at = Column(DateTime, default=datetime.datetime.utcnow)
+        updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+
+# Load .env file from the project root (terrafusion_platform/.env)
+# This ensures that environment variables like TEST_TERRAFUSION_OPERATIONAL_DB_URL are available.
+DOTENV_PATH = os.path.join(PROJECT_ROOT_FOR_TESTS, '.env')
+if os.path.exists(DOTENV_PATH):
+    load_dotenv(dotenv_path=DOTENV_PATH)
+else:
+    # Fallback if .env is in the current directory (e.g. when running tests from project root)
+    load_dotenv()
+
+
+# --- Database Fixtures ---
+
+@pytest_asyncio.fixture(scope="session")
+async def event_loop():
+    """
+    Creates an event loop for the entire test session.
+    pytest-asyncio handles this by default for most cases,
+    but defining it explicitly can sometimes help with complex async setups.
+    """
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
+
+@pytest_asyncio.fixture(scope="session")
+async def pg_engine():
+    """
+    Provides an SQLAlchemy async engine connected to the TEST database.
+    It creates all tables defined in Base.metadata before tests run
+    and disposes of the engine after tests complete.
+    Tables are typically dropped and recreated per session or per test for isolation,
+    depending on the desired test strategy. For this example, we create once per session.
+    """
+    test_db_url = os.getenv("TEST_TERRAFUSION_OPERATIONAL_DB_URL")
+    if not test_db_url:
+        pytest.fail("TEST_TERRAFUSION_OPERATIONAL_DB_URL environment variable is not set. "
+                    "Please define it in your .env file for testing.")
+
+    engine = create_async_engine(test_db_url, echo=os.getenv("SQLALCHEMY_TEST_ECHO", "False").lower() == "true")
+    
+    async with engine.begin() as conn:
+        # Drop all tables (optional, for a clean slate each test session)
+        # await conn.run_sync(Base.metadata.drop_all)
+        # Create all tables
+        await conn.run_sync(Base.metadata.create_all)
+    
+    yield engine # Provide the engine to tests
+    
+    # Teardown: Dispose of the engine
+    await engine.dispose()
+
+@pytest_asyncio.fixture(scope="function") # function scope for test isolation
+async def db_session(pg_engine) -> AsyncGenerator[AsyncSession, None]:
+    """
+    Provides an SQLAlchemy AsyncSession for a single test function.
+    It begins a transaction before the test and rolls it back after,
+    ensuring test isolation.
+    """
+    AsyncSessionFactory = sessionmaker(
+        bind=pg_engine, class_=AsyncSession, expire_on_commit=False
+    )
+    
+    async with AsyncSessionFactory() as session:
+        # For true isolation, you might want to start a nested transaction
+        # or ensure each test operates on unique data.
+        # For simplicity, we yield the session. If tests modify data,
+        # consider strategies like database cleaning between tests.
+        # A common pattern is to begin a transaction and roll it back.
+        async with session.begin_nested() if session.in_transaction() else session.begin() as transaction:
+            yield session
+            await transaction.rollback() # Rollback changes after each test
+
+
+@pytest_asyncio.fixture(scope="function")
+def create_property_operational(db_session: AsyncSession) -> Callable[..., PropertyOperational]:
+    """
+    Factory fixture to create PropertyOperational records in the test database.
+    Ensures records are cleaned up after the test if created within the test's transaction.
+    """
+    created_property_ids = []
+
+    async def _create_property(
+        property_id: str = None, # Allow specifying or auto-generate
+        county_id: str = "test_county",
+        situs_address_full: str = "123 Test St, Testville, TS 12345",
+        current_assessed_value_total: float = 100000.0,
+        year_built: int = 2000,
+        custom_fields: Dict[str, Any] = None
+    ) -> PropertyOperational:
+        nonlocal created_property_ids
+        if property_id is None:
+            property_id = f"TEST_PROP_{uuid.uuid4().hex[:8]}"
+
+        prop_data = {
+            "property_id": property_id,
+            "county_id": county_id,
+            "situs_address_full": situs_address_full,
+            "current_assessed_value_total": current_assessed_value_total,
+            "year_built": year_built,
+            "created_at": datetime.datetime.utcnow(), # Ensure these are set if not auto by DB
+            "updated_at": datetime.datetime.utcnow()
+        }
+        if custom_fields:
+            prop_data.update(custom_fields)
+        
+        new_property = PropertyOperational(**prop_data)
+        
+        db_session.add(new_property)
+        # The commit is handled by the db_session fixture's transaction management (or lack thereof if not nested)
+        # For this factory, we'll assume the db_session fixture handles commit/rollback.
+        # If not using nested transactions and rollback, you'd await db_session.commit() here.
+        # However, relying on the session-scoped rollback is cleaner for test isolation.
+        await db_session.flush() # Ensure it gets an ID if auto-incrementing PK and needed immediately
+        await db_session.refresh(new_property) # Refresh to get all attributes from DB
+        
+        created_property_ids.append(new_property.property_id) # Keep track for potential manual cleanup if needed
+        return new_property
+
+    yield _create_property
+
+    # Cleanup is implicitly handled by the db_session fixture's rollback.
+    # If you weren't using transaction rollback per test in db_session,
+    # you would manually delete records here:
+    # print(f"Cleaning up properties: {created_property_ids}")
+    # for prop_id in created_property_ids:
+    #     # await db_session.execute(delete(PropertyOperational).where(PropertyOperational.property_id == prop_id))
+    # await db_session.commit()
+
+
+# --- API Client Fixtures (Example for terrafusion_sync) ---
+# You would also create a similar fixture for terrafusion_gateway if testing it directly.
+
+@pytest_asyncio.fixture(scope="session")
+def sync_app_for_test():
+    """
+    Provides the FastAPI application instance from terrafusion_sync.
+    This allows TestClient to interact with it.
+    """
+    try:
+        from terrafusion_sync.app import app as actual_sync_app
+        return actual_sync_app
+    except ImportError:
+        pytest.fail("Failed to import 'app' from 'terrafusion_sync.app'. Check PYTHONPATH and imports.")
+
+
+@pytest_asyncio.fixture(scope="function") # Or "session" if app state is safe across tests
+async def sync_client(sync_app_for_test) -> AsyncGenerator[TestClient, None]:
+    """
+    Provides a FastAPI TestClient for the terrafusion_sync service.
+    """
+    from fastapi.testclient import TestClient # Import here to avoid issues if FastAPI not installed globally
+
+    # For async TestClient, ensure httpx is installed: pip install httpx
+    # If your app uses lifespan events for startup/shutdown (e.g., DB connections),
+    # TestClient handles them.
+    async with TestClient(sync_app_for_test, base_url="http://testserver") as client:
+        yield client
+
+# Example of how to use these fixtures in a test file (e.g., tests/integration/test_valuation_plugin.py):
+#
+# import pytest
+#
+# @pytest.mark.asyncio
+# async def test_example_valuation_run(sync_client, create_property_operational, db_session):
+#     # 1. Setup: Create a property using the factory fixture
+#     test_prop = await create_property_operational(property_id="VAL_TEST_001", county_id="TEST_COUNTY")
+#     # You might need to commit if create_property_operational doesn't or if session scope is different
+#     # await db_session.commit() # Usually handled by db_session fixture's rollback
+#
+#     # 2. Action: Call the valuation plugin endpoint
+#     response = await sync_client.post(
+#         "/plugins/v1/valuation/run", # Ensure this path matches your router setup
+#         json={"property_id": "VAL_TEST_001", "county_id": "TEST_COUNTY"}
+#     )
+#
+#     # 3. Assert: Check the response
+#     assert response.status_code == 202 # Accepted
+#     response_data = response.json()
+#     assert response_data["property_id"] == "VAL_TEST_001"
+#     assert response_data["status"] == "PENDING"
+#     job_id = response_data["job_id"]
+#
+#     # Further steps: poll status, check results (as in the agent's suggested test)

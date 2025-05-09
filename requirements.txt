@@ -29,3 +29,6 @@ asyncpg
 aiosqlite
 python-dotenv
 pyyaml
+alembic
+asyncpg
+greenlet

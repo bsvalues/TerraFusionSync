@@ -1,0 +1,345 @@
+This document outlines the setup of Alembic for database migrations within the `terrafusion_sync` service and the creation of the initial migration script.
+
+**Prerequisites:**
+
+* Alembic and an async-compatible version of `psycopg` (like `asyncpg`) should be in your `terrafusion_sync/requirements.txt` and installed.
+    ```txt
+    # terrafusion_sync/requirements.txt
+    # ... other requirements
+    alembic
+    asyncpg
+    sqlalchemy[asyncio] # Ensure SQLAlchemy is installed with asyncio support
+    greenlet # Often needed by Alembic for async operations with sync parts of its env
+    ```
+
+**Step 1: Initialize Alembic**
+
+Navigate to your `terrafusion_platform/terrafusion_sync` directory in your terminal and run:
+
+```bash
+# cd terrafusion_platform/terrafusion_sync
+alembic init -t async alembic_migrations
+```
+
+This command will:
+* Create an `alembic_migrations` directory.
+* Create an `alembic.ini` configuration file.
+* The `-t async` template sets up Alembic for an asynchronous environment.
+
+**Step 2: Configure `alembic.ini`**
+
+Modify the generated `alembic.ini` file. The main change is to point `sqlalchemy.url` to your database connection string, which we'll manage via an environment variable.
+
+```ini
+# terrafusion_sync/alembic.ini (Relevant parts)
+
+[alembic]
+# path to migration scripts
+script_location = alembic_migrations
+
+# Template used to generate migration files
+# file_template = %%(rev)s_%%(slug)s
+
+# timezone for migration file naming
+# timezone =
+
+# sys.path path, will be prepended to sys.path if present.
+# defaults to the current working directory.
+# prepend_sys_path = .
+
+# Logging configuration
+[loggers]
+keys = root,sqlalchemy,alembic
+
+[handlers]
+keys = console
+
+[formatters]
+keys = generic
+
+[logger_root]
+level = WARN
+handlers = console
+qualname =
+
+[logger_sqlalchemy]
+level = WARN
+handlers =
+qualname = sqlalchemy.engine
+
+[logger_alembic]
+level = INFO
+handlers =
+qualname = alembic
+
+[handler_console]
+class = StreamHandler
+args = (sys.stderr,)
+level = NOTSET
+formatter = generic
+
+[formatter_generic]
+format = %(levelname)-5.5s [%(name)s] %(message)s
+datefmt = %H:%M:%S
+
+# --- THIS IS THE KEY LINE TO MODIFY ---
+# sqlalchemy.url = driver://user:pass@host/dbname
+# We will set this dynamically in env.py using an environment variable
+sqlalchemy.url =postgresql+asyncpg://user:password@host/db # Placeholder, will be overridden in env.py
+```
+*Note: We set a placeholder for `sqlalchemy.url` here, but the actual URL will be loaded from an environment variable in `env.py` for better security and flexibility.*
+
+**Step 3: Configure `alembic_migrations/env.py`**
+
+This file is crucial for configuring how Alembic connects to your database and discovers your models. Modify `alembic_migrations/env.py`:
+
+```python
+# terrafusion_sync/alembic_migrations/env.py
+import os
+import sys
+from logging.config import fileConfig
+from sqlalchemy.ext.asyncio import create_async_engine
+from alembic import context
+from dotenv import load_dotenv
+
+# --- Add project root to sys.path for model imports ---
+# This assumes env.py is in alembic_migrations, which is in terrafusion_sync
+# Adjust if your structure is different.
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, PROJECT_ROOT)
+
+# --- Load .env file from project root ---
+# Assuming .env is in terrafusion_platform, which is one level above terrafusion_sync
+DOTENV_PATH = os.path.join(PROJECT_ROOT, '..', '.env') 
+# If .env is in terrafusion_sync, then:
+# DOTENV_PATH = os.path.join(PROJECT_ROOT, '.env')
+load_dotenv(dotenv_path=DOTENV_PATH)
+
+
+# --- Import your models' Base ---
+# This is the Base = declarative_base() from your core_models.py
+try:
+    from core_models import Base as TargetBase # Assuming core_models.py is in terrafusion_sync/
+except ImportError:
+    # Fallback if running alembic from a different cwd or structure issues
+    try:
+        from terrafusion_sync.core_models import Base as TargetBase
+    except ImportError as e:
+        print(f"Error: Could not import 'Base' from 'core_models' or 'terrafusion_sync.core_models'.")
+        print(f"Ensure 'core_models.py' exists and defines 'Base = declarative_base()'.")
+        print(f"PROJECT_ROOT for Alembic: {PROJECT_ROOT}")
+        print(f"sys.path: {sys.path}")
+        raise e
+
+
+# this is the Alembic Config object, which provides
+# access to the values within the .ini file in use.
+config = context.config
+
+# Interpret the config file for Python logging.
+# This line Voids any existing loggers configuration.
+if config.config_file_name is not None:
+    fileConfig(config.config_file_name)
+
+# --- Set the sqlalchemy.url from environment variable ---
+# This overrides the placeholder in alembic.ini
+db_url = os.getenv("TERRAFUSION_OPERATIONAL_DB_URL")
+if not db_url:
+    raise ValueError("TERRAFUSION_OPERATIONAL_DB_URL environment variable not set for Alembic.")
+config.set_main_option("sqlalchemy.url", db_url)
+
+
+# add your model's MetaData object here
+# for 'autogenerate' support
+# from myapp import mymodel
+# target_metadata = mymodel.Base.metadata
+target_metadata = TargetBase.metadata
+
+# other values from the config, defined by the needs of env.py,
+# can be acquired:
+# my_important_option = config.get_main_option("my_important_option")
+# ... etc.
+
+
+def run_migrations_offline() -> None:
+    """Run migrations in 'offline' mode.
+
+    This configures the context with just a URL
+    and not an Engine, though an Engine is acceptable
+    here as well.  By skipping the Engine creation
+    we don't even need a DBAPI to be available.
+
+    Calls to context.execute() here emit the given string to the
+    script output.
+
+    """
+    url = config.get_main_option("sqlalchemy.url")
+    context.configure(
+        url=url,
+        target_metadata=target_metadata,
+        literal_binds=True,
+        dialect_opts={"paramstyle": "named"},
+    )
+
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+def do_run_migrations(connection):
+    context.configure(connection=connection, target_metadata=target_metadata)
+
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+async def run_migrations_online() -> None:
+    """Run migrations in 'online' mode.
+
+    In this scenario we need to create an Engine
+    and associate a connection with the context.
+
+    """
+    connectable = create_async_engine(config.get_main_option("sqlalchemy.url"))
+
+    async with connectable.connect() as connection:
+        await connection.run_sync(do_run_migrations)
+
+    await connectable.dispose()
+
+
+if context.is_offline_mode():
+    run_migrations_offline()
+else:
+    import asyncio
+    asyncio.run(run_migrations_online())
+```
+
+**Step 4: Generate the Initial Migration Script**
+
+Now that Alembic is configured, you can generate your first migration script. This script will inspect your models (via `TargetBase.metadata`) and create the DDL to generate the corresponding tables.
+
+Run this command from the `terrafusion_platform/terrafusion_sync` directory:
+
+```bash
+# Ensure your .env file (or system environment) has TERRAFUSION_OPERATIONAL_DB_URL set
+# cd terrafusion_platform/terrafusion_sync
+alembic revision -m "create_initial_operational_tables" --autogenerate
+```
+
+This will create a new file in `alembic_migrations/versions/`, for example, `alembic_migrations/versions/<some_hash>_create_initial_operational_tables.py`.
+
+The content of this generated script should look something like this (the revision ID will differ):
+
+```python
+# alembic_migrations/versions/<some_hash>_create_initial_operational_tables.py
+"""create_initial_operational_tables
+
+Revision ID: <some_hash_generated_by_alembic>
+Revises: 
+Create Date: <current_datetime>
+
+"""
+from typing import Sequence, Union
+
+from alembic import op
+import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql # If you used PG_UUID
+
+# revision identifiers, used by Alembic.
+revision: str = '<some_hash_generated_by_alembic>'
+down_revision: Union[str, None] = None
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+def upgrade() -> None:
+    # ### commands auto generated by Alembic - please adjust! ###
+    op.create_table('properties_operational',
+    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
+    sa.Column('property_id', sa.String(), nullable=False, comment='Unique identifier for the property'),
+    sa.Column('county_id', sa.String(), nullable=False, comment='Identifier for the county'),
+    sa.Column('situs_address_full', sa.String(), nullable=True, comment='Full situs address string'),
+    sa.Column('current_assessed_value_total', sa.Float(), nullable=True, comment='Total current assessed value'),
+    sa.Column('year_built', sa.Integer(), nullable=True),
+    sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.Column('updated_at', sa.DateTime(), nullable=True),
+    # ... ALL OTHER COLUMNS FROM PropertyOperational ...
+    # Ensure all fields from your PropertyOperational model are listed here by autogenerate
+    # For example:
+    # sa.Column('situs_street_number', sa.String(), nullable=True),
+    # sa.Column('situs_street_name', sa.String(), nullable=True),
+    # sa.Column('legal_description', sa.Text(), nullable=True),
+    # sa.Column('assessment_year', sa.Integer(), nullable=True),
+    # sa.Column('last_sale_date', sa.DateTime(), nullable=True),
+    # sa.Column('is_active', sa.Boolean(), nullable=False),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_properties_operational_county_id'), 'properties_operational', ['county_id'], unique=False)
+    op.create_index(op.f('ix_properties_operational_id'), 'properties_operational', ['id'], unique=False) # Index for PK
+    op.create_index(op.f('ix_properties_operational_property_id'), 'properties_operational', ['property_id'], unique=True)
+    # ... Other indexes for PropertyOperational ...
+
+    op.create_table('valuation_jobs',
+    sa.Column('job_id', postgresql.UUID(as_uuid=True), nullable=False, comment='Unique identifier for the valuation job'),
+    sa.Column('property_id', sa.String(), nullable=False, comment='Property ID being valuated'),
+    sa.Column('county_id', sa.String(), nullable=False, comment='County ID for the property'),
+    sa.Column('status', sa.String(), nullable=False, comment='e.g., PENDING, RUNNING, COMPLETED, FAILED'),
+    sa.Column('message', sa.Text(), nullable=True, comment='Status message or error details'),
+    sa.Column('created_at', sa.DateTime(), nullable=True, comment='Timestamp when the job was created'),
+    sa.Column('updated_at', sa.DateTime(), nullable=True, comment='Timestamp of the last status update'),
+    sa.Column('started_at', sa.DateTime(), nullable=True, comment='Timestamp when processing started'),
+    sa.Column('completed_at', sa.DateTime(), nullable=True, comment='Timestamp when processing completed or failed'),
+    sa.Column('valuation_method_hint', sa.String(), nullable=True),
+    sa.Column('estimated_value', sa.Float(), nullable=True),
+    sa.Column('confidence_score', sa.Float(), nullable=True),
+    sa.Column('valuation_method_used', sa.String(), nullable=True),
+    sa.Column('comparables_used_json', sa.JSON(), nullable=True, comment='JSON array of comparable property IDs used'),
+    sa.Column('valuation_date', sa.DateTime(), nullable=True, comment='Date the valuation result pertains to'),
+    sa.PrimaryKeyConstraint('job_id')
+    )
+    op.create_index(op.f('ix_valuation_jobs_county_id'), 'valuation_jobs', ['county_id'], unique=False)
+    op.create_index(op.f('ix_valuation_jobs_property_id'), 'valuation_jobs', ['property_id'], unique=False)
+    op.create_index(op.f('ix_valuation_jobs_status'), 'valuation_jobs', ['status'], unique=False)
+    # ### end Alembic commands ###
+
+
+def downgrade() -> None:
+    # ### commands auto generated by Alembic - please adjust! ###
+    op.drop_index(op.f('ix_valuation_jobs_status'), table_name='valuation_jobs')
+    op.drop_index(op.f('ix_valuation_jobs_property_id'), table_name='valuation_jobs')
+    op.drop_index(op.f('ix_valuation_jobs_county_id'), table_name='valuation_jobs')
+    op.drop_table('valuation_jobs')
+    
+    # ... Drop indexes for PropertyOperational ...
+    op.drop_index(op.f('ix_properties_operational_property_id'), table_name='properties_operational')
+    op.drop_index(op.f('ix_properties_operational_id'), table_name='properties_operational')
+    op.drop_index(op.f('ix_properties_operational_county_id'), table_name='properties_operational')
+    op.drop_table('properties_operational')
+    # ### end Alembic commands ###
+```
+*Important: Review the auto-generated script carefully. Alembic's autogenerate is good but not perfect. You might need to adjust column types, constraints, or add specific indexes that autogenerate might miss.*
+
+**Step 5: Apply the Migration**
+
+Once you're satisfied with the generated migration script, you can apply it to your database.
+Make sure your `terrafusion_db_operational` service is running (e.g., via `docker-compose up -d terrafusion_db_operational`).
+
+From the `terrafusion_platform/terrafusion_sync` directory:
+```bash
+alembic upgrade head
+```
+This will execute the `upgrade()` function in your new migration script, creating the tables in your database.
+
+**Summary of Alembic Setup:**
+
+* Initialized Alembic with an async template.
+* Configured `alembic.ini` and `env.py` to use an environment variable for the database URL and to recognize your SQLAlchemy models.
+* Generated an initial migration script using `alembic revision --autogenerate`.
+* Applied the migration to the database using `alembic upgrade head`.
+
+Now, whenever you change your SQLAlchemy models in `core_models.py` (add a table, add a column, change a type), you will:
+1.  Run `alembic revision -m "description_of_change" --autogenerate`
+2.  Review and adjust the generated script in `alembic_migrations/versions/`.
+3.  Run `alembic upgrade head` to apply the changes to your database.
+
+This provides a robust way to manage your database schema evolution.

@@ -80,7 +80,7 @@ class CountyConfig:
         with open(self.users_file, 'r') as f:
             self.rbac = json.load(f)
     
-    def get_env_var(self, key: str, default: Any = None) -> str:
+    def get_env_var(self, key: str, default: Any = None) -> Optional[str]:
         """
         Get an environment variable from the county configuration.
         
@@ -100,7 +100,7 @@ class CountyConfig:
         Returns:
             The county ID
         """
-        return self.get_env_var("COUNTY_ID", self.county_name)
+        return self.get_env_var("COUNTY_ID", self.county_name) or self.county_name
     
     def get_county_name(self) -> str:
         """
@@ -109,7 +109,8 @@ class CountyConfig:
         Returns:
             The friendly county name (e.g., "Franklin County")
         """
-        return self.get_env_var("COUNTY_FRIENDLY_NAME", f"{self.county_name.title()} County")
+        default = f"{self.county_name.title()} County"
+        return self.get_env_var("COUNTY_FRIENDLY_NAME", default) or default
     
     def get_legacy_system_type(self) -> str:
         """
@@ -119,7 +120,7 @@ class CountyConfig:
             The legacy system type (e.g., "PACS", "TYLER", "PATRIOT")
         """
         key = f"LEGACY_SYSTEM_TYPE_{self.county_name.upper()}"
-        return self.get_env_var(key, "UNKNOWN")
+        return self.get_env_var(key, "UNKNOWN") or "UNKNOWN"
     
     def get_legacy_connection_params(self) -> Dict[str, str]:
         """
