@@ -27,12 +27,12 @@ sys.path.insert(0, TERRAFUSION_SYNC_ROOT) # Ensure terrafusion_sync modules can 
 # Import Base and specific models from terrafusion_sync.core_models
 # This is critical for Alembic and for the create_property_operational fixture.
 try:
-    from terrafusion_sync.core_models import Base, PropertyOperational, ValuationJob
+    from terrafusion_sync.core_models import Base, PropertyOperational, ReportJob
     # If you have a central place for Base in terrafusion_sync (e.g. terrafusion_sync.database.Base)
     # ensure that's the one Alembic also uses.
 except ImportError as e:
     print(f"CRITICAL ERROR in conftest.py: Could not import SQLAlchemy models from 'terrafusion_sync.core_models'. {e}")
-    print(f"Ensure 'terrafusion_sync/core_models.py' exists, defines 'Base', 'PropertyOperational', and 'ValuationJob'.")
+    print(f"Ensure 'terrafusion_sync/core_models.py' exists, defines 'Base', 'PropertyOperational', and 'ReportJob'.")
     print(f"PROJECT_ROOT_FOR_TESTS: {PROJECT_ROOT_FOR_TESTS}")
     print(f"TERRAFUSION_SYNC_ROOT: {TERRAFUSION_SYNC_ROOT}")
     print(f"sys.path: {sys.path}")
@@ -167,7 +167,7 @@ async def db_session(pg_engine) -> AsyncGenerator[AsyncSession, None]:
 
 
 @pytest_asyncio.fixture(scope="function")
-def create_property_operational(db_session: AsyncSession) -> Callable[..., PropertyOperational]:
+async def create_property_operational(db_session: AsyncSession) -> Callable[..., PropertyOperational]:
     """
     Factory fixture to create PropertyOperational records in the test database.
     Relies on the db_session fixture's transaction rollback for cleanup.
@@ -175,9 +175,14 @@ def create_property_operational(db_session: AsyncSession) -> Callable[..., Prope
     async def _create_property(
         property_id: str = None, 
         county_id: str = "test_county",
-        situs_address_full: str = "123 Test St, Testville, TS 12345",
-        current_assessed_value_total: float = 100000.0,
+        address_street: str = "123 Test St",
+        address_city: str = "Testville",
+        address_state: str = "TS",
+        address_zip: str = "12345",
+        property_type: str = "residential",
+        parcel_number: str = "TEST-PARCEL-123",
         year_built: int = 2000,
+        assessed_value: float = 100000.0,
         custom_fields: Dict[str, Any] = None
     ) -> PropertyOperational:
         if property_id is None:
@@ -186,9 +191,14 @@ def create_property_operational(db_session: AsyncSession) -> Callable[..., Prope
         prop_data = {
             "property_id": property_id,
             "county_id": county_id,
-            "situs_address_full": situs_address_full,
-            "current_assessed_value_total": current_assessed_value_total,
+            "address_street": address_street,
+            "address_city": address_city,
+            "address_state": address_state,
+            "address_zip": address_zip,
+            "property_type": property_type,
+            "parcel_number": parcel_number,
             "year_built": year_built,
+            "assessed_value": assessed_value,
             "created_at": datetime.datetime.utcnow(),
             "updated_at": datetime.datetime.utcnow()
         }
