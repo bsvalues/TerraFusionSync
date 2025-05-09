@@ -263,7 +263,7 @@ async def run_report(
         
         # Explicitly commit the job creation
         await db.commit()
-        logger.info(f"Created report job {job.report_id} with PENDING status")
+        logger.info(f"Created report job {job.job_id} with PENDING status")
 
         # Set a short processing delay based on complexity 
         # This simulates real-world processing time without using background tasks
@@ -275,26 +275,26 @@ async def run_report(
         # Update to RUNNING status first
         await update_report_job_status(
             db=db,
-            report_id=job.report_id,
+            report_id=job.job_id,
             status="RUNNING",
             message="Report generation in progress"
         )
         # Commit the RUNNING status update
         await db.commit()
-        logger.info(f"Updated report job {job.report_id} to RUNNING status")
+        logger.info(f"Updated report job {job.job_id} to RUNNING status")
 
         # For immediate simulation of results without background tasks
         if request.report_type == "FAILING_REPORT_SIM":
             # Simulate a failed report
             await update_report_job_status(
                 db=db,
-                report_id=job.report_id,
+                report_id=job.job_id,
                 status="FAILED",
                 message="Simulated report generation failure"
             )
         else:
             # Simulate a successful report
-            result_location = f"s3://terrafusion-reports/{job.county_id}/{job.report_type}/{job.report_id}.pdf"
+            result_location = f"s3://terrafusion-reports/{job.county_id}/{job.report_type}/{job.job_id}.pdf"
             result_metadata = {
                 "file_size_kb": 1024, 
                 "pages": 10,
@@ -304,7 +304,7 @@ async def run_report(
             
             await update_report_job_status(
                 db=db,
-                report_id=job.report_id,
+                report_id=job.job_id,
                 status="COMPLETED",
                 message="Report generation completed successfully",
                 result_location=result_location,
@@ -315,9 +315,9 @@ async def run_report(
         await db.commit()
         
         # Get the latest job state with a fresh query
-        updated_job = await get_report_job(db, job.report_id)
+        updated_job = await get_report_job(db, job.job_id)
         
-        logger.info(f"Successfully completed report job {job.report_id} (type: {request.report_type}, status: {updated_job.status})")
+        logger.info(f"Successfully completed report job {job.job_id} (type: {request.report_type}, status: {updated_job.status})")
         return ReportJobResponse.model_validate(updated_job)
     
     except Exception as e:
@@ -360,7 +360,7 @@ async def get_report_status(
     
     # Map to the status response model
     return ReportJobStatusResponse(
-        report_id=job.report_id,
+        report_id=job.job_id,
         report_type=job.report_type,
         county_id=job.county_id,
         status=job.status,
@@ -396,7 +396,7 @@ async def get_report_results(
     
     # Prepare response
     response = ReportJobResultResponse(
-        report_id=job.report_id,
+        report_id=job.job_id,
         report_type=job.report_type,
         county_id=job.county_id,
         status=job.status,
