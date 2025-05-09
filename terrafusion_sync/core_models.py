@@ -5,366 +5,252 @@ This module provides the core SQLAlchemy models for the property assessment and 
 These models are designed to be compatible with an async setup.
 """
 
-from datetime import datetime
-from typing import Optional, List, Dict, Any
+from datetime import datetime, date
+from typing import Optional, List, Dict, Any, Set
 import uuid  # For generating UUIDs
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Float, JSON, Table
+import enum
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Float, JSON, Table, Date, Enum
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import DeclarativeBase, relationship, Mapped, mapped_column
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.mutable import MutableDict, MutableList
 
 class Base(AsyncAttrs, DeclarativeBase):
     """Base class for all SQLAlchemy models."""
     pass
 
+
+# ==========================================
+# Property Assessment Models
+# ==========================================
+
+class PropertyType(enum.Enum):
+    """Types of properties for assessment and valuation."""
+    RESIDENTIAL = "residential"
+    COMMERCIAL = "commercial"
+    INDUSTRIAL = "industrial"
+    AGRICULTURAL = "agricultural"
+    VACANT_LAND = "vacant_land"
+    SPECIAL_PURPOSE = "special_purpose"
+    MIXED_USE = "mixed_use"
+
+
 class PropertyOperational(Base):
     """
-    PropertyOperational model for property assessment data.
-    
-    This core model represents property assessment data in the operational database.
-    It contains essential property details for valuation, assessment, and sync operations.
+    Operational property assessment data model.
+    This model stores the core property data that is synchronized 
+    between the county systems and TerraFusion, with a focus on valuation
+    and assessment operations.
     """
+    
     __tablename__ = 'property_operational'
     
-    # Primary identification fields
-    property_id = mapped_column(String(50), primary_key=True)
-    county_id = mapped_column(String(20), nullable=False, index=True)
-    parcel_number = mapped_column(String(50), nullable=False, index=True)
+    # Primary identifiers
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    property_id: Mapped[str] = mapped_column(String(36), unique=True, index=True, default=lambda: str(uuid.uuid4()))
+    
+    # Basic property information
+    parcel_number: Mapped[str] = mapped_column(String(50), index=True, nullable=False)
+    county_id: Mapped[str] = mapped_column(String(50), index=True, nullable=False)
+    property_type: Mapped[str] = mapped_column(String(50), index=True)
+    property_class: Mapped[Optional[str]] = mapped_column(String(50), index=True)
     
     # Address information
-    address_street = mapped_column(String(100), nullable=False)
-    address_city = mapped_column(String(50), nullable=False)
-    address_state = mapped_column(String(2), nullable=False)
-    address_zip = mapped_column(String(10), nullable=False)
+    address_street: Mapped[Optional[str]] = mapped_column(String(255))
+    address_city: Mapped[Optional[str]] = mapped_column(String(100))
+    address_state: Mapped[Optional[str]] = mapped_column(String(50))
+    address_zip: Mapped[Optional[str]] = mapped_column(String(20))
     
-    # Property characteristics
-    property_type = mapped_column(String(30), nullable=False)  # residential, commercial, industrial, agricultural, etc.
-    land_area_sqft = mapped_column(Float, nullable=True)
-    building_area_sqft = mapped_column(Float, nullable=True)
-    year_built = mapped_column(Integer, nullable=True)
-    bedrooms = mapped_column(Integer, nullable=True)
-    bathrooms = mapped_column(Float, nullable=True)
+    # Geographic information
+    latitude: Mapped[Optional[float]] = mapped_column(Float)
+    longitude: Mapped[Optional[float]] = mapped_column(Float)
+    legal_description: Mapped[Optional[str]] = mapped_column(Text)
     
-    # Valuation data
-    last_sale_date = mapped_column(DateTime, nullable=True)
-    last_sale_price = mapped_column(Float, nullable=True)
-    current_market_value = mapped_column(Float, nullable=True)
-    assessed_value = mapped_column(Float, nullable=True)
-    assessment_year = mapped_column(Integer, nullable=True)
+    # Physical characteristics
+    lot_size_sqft: Mapped[Optional[float]] = mapped_column(Float)
+    building_size_sqft: Mapped[Optional[float]] = mapped_column(Float)
+    year_built: Mapped[Optional[int]] = mapped_column(Integer)
+    bedrooms: Mapped[Optional[int]] = mapped_column(Integer)
+    bathrooms: Mapped[Optional[float]] = mapped_column(Float)
+    stories: Mapped[Optional[float]] = mapped_column(Float)
+    
+    # Assessment and valuation data
+    assessed_value: Mapped[Optional[float]] = mapped_column(Float, index=True)
+    market_value: Mapped[Optional[float]] = mapped_column(Float, index=True)
+    land_value: Mapped[Optional[float]] = mapped_column(Float)
+    improvement_value: Mapped[Optional[float]] = mapped_column(Float)
+    assessment_year: Mapped[Optional[int]] = mapped_column(Integer, index=True)
+    last_sale_price: Mapped[Optional[float]] = mapped_column(Float)
+    last_sale_date: Mapped[Optional[date]] = mapped_column(Date)
     
     # Tax information
-    tax_district = mapped_column(String(50), nullable=True)
-    millage_rate = mapped_column(Float, nullable=True)
-    tax_amount = mapped_column(Float, nullable=True)
+    tax_district: Mapped[Optional[str]] = mapped_column(String(100))
+    tax_year: Mapped[Optional[int]] = mapped_column(Integer)
+    tax_amount: Mapped[Optional[float]] = mapped_column(Float)
+    tax_status: Mapped[Optional[str]] = mapped_column(String(50))
     
-    # Ownership details
-    owner_name = mapped_column(String(100), nullable=True)
-    owner_type = mapped_column(String(30), nullable=True)  # individual, business, trust, etc.
+    # Special statuses
+    is_exempt: Mapped[bool] = mapped_column(Boolean, default=False)
+    exemption_type: Mapped[Optional[str]] = mapped_column(String(100))
+    is_historic: Mapped[bool] = mapped_column(Boolean, default=False)
     
-    # Geospatial data
-    latitude = mapped_column(Float, nullable=True)
-    longitude = mapped_column(Float, nullable=True)
+    # Tracking fields
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    sync_status: Mapped[str] = mapped_column(String(50), default="pending")
+    sync_timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    last_modified_by: Mapped[Optional[str]] = mapped_column(String(100))
     
-    # Legal description
-    legal_description = mapped_column(Text, nullable=True)
+    # JSON fields for flexible data storage
+    attributes: Mapped[Dict] = mapped_column(MutableDict.as_mutable(JSONB), default=dict)
+    valuation_history: Mapped[Optional[List]] = mapped_column(JSON)
     
-    # Special attributes
-    is_exempt = mapped_column(Boolean, default=False)
-    exemption_type = mapped_column(String(50), nullable=True)
-    is_historical = mapped_column(Boolean, default=False)
+    # Relationships (can be uncommented when the referenced models are defined)
+    # valuations: Mapped[List["PropertyValuation"]] = relationship(back_populates="property", cascade="all, delete-orphan")
+    # attachments: Mapped[List["PropertyAttachment"]] = relationship(back_populates="property", cascade="all, delete-orphan")
     
-    # Metadata
-    created_at = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    last_sync_id = mapped_column(Integer, nullable=True)
-    data_source = mapped_column(String(50), nullable=True)
-    
-    # Extended data storage (for flexible schema)
-    extended_attributes = mapped_column(JSON, nullable=True)
-    
-    # Relationships
-    valuations = relationship("PropertyValuation", back_populates="property", cascade="all, delete-orphan")
-    improvements = relationship("PropertyImprovement", back_populates="property", cascade="all, delete-orphan")
-    
-    def __repr__(self):
-        return f"<PropertyOperational {self.property_id} ({self.address_street}, {self.address_city})>"
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert model to dictionary representation."""
-        result = {
-            "property_id": self.property_id,
-            "county_id": self.county_id,
-            "parcel_number": self.parcel_number,
-            "address": f"{self.address_street}, {self.address_city}, {self.address_state} {self.address_zip}",
-            "property_type": self.property_type,
-            "land_area_sqft": self.land_area_sqft,
-            "building_area_sqft": self.building_area_sqft,
-            "year_built": self.year_built,
-            "bedrooms": self.bedrooms,
-            "bathrooms": self.bathrooms,
-            "last_sale_date": self.last_sale_date.isoformat() if self.last_sale_date else None,
-            "last_sale_price": self.last_sale_price,
-            "current_market_value": self.current_market_value,
-            "assessed_value": self.assessed_value,
-            "assessment_year": self.assessment_year,
-            "owner_name": self.owner_name,
-            "is_exempt": self.is_exempt,
-            "created_at": self.created_at.isoformat(),
-            "updated_at": self.updated_at.isoformat()
-        }
+    async def update_valuation(self, assessed_value: float, market_value: float, assessment_year: int) -> None:
+        """
+        Update the property valuation and track history.
         
-        # Add extended attributes if available
-        if self.extended_attributes:
-            for key, value in self.extended_attributes.items():
-                if key not in result:  # Avoid overwriting standard attributes
-                    result[key] = value
+        Args:
+            assessed_value: New assessed value
+            market_value: New market value
+            assessment_year: Year of the assessment
+        """
+        # Store current values in history before updating
+        if not self.valuation_history:
+            self.valuation_history = []
+            
+        # Append current values to history
+        if self.assessed_value is not None and self.market_value is not None:
+            history_entry = {
+                'assessed_value': self.assessed_value,
+                'market_value': self.market_value,
+                'assessment_year': self.assessment_year,
+                'recorded_at': datetime.utcnow().isoformat()
+            }
+            self.valuation_history.append(history_entry)
         
-        return result
+        # Update to new values
+        self.assessed_value = assessed_value
+        self.market_value = market_value
+        self.assessment_year = assessment_year
+        self.updated_at = datetime.utcnow()
 
 
-class PropertyValuation(Base):
-    """
-    PropertyValuation model for tracking valuations of properties over time.
-    
-    This model stores historical and current valuations of properties, including
-    methods used, confidence levels, and other evaluation metrics.
-    """
-    __tablename__ = 'property_valuations'
-    
-    id = mapped_column(Integer, primary_key=True)
-    property_id = mapped_column(String(50), ForeignKey('property_operational.property_id'), nullable=False)
-    
-    # Valuation details
-    valuation_date = mapped_column(DateTime, default=datetime.utcnow)
-    valuation_amount = mapped_column(Float, nullable=False)
-    valuation_method = mapped_column(String(50), nullable=False)  # comparable_sales, income_approach, cost_approach, etc.
-    valuation_type = mapped_column(String(30), nullable=False)  # market, assessed, taxable, etc.
-    valuation_year = mapped_column(Integer, nullable=False)
-    
-    # Valuation metrics
-    confidence_score = mapped_column(Float, nullable=True)  # 0-100%
-    margin_of_error = mapped_column(Float, nullable=True)  # percentage
-    
-    # Valuation supporting data
-    comparables_used = mapped_column(JSON, nullable=True)  # List of comparable property IDs used
-    adjustments = mapped_column(JSON, nullable=True)  # Adjustments made during valuation
-    notes = mapped_column(Text, nullable=True)
-    
-    # Approval information
-    is_final = mapped_column(Boolean, default=False)
-    approved_by = mapped_column(String(100), nullable=True)
-    approved_at = mapped_column(DateTime, nullable=True)
-    
-    # Metadata
-    created_at = mapped_column(DateTime, default=datetime.utcnow)
-    created_by = mapped_column(String(100), nullable=True)
-    sync_operation_id = mapped_column(Integer, nullable=True)
-    
-    # Relationships
-    property = relationship("PropertyOperational", back_populates="valuations")
-    
-    def __repr__(self):
-        return f"<PropertyValuation {self.id} for {self.property_id} - {self.valuation_amount}>"
+# ==========================================
+# Reporting Models
+# ==========================================
+
+class ReportType(enum.Enum):
+    """Types of reports that can be generated."""
+    PROPERTY_ASSESSMENT = "property_assessment"
+    VALUATION_SUMMARY = "valuation_summary"
+    COUNTY_COMPARISON = "county_comparison"
+    SYNC_AUDIT = "sync_audit"
+    TAX_PROJECTION = "tax_projection"
+    CUSTOM = "custom"
 
 
-class PropertyImprovement(Base):
-    """
-    PropertyImprovement model for tracking improvements to properties.
-    
-    This model represents improvements made to properties, such as building
-    additions, renovations, or other material changes that affect value.
-    """
-    __tablename__ = 'property_improvements'
-    
-    id = mapped_column(Integer, primary_key=True)
-    property_id = mapped_column(String(50), ForeignKey('property_operational.property_id'), nullable=False)
-    
-    # Improvement details
-    improvement_type = mapped_column(String(50), nullable=False)  # addition, renovation, pool, outbuilding, etc.
-    description = mapped_column(Text, nullable=False)
-    year_completed = mapped_column(Integer, nullable=True)
-    
-    # Size and cost
-    area_added_sqft = mapped_column(Float, nullable=True)
-    cost = mapped_column(Float, nullable=True)
-    value_added = mapped_column(Float, nullable=True)
-    
-    # Permit information
-    permit_number = mapped_column(String(50), nullable=True)
-    permit_date = mapped_column(DateTime, nullable=True)
-    permit_status = mapped_column(String(30), nullable=True)  # approved, pending, complete
-    
-    # Metadata
-    created_at = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    data_source = mapped_column(String(50), nullable=True)
-    
-    # Relationships
-    property = relationship("PropertyOperational", back_populates="improvements")
-    
-    def __repr__(self):
-        return f"<PropertyImprovement {self.id} for {self.property_id} - {self.improvement_type}>"
+class ReportFormat(enum.Enum):
+    """Available formats for generated reports."""
+    PDF = "pdf"
+    CSV = "csv"
+    EXCEL = "excel"
+    JSON = "json"
+    HTML = "html"
 
 
-class SyncSourceSystem(Base):
-    """
-    SyncSourceSystem model for managing external source systems.
-    
-    This model represents county systems or external data sources from which
-    property data is synchronized.
-    """
-    __tablename__ = 'sync_source_systems'
-    
-    id = mapped_column(Integer, primary_key=True)
-    name = mapped_column(String(100), nullable=False)
-    system_type = mapped_column(String(50), nullable=False)  # pacs, gis, document_management, etc.
-    county_id = mapped_column(String(20), nullable=False)
-    
-    # Connection details
-    connection_type = mapped_column(String(30), nullable=False)  # database, api, file_import, etc.
-    connection_config = mapped_column(Text, nullable=False)  # JSON encoded connection details
-    
-    # Authentication
-    auth_type = mapped_column(String(30), nullable=True)  # basic, oauth, api_key, etc.
-    auth_config = mapped_column(Text, nullable=True)  # JSON encoded auth details (encrypted)
-    
-    # Schema mapping
-    schema_mapping = mapped_column(JSON, nullable=True)  # Mapping from source fields to TerraFusion fields
-    
-    # System status
-    is_active = mapped_column(Boolean, default=True)
-    last_successful_sync = mapped_column(DateTime, nullable=True)
-    
-    # Metadata
-    created_at = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    created_by = mapped_column(String(100), nullable=True)
-    
-    def __repr__(self):
-        return f"<SyncSourceSystem {self.name} ({self.system_type} - {self.county_id})>"
-
-
-class ImportJob(Base):
-    """
-    ImportJob model for tracking data import jobs.
-    
-    This model represents batch import jobs from source systems, including
-    their status, progress, and results.
-    """
-    __tablename__ = 'import_jobs'
-    
-    id = mapped_column(Integer, primary_key=True)
-    source_system_id = mapped_column(Integer, ForeignKey('sync_source_systems.id'), nullable=False)
-    
-    # Job details
-    job_type = mapped_column(String(50), nullable=False)  # full_import, delta_import, validation, etc.
-    status = mapped_column(String(30), default='pending')  # pending, running, completed, failed, cancelled
-    
-    # Progress tracking
-    total_records = mapped_column(Integer, default=0)
-    processed_records = mapped_column(Integer, default=0)
-    successful_records = mapped_column(Integer, default=0)
-    failed_records = mapped_column(Integer, default=0)
-    
-    # Time tracking
-    start_time = mapped_column(DateTime, nullable=True)
-    end_time = mapped_column(DateTime, nullable=True)
-    estimated_completion_time = mapped_column(DateTime, nullable=True)
-    
-    # Job configuration
-    job_parameters = mapped_column(JSON, nullable=True)  # Parameters used for this import job
-    
-    # Results
-    result_summary = mapped_column(Text, nullable=True)  # Summary of results
-    error_log = mapped_column(Text, nullable=True)  # Log of errors
-    
-    # Metadata
-    created_at = mapped_column(DateTime, default=datetime.utcnow)
-    created_by = mapped_column(String(100), nullable=True)
-    
-    # Relationships
-    source_system = relationship("SyncSourceSystem")
-    
-    def __repr__(self):
-        return f"<ImportJob {self.id} - {self.job_type} from {self.source_system_id} ({self.status})>"
-    
-    @property
-    def progress_percentage(self) -> float:
-        """Calculate the progress percentage of the import job."""
-        if not self.total_records or self.total_records == 0:
-            return 0.0
-        return round((self.processed_records / self.total_records) * 100, 2)
-    
-    @property
-    def success_rate(self) -> float:
-        """Calculate the success rate of the import job."""
-        if not self.processed_records or self.processed_records == 0:
-            return 0.0
-        return round((self.successful_records / self.processed_records) * 100, 2)
-    
-    @property
-    def duration_seconds(self) -> Optional[int]:
-        """Calculate the duration of the import job in seconds."""
-        if not self.end_time or not self.start_time:
-            return None
-        return int((self.end_time - self.start_time).total_seconds())
+class ReportStatus(enum.Enum):
+    """Possible statuses for a report job."""
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELED = "canceled"
 
 
 class ReportJob(Base):
     """
-    Represents a reporting job, its status, parameters, and results location.
-    
-    This model is used to track the lifecycle of report generation jobs, including
-    their configuration, status, and where to find the generated reports.
+    Model for tracking report generation jobs.
+    This model is used to track the status and details of report generation tasks,
+    which may run asynchronously and take some time to complete.
     """
-    __tablename__ = 'report_job'
-
-    # Primary identification fields
-    report_id = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    report_type = mapped_column(String(50), index=True, nullable=False, comment="Type of report being generated (e.g., sales_ratio_study, assessment_roll)")
-    county_id = mapped_column(String(20), index=True, nullable=False, comment="County ID for which the report is generated")
     
-    # Status tracking
-    status = mapped_column(String(30), index=True, nullable=False, default="PENDING", 
-                          comment="Report job status: PENDING, RUNNING, COMPLETED, FAILED")
-    message = mapped_column(Text, nullable=True, comment="Status message or error details")
+    __tablename__ = 'report_jobs'
     
-    # Configuration
-    parameters_json = mapped_column(JSON, nullable=True, 
-                                  comment="JSON object storing the parameters used for report generation")
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_id: Mapped[str] = mapped_column(String(36), unique=True, default=lambda: str(uuid.uuid4()))
+    report_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    report_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
     
-    # Timestamps
-    created_at = mapped_column(DateTime, default=datetime.utcnow, 
-                             comment="Timestamp when the job was created")
-    updated_at = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, 
-                             comment="Timestamp of the last status update")
-    started_at = mapped_column(DateTime, nullable=True, 
-                             comment="Timestamp when report generation started")
-    completed_at = mapped_column(DateTime, nullable=True, 
-                               comment="Timestamp when report generation completed or failed")
+    # Who requested the report
+    user_id: Mapped[Optional[str]] = mapped_column(String(100))
+    username: Mapped[Optional[str]] = mapped_column(String(100))
+    
+    # When the report job was created/updated
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Parameters and filters for the report
+    parameters: Mapped[Optional[Dict]] = mapped_column(JSON)
+    
+    # Report output options
+    format: Mapped[str] = mapped_column(String(20), default=ReportFormat.PDF.value)
+    
+    # Processing status
+    status: Mapped[str] = mapped_column(String(20), default=ReportStatus.PENDING.value)
+    progress: Mapped[float] = mapped_column(Float, default=0.0)  # Percentage complete (0-100)
+    
+    # Result storage
+    result_url: Mapped[Optional[str]] = mapped_column(String(255))  # URL to the generated report
+    result_size: Mapped[Optional[int]] = mapped_column(Integer)  # Size in bytes
+    
+    # Error tracking
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    
+    # Performance tracking
+    processing_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    processing_completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    
+    # Additional metadata
+    county_id: Mapped[Optional[str]] = mapped_column(String(50))  # County for the report
+    correlation_id: Mapped[Optional[str]] = mapped_column(String(100))  # For cross-service tracking
+    
+    async def get_processing_time(self) -> Optional[float]:
+        """Calculate the processing time in seconds, if available."""
+        if self.processing_started_at and self.processing_completed_at:
+            return (self.processing_completed_at - self.processing_started_at).total_seconds()
+        return None
+    
+    async def start_processing(self) -> None:
+        """Mark the job as processing and record the start time."""
+        self.status = ReportStatus.PROCESSING.value
+        self.processing_started_at = datetime.utcnow()
+        self.updated_at = datetime.utcnow()
+    
+    async def complete_processing(self, result_url: str, result_size: int) -> None:
+        """Mark the job as completed and record the results."""
+        self.status = ReportStatus.COMPLETED.value
+        self.progress = 100.0
+        self.result_url = result_url
+        self.result_size = result_size
+        self.processing_completed_at = datetime.utcnow()
+        self.updated_at = datetime.utcnow()
+    
+    async def fail_processing(self, error_message: str) -> None:
+        """Mark the job as failed with an error message."""
+        self.status = ReportStatus.FAILED.value
+        self.error_message = error_message
+        self.processing_completed_at = datetime.utcnow()
+        self.updated_at = datetime.utcnow()
+    
+    async def update_progress(self, progress: float) -> None:
+        """Update the progress percentage of the report generation."""
+        self.progress = min(max(progress, 0.0), 99.9)  # Keep between 0 and 99.9%
+        self.updated_at = datetime.utcnow()
 
-    # Result Information
-    result_location = mapped_column(String(255), nullable=True, 
-                                  comment="Location/identifier of the generated report (e.g., S3 path, URL)")
-    result_metadata_json = mapped_column(JSON, nullable=True, 
-                                       comment="Optional metadata about the report result (e.g., file size, page count)")
-
-    def __repr__(self):
-        return f"<ReportJob report_id='{self.report_id}' report_type='{self.report_type}' county_id='{self.county_id}' status='{self.status}'>"
-        
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert model to dictionary representation."""
-        result = {
-            "report_id": self.report_id,
-            "report_type": self.report_type,
-            "county_id": self.county_id,
-            "status": self.status,
-            "message": self.message,
-            "parameters": self.parameters_json,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-            "started_at": self.started_at.isoformat() if self.started_at else None,
-            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
-            "result_location": self.result_location,
-            "result_metadata": self.result_metadata_json
-        }
-        return result
+# All duplicate model definitions have been removed

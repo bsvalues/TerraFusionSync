@@ -29,10 +29,6 @@ if str(project_root) not in sys.path:
 from terrafusion_sync.database import get_db_session, initialize_db, get_db_status
 from terrafusion_sync.core_models import (
     PropertyOperational,
-    PropertyValuation,
-    PropertyImprovement,
-    SyncSourceSystem,
-    ImportJob,
     ReportJob
 )
 
@@ -235,7 +231,7 @@ async def collect_db_metrics():
         async with get_db_session() as session:
             # Count PropertyOperational records
             from sqlalchemy import func, select
-            from terrafusion_sync.core_models import PropertyOperational, SyncSourceSystem, ImportJob
+            from terrafusion_sync.core_models import PropertyOperational
             
             # Get counts if tables exist (safely)
             try:
@@ -244,17 +240,10 @@ async def collect_db_metrics():
             except Exception as e:
                 logger.warning(f"Could not count PropertyOperational records: {e}")
             
-            try:
-                result = await session.execute(select(func.count()).select_from(SyncSourceSystem))
-                sync_source_count = result.scalar() or 0
-            except Exception as e:
-                logger.warning(f"Could not count SyncSourceSystem records: {e}")
-                
-            try:
-                result = await session.execute(select(func.count()).select_from(ImportJob))
-                import_job_count = result.scalar() or 0
-            except Exception as e:
-                logger.warning(f"Could not count ImportJob records: {e}")
+            # SyncSourceSystem and ImportJob have been removed - set default values
+            sync_source_count = 0
+            import_job_count = 0
+            logger.info("SyncSourceSystem and ImportJob models have been removed, using default counts")
     except Exception as e:
         logger.error(f"Error collecting database metrics: {e}")
     
@@ -461,7 +450,7 @@ async def get_county_config(county_id: str):
         )
 
 
-# Sync Source System endpoints
+# Sync Source System endpoints - SyncSourceSystem model has been removed
 @app.get("/sync-sources", tags=["Sync"], response_model=List[Dict[str, Any]])
 async def get_sync_sources(
     county_id: Optional[str] = None,
@@ -469,49 +458,17 @@ async def get_sync_sources(
 ):
     """
     Get sync source systems with optional filtering.
+    Note: SyncSourceSystem model has been removed, returns empty list temporarily.
     
     Args:
         county_id: Filter by county ID
         system_type: Filter by system type
         
     Returns:
-        List of sync source system dictionaries
+        List of sync source system dictionaries (empty list for now)
     """
-    from terrafusion_sync.database import get_session
-    
-    query = select(SyncSourceSystem)
-    
-    # Apply filters if provided
-    if county_id:
-        query = query.where(SyncSourceSystem.county_id == county_id)
-    if system_type:
-        query = query.where(SyncSourceSystem.system_type == system_type)
-    
-    session = await get_session()
-    try:
-        result = await session.execute(query)
-        systems = result.scalars().all()
-        return [
-            {
-                "id": system.id,
-                "name": system.name,
-                "system_type": system.system_type,
-                "county_id": system.county_id,
-                "connection_type": system.connection_type,
-                "is_active": system.is_active,
-                "last_successful_sync": system.last_successful_sync.isoformat() if system.last_successful_sync else None,
-                "created_at": system.created_at.isoformat()
-            }
-            for system in systems
-        ]
-    except Exception as e:
-        logger.error(f"Error fetching sync sources: {e}")
-        raise HTTPException(
-            status_code=500,  # HTTP_500_INTERNAL_SERVER_ERROR
-            detail=f"Error fetching sync sources: {str(e)}"
-        )
-    finally:
-        await session.close()
+    logger.info("SyncSourceSystem model has been removed, returning empty list")
+    return []
 
 
 # Data seeding endpoint for development/testing
@@ -613,89 +570,9 @@ async def seed_sample_data(
             session.add(new_property)
             created_count += 1
         
-        # Create sample sync sources if requested
+        # Skip sync sources - SyncSourceSystem and ImportJob models have been removed
         if include_sync_sources:
-            # System types for random selection
-            system_types = ["tax", "assessment", "gis", "permits", "legacy"]
-            connection_types = ["api", "database", "file", "sftp", "web"]
-            
-            # Create 3 sample sync sources for the county
-            for i in range(3):
-                system_type = system_types[i % len(system_types)]
-                connection_type = connection_types[i % len(connection_types)]
-                
-                # Create the sync source
-                auth_type = "basic" if random.random() > 0.5 else "oauth"
-                connection_config = json.dumps({
-                    "host": f"sample-{system_type}-host.example.com",
-                    "port": random.randint(1000, 9000),
-                    "username": f"demo_user_{system_type}",
-                    "use_ssl": random.choice([True, False])
-                })
-                auth_config = json.dumps({
-                    "type": auth_type,
-                    "credentials": {
-                        "username": f"demo_user_{system_type}",
-                        "api_key": f"sample_key_{uuid.uuid4().hex[:8]}"
-                    }
-                })
-                
-                new_source = SyncSourceSystem(
-                    name=f"{county_id} {system_type.capitalize()} System",
-                    system_type=system_type,
-                    county_id=county_id,
-                    connection_type=connection_type,
-                    connection_config=connection_config,
-                    auth_type=auth_type,
-                    auth_config=auth_config,
-                    is_active=random.random() > 0.3,  # 70% chance of being active
-                    last_successful_sync=datetime.utcnow() - timedelta(days=random.randint(1, 30)) if random.random() > 0.2 else None
-                )
-                
-                # Add the sync source to the session
-                session.add(new_source)
-                sync_sources_count += 1
-                
-                # If this is the first sync source, add a few import jobs for it
-                if i == 0:
-                    # We'll need to flush to get the ID of the new source
-                    await session.flush()
-                    source_id = new_source.id
-                    
-                    # Add 3 sample import jobs with different statuses
-                    job_statuses = ["completed", "in_progress", "failed"]
-                    for j in range(3):
-                        status = job_statuses[j]
-                        start_time = datetime.utcnow() - timedelta(hours=random.randint(1, 48))
-                        
-                        # For completed jobs, set end time and success metrics
-                        end_time = None
-                        if status == "completed":
-                            end_time = start_time + timedelta(minutes=random.randint(5, 60))
-                        elif status == "failed":
-                            end_time = start_time + timedelta(minutes=random.randint(1, 20))
-                        
-                        total_records = random.randint(100, 5000)
-                        processed_records = total_records if status != "in_progress" else random.randint(0, total_records)
-                        successful_records = processed_records - random.randint(0, 50) if status == "completed" else processed_records - random.randint(50, 200) if status == "failed" else 0
-                        failed_records = processed_records - successful_records
-                        
-                        # Create the import job
-                        new_job = ImportJob(
-                            source_system_id=source_id,
-                            job_type="full_sync" if random.random() > 0.7 else "incremental_sync",
-                            status=status,
-                            total_records=total_records,
-                            processed_records=processed_records,
-                            successful_records=successful_records,
-                            failed_records=failed_records,
-                            start_time=start_time,
-                            end_time=end_time,
-                            created_by="seed_utility"
-                        )
-                        
-                        # Add the import job to the session
-                        session.add(new_job)
+            logger.info("SyncSourceSystem and ImportJob models have been removed, skipping sync sources creation in seed data")
             
         # Commit all changes
         await session.commit()
@@ -719,7 +596,7 @@ async def seed_sample_data(
         await session.close()
 
 
-# Import Job endpoints
+# Import Job endpoints - ImportJob model has been removed
 @app.get("/import-jobs", tags=["Import"], response_model=List[Dict[str, Any]])
 async def get_import_jobs(
     source_system_id: Optional[int] = None,
@@ -729,6 +606,7 @@ async def get_import_jobs(
 ):
     """
     Get import jobs with optional filtering.
+    Note: ImportJob model has been removed, returns empty list temporarily.
     
     Args:
         source_system_id: Filter by source system ID
@@ -737,50 +615,7 @@ async def get_import_jobs(
         offset: Offset for pagination
         
     Returns:
-        List of import job dictionaries
+        List of import job dictionaries (empty list for now)
     """
-    from terrafusion_sync.database import get_session
-    
-    query = select(ImportJob).order_by(ImportJob.created_at.desc())
-    
-    # Apply filters if provided
-    if source_system_id:
-        query = query.where(ImportJob.source_system_id == source_system_id)
-    if status:
-        query = query.where(ImportJob.status == status)
-    
-    # Apply pagination
-    query = query.limit(limit).offset(offset)
-    
-    session = await get_session()
-    try:
-        result = await session.execute(query)
-        jobs = result.scalars().all()
-        return [
-            {
-                "id": job.id,
-                "source_system_id": job.source_system_id,
-                "job_type": job.job_type,
-                "status": job.status,
-                "total_records": job.total_records,
-                "processed_records": job.processed_records,
-                "successful_records": job.successful_records,
-                "failed_records": job.failed_records,
-                "start_time": job.start_time.isoformat() if job.start_time else None,
-                "end_time": job.end_time.isoformat() if job.end_time else None,
-                "created_at": job.created_at.isoformat(),
-                "created_by": job.created_by,
-                "progress_percentage": job.progress_percentage,
-                "success_rate": job.success_rate,
-                "duration_seconds": job.duration_seconds
-            }
-            for job in jobs
-        ]
-    except Exception as e:
-        logger.error(f"Error fetching import jobs: {e}")
-        raise HTTPException(
-            status_code=500,  # HTTP_500_INTERNAL_SERVER_ERROR
-            detail=f"Error fetching import jobs: {str(e)}"
-        )
-    finally:
-        await session.close()
+    logger.info("ImportJob model has been removed, returning empty list")
+    return []
