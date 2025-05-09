@@ -268,10 +268,12 @@ except ImportError:
             
             # Redirect to home page or return JSON response
             if request.content_type == 'application/json':
-                return jsonify({'success': True, 'message': 'Logged out successfully'})
+                response = jsonify({'success': True, 'message': 'Logged out successfully'})
+                return save_session_safely(response)
             else:
                 flash('You have been logged out', 'info')
-                return redirect(url_for('root'))
+                response = redirect(url_for('root'))
+                return save_session_safely(response)
                 
         app.register_blueprint(auth_bp)
         
@@ -1072,16 +1074,13 @@ def login_page():
             session['roles'] = ['Auditor']
             session['token'] = 'fallback_auth_' + str(uuid.uuid4())
             
-            # Force session to save immediately
-            session.modified = True
-            
             # Log debug info
             logger.debug(f"Login successful for {username} with role Auditor")
             logger.debug(f"Session after login: {session}")
             
-            # Create explicit cookie header
+            # Create response and apply session management
             response = redirect(next_url)
-            response.set_cookie('session_token', session['token'], secure=True, httponly=True, samesite='Lax')
+            response = save_session_safely(response)
             logger.debug(f"Response headers for Auditor: {response.headers}")
             
             # Create audit log for successful login
