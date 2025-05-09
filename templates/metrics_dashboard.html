@@ -136,9 +136,21 @@
                         <p class="text-muted small">Current system processor usage</p>
                         {% if system_metrics and system_metrics|length > 1 %}
                             {% if system_metrics[0].cpu_usage > system_metrics[1].cpu_usage %}
-                                <div class="small value-up"><i class="bi bi-arrow-up-right"></i> {{ ((system_metrics[0].cpu_usage - system_metrics[1].cpu_usage) / system_metrics[1].cpu_usage * 100)|round(1) }}% from previous</div>
+                                <div class="small value-up"><i class="bi bi-arrow-up-right"></i> 
+                                {% if system_metrics[1].cpu_usage > 0 %}
+                                    {{ ((system_metrics[0].cpu_usage - system_metrics[1].cpu_usage) / system_metrics[1].cpu_usage * 100)|round(1) }}% from previous
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                                </div>
                             {% else %}
-                                <div class="small value-down"><i class="bi bi-arrow-down-right"></i> {{ ((system_metrics[1].cpu_usage - system_metrics[0].cpu_usage) / system_metrics[1].cpu_usage * 100)|round(1) }}% from previous</div>
+                                <div class="small value-down"><i class="bi bi-arrow-down-right"></i> 
+                                {% if system_metrics[1].cpu_usage > 0 %}
+                                    {{ ((system_metrics[1].cpu_usage - system_metrics[0].cpu_usage) / system_metrics[1].cpu_usage * 100)|round(1) }}% from previous
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                                </div>
                             {% endif %}
                         {% endif %}
                     </div>
@@ -167,9 +179,21 @@
                         <p class="text-muted small">Current RAM utilization</p>
                         {% if system_metrics and system_metrics|length > 1 %}
                             {% if system_metrics[0].memory_usage > system_metrics[1].memory_usage %}
-                                <div class="small value-up"><i class="bi bi-arrow-up-right"></i> {{ ((system_metrics[0].memory_usage - system_metrics[1].memory_usage) / system_metrics[1].memory_usage * 100)|round(1) }}% from previous</div>
+                                <div class="small value-up"><i class="bi bi-arrow-up-right"></i> 
+                                {% if system_metrics[1].memory_usage > 0 %}
+                                    {{ ((system_metrics[0].memory_usage - system_metrics[1].memory_usage) / system_metrics[1].memory_usage * 100)|round(1) }}% from previous
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                                </div>
                             {% else %}
-                                <div class="small value-down"><i class="bi bi-arrow-down-right"></i> {{ ((system_metrics[1].memory_usage - system_metrics[0].memory_usage) / system_metrics[1].memory_usage * 100)|round(1) }}% from previous</div>
+                                <div class="small value-down"><i class="bi bi-arrow-down-right"></i> 
+                                {% if system_metrics[1].memory_usage > 0 %}
+                                    {{ ((system_metrics[1].memory_usage - system_metrics[0].memory_usage) / system_metrics[1].memory_usage * 100)|round(1) }}% from previous
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                                </div>
                             {% endif %}
                         {% endif %}
                     </div>
@@ -198,9 +222,21 @@
                         <p class="text-muted small">Storage space utilization</p>
                         {% if system_metrics and system_metrics|length > 1 %}
                             {% if system_metrics[0].disk_usage > system_metrics[1].disk_usage %}
-                                <div class="small value-up"><i class="bi bi-arrow-up-right"></i> {{ ((system_metrics[0].disk_usage - system_metrics[1].disk_usage) / system_metrics[1].disk_usage * 100)|round(1) }}% from previous</div>
+                                <div class="small value-up"><i class="bi bi-arrow-up-right"></i>
+                                {% if system_metrics[1].disk_usage > 0 %}
+                                    {{ ((system_metrics[0].disk_usage - system_metrics[1].disk_usage) / system_metrics[1].disk_usage * 100)|round(1) }}% from previous
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                                </div>
                             {% else %}
-                                <div class="small value-down"><i class="bi bi-arrow-down-right"></i> {{ ((system_metrics[1].disk_usage - system_metrics[0].disk_usage) / system_metrics[1].disk_usage * 100)|round(1) }}% from previous</div>
+                                <div class="small value-down"><i class="bi bi-arrow-down-right"></i>
+                                {% if system_metrics[1].disk_usage > 0 %}
+                                    {{ ((system_metrics[1].disk_usage - system_metrics[0].disk_usage) / system_metrics[1].disk_usage * 100)|round(1) }}% from previous
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                                </div>
                             {% endif %}
                         {% endif %}
                     </div>
@@ -227,11 +263,23 @@
                         </div>
                         <h5 class="card-title mb-0">Response Time</h5>
                         <p class="text-muted small">Average API response latency</p>
-                        {% if system_metrics and system_metrics|length > 1 and system_metrics[1].average_response_time > 0 %}
+                        {% if system_metrics and system_metrics|length > 1 %}
                             {% if system_metrics[0].average_response_time > system_metrics[1].average_response_time %}
-                                <div class="small value-up"><i class="bi bi-arrow-up-right"></i> {{ ((system_metrics[0].average_response_time - system_metrics[1].average_response_time) / system_metrics[1].average_response_time * 100)|round(1) }}% from previous</div>
+                                <div class="small value-up"><i class="bi bi-arrow-up-right"></i>
+                                {% if system_metrics[1].average_response_time > 0 %}
+                                    {{ ((system_metrics[0].average_response_time - system_metrics[1].average_response_time) / system_metrics[1].average_response_time * 100)|round(1) }}% from previous
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                                </div>
                             {% elif system_metrics[1].average_response_time > system_metrics[0].average_response_time %}
-                                <div class="small value-down"><i class="bi bi-arrow-down-right"></i> {{ ((system_metrics[1].average_response_time - system_metrics[0].average_response_time) / system_metrics[1].average_response_time * 100)|round(1) }}% from previous</div>
+                                <div class="small value-down"><i class="bi bi-arrow-down-right"></i>
+                                {% if system_metrics[1].average_response_time > 0 %}
+                                    {{ ((system_metrics[1].average_response_time - system_metrics[0].average_response_time) / system_metrics[1].average_response_time * 100)|round(1) }}% from previous
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                                </div>
                             {% else %}
                                 <div class="small text-muted">No change from previous</div>
                             {% endif %}
