@@ -8,6 +8,7 @@ import os
 import asyncio
 import pytest
 import uuid
+import sys
 from typing import Dict, Any, Callable, AsyncGenerator, Optional
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
@@ -41,6 +42,13 @@ test_async_session_maker = async_sessionmaker(
     class_=AsyncSession
 )
 
+@pytest.fixture(scope="function")
+def event_loop():
+    """Create an instance of the default event loop for each test case."""
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
+
 
 @pytest.fixture(scope="function")
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
@@ -50,23 +58,35 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     This fixture creates tables, runs the test with a dedicated
     session, and rolls back changes afterward.
     """
+    # Create a new connection and begin a transaction
     connection = await test_engine.connect()
-    trans = await connection.begin()
-    
-    # Create tables in a transaction
-    await connection.run_sync(Base.metadata.create_all)
-    
-    # Create a new session for each test
-    session = test_async_session_maker(bind=connection)
     
     try:
-        # Return session for use in tests
-        yield session
+        trans = await connection.begin()
+        
+        # Create tables in a transaction
+        await connection.run_sync(Base.metadata.create_all)
+        
+        # Create a new session for each test
+        session = test_async_session_maker(bind=connection)
+        
+        try:
+            # Return session for use in tests
+            yield session
+        finally:
+            # Always make sure to close the session
+            await session.close()
+    except Exception as e:
+        print(f"Error in db_session fixture: {str(e)}")
+        raise
     finally:
-        # Clean up after test
-        await session.close()
-        await trans.rollback()
-        await connection.close()
+        # Always try to clean up the connection
+        try:
+            if 'trans' in locals() and trans is not None:
+                await trans.rollback()
+            await connection.close()
+        except Exception as e:
+            print(f"Error cleaning up db_session fixture: {str(e)}")
 
 
 @pytest.fixture(scope="function")
