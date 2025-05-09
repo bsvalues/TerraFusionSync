@@ -217,6 +217,62 @@ async def create_property_operational(db_session: AsyncSession) -> Callable[...,
     return _create_property
 
 
+@pytest_asyncio.fixture(scope="function")
+async def create_report_job(db_session: AsyncSession) -> Callable[..., ReportJob]:
+    """
+    Factory fixture to create ReportJob records in the test database.
+    Relies on the db_session fixture's transaction rollback for cleanup.
+    """
+    async def _create_report_job(
+        report_id: str = None,
+        report_type: str = "assessment_roll",
+        county_id: str = "test_county",
+        status: str = "PENDING",
+        message: str = None,
+        parameters_json: Dict[str, Any] = None,
+        result_location: str = None,
+        result_metadata_json: Dict[str, Any] = None,
+        custom_fields: Dict[str, Any] = None
+    ) -> ReportJob:
+        if report_id is None:
+            report_id = str(uuid.uuid4())
+            
+        # Set default parameters if none provided
+        if parameters_json is None:
+            parameters_json = {
+                "year": 2025,
+                "quarter": 1,
+                "include_exempt": True
+            }
+
+        report_data = {
+            "report_id": report_id,
+            "report_type": report_type,
+            "county_id": county_id,
+            "status": status,
+            "message": message,
+            "parameters_json": parameters_json,
+            "created_at": datetime.datetime.utcnow(),
+            "updated_at": datetime.datetime.utcnow(),
+            "result_location": result_location,
+            "result_metadata_json": result_metadata_json
+        }
+        
+        if custom_fields:
+            report_data.update(custom_fields)
+        
+        new_report_job = ReportJob(**report_data)
+        
+        db_session.add(new_report_job)
+        await db_session.flush()
+        await db_session.refresh(new_report_job)
+        
+        print(f"Fixture: Created ReportJob: {new_report_job.report_id} ({new_report_job.report_type})")
+        return new_report_job
+
+    return _create_report_job
+
+
 # --- API Client Fixtures ---
 # Import the FastAPI app from terrafusion_sync
 try:
