@@ -50,20 +50,23 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     This fixture creates tables, runs the test with a dedicated
     session, and rolls back changes afterward.
     """
-    # Create tables
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    connection = await test_engine.connect()
+    trans = await connection.begin()
+    
+    # Create tables in a transaction
+    await connection.run_sync(Base.metadata.create_all)
     
     # Create a new session for each test
-    async with test_async_session_maker() as session:
+    session = test_async_session_maker(bind=connection)
+    
+    try:
         # Return session for use in tests
         yield session
-    
-    # Clean up after test
-    async with test_engine.begin() as conn:
-        # We don't drop tables between tests to speed up test runs
-        # Instead we rely on transaction rollback for cleanup
-        pass
+    finally:
+        # Clean up after test
+        await session.close()
+        await trans.rollback()
+        await connection.close()
 
 
 @pytest.fixture(scope="function")
