@@ -247,12 +247,14 @@ async def create_report_job(db_session: AsyncSession) -> Callable[..., ReportJob
 try:
     from terrafusion_sync.app import app as actual_sync_app
     
-    # Try to import dependency from connectors.postgres, if it doesn't exist we'll handle it
+    # Try to import database dependencies, if they don't exist we'll handle it
     try:
-        from terrafusion_sync.database import get_session as app_get_db_session # Database session dependency
+        from terrafusion_sync.database import get_db_session as app_get_db_session # Database session dependency
+        from terrafusion_sync.plugins.reporting.routes import get_db  # The actual used dependency in routes
     except ImportError as e:
-        print(f"Warning: Could not import 'get_session' from terrafusion_sync.database. Dependency override may fail: {e}")
+        print(f"Warning: Could not import database dependencies from terrafusion_sync. Dependency override may fail: {e}")
         app_get_db_session = None  # We'll check this later
+        get_db = None
 except ImportError as e:
     print(f"Failed to import 'app' from 'terrafusion_sync.app': {e}")
     print("Check PYTHONPATH/imports.")
@@ -284,14 +286,22 @@ async def sync_client(db_session: AsyncSession) -> AsyncGenerator:
     async def override_get_db_session() -> AsyncGenerator[AsyncSession, None]:
         yield db_session # Use the test-managed session
 
-    # Apply the override to the FastAPI app
+    # Apply the overrides to the FastAPI app
     actual_sync_app.dependency_overrides[app_get_db_session] = override_get_db_session
     
-    print("\nTest Client: Initialized with DB session override.")
+    # Also override get_db if it was imported successfully
+    if get_db is not None:
+        actual_sync_app.dependency_overrides[get_db] = override_get_db_session
+        print("\nTest Client: Initialized with DB session overrides for both get_db_session and get_db.")
+    else:
+        print("\nTest Client: Initialized with DB session override for get_db_session only.")
+    
     # Create client
     client = TestClient(actual_sync_app, base_url="http://testserver-sync")
     yield client
     
-    # Clear the dependency override after the test
+    # Clear the dependency overrides after the test
     del actual_sync_app.dependency_overrides[app_get_db_session]
-    print("Test Client: DB session override cleared.")
+    if get_db is not None:
+        del actual_sync_app.dependency_overrides[get_db]
+    print("Test Client: DB session overrides cleared.")
