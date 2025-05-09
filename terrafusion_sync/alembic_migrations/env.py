@@ -114,4 +114,25 @@ async def run_migrations_online() -> None:
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    asyncio.run(run_migrations_online())
+    # Handle running this code inside or outside an event loop
+    try:
+        # Get the current event loop, or create a new one
+        loop = asyncio.get_event_loop()
+        
+        # Check if the loop is already running
+        if loop.is_running():
+            # If we're inside a running event loop, we can just create a task
+            # The caller is expected to run the event loop
+            print("Running migrations inside an existing event loop.")
+            loop.create_task(run_migrations_online())
+        else:
+            # If no event loop is running, run a new one
+            print("Running migrations with a new event loop.")
+            asyncio.run(run_migrations_online())
+    except RuntimeError as e:
+        if "There is no current event loop in thread" in str(e):
+            # No event loop in this thread, create a new one
+            print("Creating a new event loop for migrations.")
+            asyncio.run(run_migrations_online())
+        else:
+            raise

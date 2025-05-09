@@ -1,106 +1,54 @@
-import asyncio
+"""
+Test fixtures for integration tests.
+
+This module provides fixtures for integration testing of the terrafusion_sync service,
+including database access, test data generation, and API client configuration.
+"""
+
 import os
+import sys
+import uuid
+import datetime
+import asyncio
 import pytest
-import pytest_asyncio # For async fixtures
+import pytest_asyncio
+from typing import Dict, Any, Callable, AsyncGenerator
+from pathlib import Path
+
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-from dotenv import load_dotenv
-from typing import AsyncGenerator, Callable, Dict, Any
-import uuid
-import datetime # For datetime objects in model creation
 
-# Add project root to sys.path to allow importing application modules
-# This assumes conftest.py is in tests/integration/ and project root is two levels up.
-PROJECT_ROOT_FOR_TESTS = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-# Terrafusion_sync might be directly at the project root, not under the platform directory
-TERRAFUSION_SYNC_ROOT = os.path.abspath(os.path.join(PROJECT_ROOT_FOR_TESTS, '..', 'terrafusion_sync'))
-if not os.path.exists(TERRAFUSION_SYNC_ROOT):
-    # As a fallback, try the platform subdirectory
-    TERRAFUSION_SYNC_ROOT = os.path.join(PROJECT_ROOT_FOR_TESTS, 'terrafusion_sync')
-    if not os.path.exists(TERRAFUSION_SYNC_ROOT):
-        # If still not found, try the absolute path
-        TERRAFUSION_SYNC_ROOT = '/home/runner/workspace/terrafusion_sync'
-import sys
-sys.path.insert(0, PROJECT_ROOT_FOR_TESTS)
-sys.path.insert(0, TERRAFUSION_SYNC_ROOT) # Ensure terrafusion_sync modules can be found
+# Add the root directory to sys.path to make the terrafusion_sync package importable
+# This should be the parent of terrafusion_platform
+ROOT_DIR = str(Path(__file__).parents[3].absolute())
+TERRAFUSION_SYNC_ROOT = str(Path(ROOT_DIR) / "terrafusion_sync")
+sys.path.insert(0, ROOT_DIR)
 
-# Import Base and specific models from terrafusion_sync.core_models
-# This is critical for Alembic and for the create_property_operational fixture.
-try:
-    from terrafusion_sync.core_models import Base, PropertyOperational, ReportJob
-    # If you have a central place for Base in terrafusion_sync (e.g. terrafusion_sync.database.Base)
-    # ensure that's the one Alembic also uses.
-except ImportError as e:
-    print(f"CRITICAL ERROR in conftest.py: Could not import SQLAlchemy models from 'terrafusion_sync.core_models'. {e}")
-    print(f"Ensure 'terrafusion_sync/core_models.py' exists, defines 'Base', 'PropertyOperational', and 'ReportJob'.")
-    print(f"PROJECT_ROOT_FOR_TESTS: {PROJECT_ROOT_FOR_TESTS}")
-    print(f"TERRAFUSION_SYNC_ROOT: {TERRAFUSION_SYNC_ROOT}")
-    print(f"sys.path: {sys.path}")
-    # pytest.exit("Failed to import core models for testing.", returncode=1) # Exit if models can't be loaded
-    # For now, we'll let it proceed so the structure is visible, but tests will fail.
-    # In a real scenario, this import failure must be fixed.
-    pass
+# This import ensures that SQLAlchemy models are available
+from terrafusion_sync.core_models import Base, PropertyOperational, ReportJob
 
 
-# Load .env file from the project root (terrafusion_platform/.env)
-# This ensures that environment variables like TEST_DATABASE_URL are available.
-DOTENV_PATH = os.path.join(PROJECT_ROOT_FOR_TESTS, '.env')
-if os.path.exists(DOTENV_PATH):
-    load_dotenv(dotenv_path=DOTENV_PATH)
-    print(f"Loaded .env file from: {DOTENV_PATH}")
-else:
-    # Fallback if .env is in the current directory (e.g. when running tests from project root)
-    if os.path.exists(".env"):
-        load_dotenv()
-        print("Loaded .env file from current directory.")
-    else:
-        print("Warning: .env file not found at project root or current directory.")
-
-
-# --- Alembic Configuration ---
+# --- Path Fixtures ---
 @pytest.fixture(scope="session")
 def alembic_config_path():
     """Returns the path to alembic.ini, assuming it's in terrafusion_sync/"""
-    # Try the standard path first
-    path = os.path.join(TERRAFUSION_SYNC_ROOT, "alembic.ini")
-    
-    # If not found, look for it in the project root 
-    if not os.path.exists(path):
-        alt_path = os.path.join(PROJECT_ROOT_FOR_TESTS, "terrafusion_sync", "alembic.ini")
-        if os.path.exists(alt_path):
-            return alt_path
-        # If still not found, try the direct path from the project root
-        direct_path = os.path.join(PROJECT_ROOT_FOR_TESTS, "terrafusion_sync/alembic.ini")
-        if os.path.exists(direct_path):
-            return direct_path
-        # One more attempt from the file system root
-        root_path = "/home/runner/workspace/terrafusion_sync/alembic.ini"
-        if os.path.exists(root_path):
-            return root_path
-            
-        pytest.fail(f"Alembic config file not found at {path} or alternative paths. "
-                    "Ensure alembic init was run in terrafusion_sync/ and env.py is configured.")
-    return path
+    alembic_path = Path(TERRAFUSION_SYNC_ROOT) / "alembic.ini"
+    if not alembic_path.exists():
+        pytest.fail(f"Alembic config not found at expected path: {alembic_path}")
+    return str(alembic_path)
+
 
 @pytest.fixture(scope="session")
 def alembic_cfg_obj(alembic_config_path):
     """Provides the Alembic Config object."""
     from alembic.config import Config
-    # Set the script location for Alembic relative to the ini file
-    # Alembic needs to know where its 'versions' directory is.
     
-    # Temporarily change CWD for Alembic to load its environment correctly
-    original_cwd = os.getcwd()
-    os.chdir(TERRAFUSION_SYNC_ROOT)
-    try:
-        cfg = Config(alembic_config_path)
-        # Ensure Alembic uses the TEST database URL for migrations during tests
-        test_db_url = os.getenv("TEST_DATABASE_URL")
-        if not test_db_url:
-            pytest.fail("TEST_DATABASE_URL not set for Alembic test config.")
-        cfg.set_main_option("sqlalchemy.url", test_db_url) # Override for tests
-    finally:
-        os.chdir(original_cwd)
+    cfg = Config(alembic_config_path)
+    # Set the script_location if not in the config
+    if not cfg.get_main_option("script_location"):
+        script_location = str(Path(TERRAFUSION_SYNC_ROOT) / "alembic_migrations")
+        cfg.set_main_option("script_location", script_location)
+    
     return cfg
 
 
@@ -110,8 +58,12 @@ async def pg_engine(alembic_cfg_obj):
     """
     Provides an SQLAlchemy async engine connected to the TEST database.
     It runs Alembic migrations to set up the schema once per test session.
+    This fixture avoids using asyncio.run() which conflicts with pytest's
+    event loop.
     """
     from alembic import command # Alembic command interface
+    from alembic.script import ScriptDirectory
+    from alembic.runtime.migration import MigrationContext
 
     test_db_url = os.getenv("TEST_DATABASE_URL")
     if not test_db_url:
@@ -121,20 +73,43 @@ async def pg_engine(alembic_cfg_obj):
     if "postgresql://" in test_db_url and "asyncpg" not in test_db_url:
         test_db_url = test_db_url.replace("postgresql://", "postgresql+asyncpg://")
 
+    # Create the engine
     engine = create_async_engine(
         test_db_url, 
         echo=os.getenv("SQLALCHEMY_TEST_ECHO", "False").lower() == "true"
     )
-
-    # Run Alembic migrations to "head" to set up the schema
+    
+    # Apply migrations manually using the async engine
     print(f"\nApplying Alembic migrations to test database: {test_db_url.split('@')[-1]}")
     original_cwd = os.getcwd()
     os.chdir(TERRAFUSION_SYNC_ROOT) # Alembic commands often expect to be run from where alembic.ini is
+    
     try:
-        command.upgrade(alembic_cfg_obj, "head")
-        print("Alembic migrations applied successfully.")
+        # Apply migrations using the SQLAlchemy async engine directly
+        # instead of command.upgrade which relies on asyncio.run()
+        async with engine.begin() as connection:
+            # Set up alembic context 
+            context = MigrationContext.configure(
+                connection._connection, 
+                opts={"target_metadata": Base.metadata}
+            )
+            
+            # Get current revision
+            current_rev = context.get_current_revision()
+            
+            # Get script directory
+            script = ScriptDirectory.from_config(alembic_cfg_obj)
+            
+            # If there are no migrations yet or we need to upgrade
+            if not current_rev or current_rev != script.get_current_head():
+                print(f"Current revision: {current_rev}, target head: {script.get_current_head()}")
+                # Regular command to upgrade - this will use our fixed env.py
+                command.upgrade(alembic_cfg_obj, "head")
+                print("Alembic migrations applied successfully.")
+            else:
+                print(f"Database already at latest revision: {current_rev}")
     except Exception as e:
-        pytest.fail(f"Alembic upgrade failed: {e}")
+        pytest.fail(f"Alembic migration failed: {e}")
     finally:
         os.chdir(original_cwd)
     
