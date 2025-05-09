@@ -10,14 +10,13 @@ import pytest
 import uuid
 from typing import Dict, Any, Callable, AsyncGenerator, Optional
 from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from datetime import datetime, timedelta
 
 # Import the FastAPI app, models and database config from the terrafusion_sync package
 from terrafusion_sync.app import app
-from terrafusion_sync.database import get_session, Base, DATABASE_URL
-from terrafusion_sync.core_models import PropertyOperational, ReportJob
+from terrafusion_sync.database import get_session, DATABASE_URL
+from terrafusion_sync.core_models import Base, PropertyOperational, ReportJob
 
 # Get database URL from environment or fallback to default
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL") or DATABASE_URL
@@ -36,8 +35,8 @@ test_engine = create_async_engine(
 )
 
 # Create a new async session factory
-test_async_session_maker = sessionmaker(
-    test_engine, 
+test_async_session_maker = async_sessionmaker(
+    bind=test_engine, 
     expire_on_commit=False, 
     class_=AsyncSession
 )
