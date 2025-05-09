@@ -34,19 +34,19 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 # Configure session cookies to ensure they're saved correctly
 app.config['SESSION_COOKIE_SECURE'] = True  # Enable secure cookies for HTTPS
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'None'  # Changed from 'Lax' to 'None' for iframe compatibility
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # Changed back to 'Lax' for better compatibility
 app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 hours in seconds
 app.config['SESSION_TYPE'] = 'filesystem'  # Store session data on the filesystem instead of just cookies
 app.config['SESSION_FILE_DIR'] = './flask_session'
 app.config['SESSION_PERMANENT'] = True
-app.config['SESSION_USE_SIGNER'] = False  # Disabled signer to reduce cookie complexity
+app.config['SESSION_USE_SIGNER'] = True  # Re-enable signing for better security
+
+# Create session directory if it doesn't exist
+os.makedirs('./flask_session', exist_ok=True)
 
 # Initialize Flask-Session
 from flask_session import Session
 Session(app)
-
-# Create session directory if it doesn't exist
-os.makedirs('./flask_session', exist_ok=True)
 
 # Import database models
 from flask_sqlalchemy import SQLAlchemy
@@ -888,7 +888,7 @@ def login_page():
             if COUNTY_RBAC_AVAILABLE:
                 user = authenticate_county_user(username, password)
                 if user:
-                    # Make the session permanent
+                    # Set the session as permanent to persist it
                     session.permanent = True
                     
                     # Set session data
@@ -897,6 +897,9 @@ def login_page():
                     session['roles'] = user['roles']
                     session['token'] = 'county_auth_' + str(uuid.uuid4())
                     session['county_auth'] = True
+                    
+                    # Force session to save immediately
+                    session.modified = True
                     
                     # Log debug info
                     logger.debug(f"County auth successful for {username} with role {user['primary_role']}")
@@ -951,13 +954,17 @@ def login_page():
             session['roles'] = ['ITAdmin']
             session['token'] = 'fallback_auth_' + str(uuid.uuid4())
             
+            # Force session to save immediately
+            session.modified = True
+            
             # Log debug info
             logger.debug(f"Login successful for {username} with role ITAdmin")
             logger.debug(f"Session after login: {session}")
             logger.debug(f"Session is permanent: {session.permanent}")
             
-            # Create response with redirect
+            # Create explicit cookie header
             response = redirect(next_url)
+            response.set_cookie('session_token', session['token'], secure=True, httponly=True, samesite='Lax')
             logger.debug(f"Response headers: {response.headers}")
             
             # Create audit log for successful login
