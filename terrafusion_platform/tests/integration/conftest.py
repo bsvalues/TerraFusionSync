@@ -188,11 +188,23 @@ async def create_property_operational(db_session: AsyncSession) -> Callable[...,
 
 
 @pytest_asyncio.fixture(scope="function")
-async def create_report_job(db_session: AsyncSession) -> Callable[..., ReportJob]:
+async def create_report_job(pg_engine) -> Callable[..., ReportJob]:
     """
     Factory fixture to create ReportJob records in the test database.
-    Relies on the db_session fixture's transaction rollback for cleanup.
+    
+    This version creates a fresh session for each report job creation,
+    commits immediately, and closes the session to prevent transaction conflicts.
     """
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+    
+    # Create a sessionmaker for our test engine
+    TestAsyncSessionFactory = async_sessionmaker(
+        bind=pg_engine, 
+        expire_on_commit=False,
+        autocommit=False, 
+        autoflush=False
+    )
+    
     async def _create_report_job(
         report_id: str = None,
         report_type: str = "assessment_roll",
@@ -204,41 +216,57 @@ async def create_report_job(db_session: AsyncSession) -> Callable[..., ReportJob
         result_metadata_json: Dict[str, Any] = None,
         custom_fields: Dict[str, Any] = None
     ) -> ReportJob:
-        if report_id is None:
-            report_id = str(uuid.uuid4())
-            
-        # Set default parameters if none provided
-        if parameters_json is None:
-            parameters_json = {
-                "year": 2025,
-                "quarter": 1,
-                "include_exempt": True
-            }
+        # Create a fresh session for this operation
+        session = TestAsyncSessionFactory()
+        
+        try:
+            if report_id is None:
+                report_id = str(uuid.uuid4())
+                
+            # Set default parameters if none provided
+            if parameters_json is None:
+                parameters_json = {
+                    "year": 2025,
+                    "quarter": 1,
+                    "include_exempt": True
+                }
 
-        report_data = {
-            "report_id": report_id,
-            "report_type": report_type,
-            "county_id": county_id,
-            "status": status,
-            "message": message,
-            "parameters_json": parameters_json,
-            "created_at": datetime.datetime.utcnow(),
-            "updated_at": datetime.datetime.utcnow(),
-            "result_location": result_location,
-            "result_metadata_json": result_metadata_json
-        }
-        
-        if custom_fields:
-            report_data.update(custom_fields)
-        
-        new_report_job = ReportJob(**report_data)
-        
-        db_session.add(new_report_job)
-        await db_session.flush()
-        await db_session.refresh(new_report_job)
-        
-        print(f"Fixture: Created ReportJob: {new_report_job.report_id} ({new_report_job.report_type})")
-        return new_report_job
+            report_data = {
+                "report_id": report_id,
+                "report_type": report_type,
+                "county_id": county_id,
+                "status": status,
+                "message": message,
+                "parameters_json": parameters_json,
+                "created_at": datetime.datetime.utcnow(),
+                "updated_at": datetime.datetime.utcnow(),
+                "result_location": result_location,
+                "result_metadata_json": result_metadata_json
+            }
+            
+            if custom_fields:
+                report_data.update(custom_fields)
+            
+            new_report_job = ReportJob(**report_data)
+            
+            session.add(new_report_job)
+            await session.commit()  # Commit immediately
+            
+            # Refresh after commit to get any DB-generated values
+            await session.refresh(new_report_job)
+            
+            # Create a detached copy of the report job to return
+            # This prevents issues with using the entity after session close
+            detached_report = ReportJob(**new_report_job.__dict__.copy())
+            
+            print(f"Fixture: Created ReportJob: {detached_report.report_id} ({detached_report.report_type})")
+            return detached_report
+        except Exception as e:
+            await session.rollback()
+            print(f"Fixture Error: Failed to create ReportJob: {str(e)}")
+            raise
+        finally:
+            await session.close()
 
     return _create_report_job
 
