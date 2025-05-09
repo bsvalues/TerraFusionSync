@@ -23,26 +23,35 @@ if __name__ == "__main__":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     
     # All reporting test files
-    test_files = [
+    individual_test_files = [
         "terrafusion_platform/tests/integration/test_reporting_end_to_end.py",
         "terrafusion_platform/tests/integration/test_report_crud.py",
         "terrafusion_platform/tests/integration/test_error_handling.py",
     ]
     
-    # Default to running all tests
+    combined_test_file = "terrafusion_platform/tests/integration/test_reporting_combined.py"
+    
+    # Default to running the combined test to avoid event loop issues
     test_args = [
         "-xvs",  # Exit on first failure, verbose, output to console
-    ] + test_files
+        combined_test_file
+    ]
     
     # Check if we should run a specific test only
     if len(sys.argv) > 1:
-        if sys.argv[1] == "--end-to-end-only":
+        if sys.argv[1] == "--combined":
+            # Already set to combined test, no change needed
+            sys.argv.pop(1)
+        elif sys.argv[1] == "--individual":
+            # Run all individual tests (may encounter event loop issues)
+            test_args = ["-xvs"] + individual_test_files
+            sys.argv.pop(1)
+        elif sys.argv[1] == "--end-to-end-only":
             # Run only the end-to-end test
             test_args = [
                 "-xvs",
                 "terrafusion_platform/tests/integration/test_reporting_end_to_end.py",
             ]
-            # Remove this argument to prevent it from being passed to pytest
             sys.argv.pop(1)
         elif sys.argv[1] == "--crud-only":
             # Run only the CRUD test
