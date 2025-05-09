@@ -521,6 +521,86 @@ def collect_syncservice_metrics():
 
 # Metrics implementation using database storage
 
+# Function to parse Prometheus metrics format
+def parse_prometheus_metrics(metrics_text: str) -> Dict[str, Any]:
+    """
+    Parse Prometheus metrics from text format into a structured dictionary.
+    
+    Args:
+        metrics_text: The raw Prometheus metrics in text format
+        
+    Returns:
+        Dict with parsed metrics in a structured format
+    """
+    result = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "system": {},
+        "database": {},
+        "performance": {},
+        "valuation": {}
+    }
+    
+    # Extract TerraFusion metrics from the text
+    lines = metrics_text.split('\n')
+    
+    for i, line in enumerate(lines):
+        # Skip comments and empty lines
+        if not line or line.startswith('#'):
+            continue
+        
+        try:
+            # Basic parsing of metrics format: name{labels} value
+            if '{' in line and '}' in line:
+                name_and_labels, value = line.split(' ')
+                name = name_and_labels.split('{')[0]
+                
+                # Process system metrics
+                if name == 'terrafusion_system_cpu_percent':
+                    result['system']['cpu_usage_percent'] = float(value)
+                elif name == 'terrafusion_system_memory_percent':
+                    result['system']['memory_usage_percent'] = float(value)
+                elif name == 'terrafusion_system_disk_percent':
+                    result['system']['disk_usage_percent'] = float(value)
+                elif name == 'terrafusion_db_connections_active':
+                    result['database']['connections_active'] = float(value)
+                elif name == 'terrafusion_valuation_jobs_pending':
+                    result['valuation']['jobs_pending'] = float(value)
+                elif name == 'terrafusion_valuation_jobs_in_progress':
+                    result['valuation']['jobs_in_progress'] = float(value)
+                
+                # Could add more specific metrics parsing here
+            else:
+                # Simple metrics without labels
+                name, value = line.split(' ')
+                
+                # Process general metrics
+                if name == 'process_cpu_seconds_total':
+                    result['system']['cpu_seconds_total'] = float(value)
+                elif name == 'process_resident_memory_bytes':
+                    # Convert to MB for easier display
+                    result['system']['memory_mb'] = float(value) / (1024 * 1024)
+        except Exception as e:
+            logger.warning(f"Error parsing metrics line '{line}': {e}")
+    
+    # Default values for API Gateway metrics processing
+    if 'cpu_usage_percent' not in result['system']:
+        result['system']['cpu_usage_percent'] = 0.0
+    if 'memory_usage_percent' not in result['system']:
+        result['system']['memory_usage_percent'] = 0.0
+    if 'disk_usage_percent' not in result['system']:
+        result['system']['disk_usage_percent'] = 0.0
+    
+    # Add API requests count (mock for now)
+    result['system']['api_requests'] = 0
+    
+    # Add performance metrics (mock for now)
+    result['performance']['active_syncs'] = 0
+    result['performance']['active_users'] = 0
+    result['performance']['response_time_avg_ms'] = 0.0
+    result['performance']['error_rate'] = 0.0
+    
+    return result
+
 # SyncService connection settings
 SYNCSERVICE_BASE_URL = "http://0.0.0.0:8080"
 
@@ -700,7 +780,9 @@ def check_and_ensure_service_health():
                 return False
         
         # If we get here, the service is healthy
-        metrics = response.json()
+        # Parse Prometheus format metrics instead of JSON
+        metrics_text = response.text
+        metrics = parse_prometheus_metrics(metrics_text)
         
         # Check for critical resource usage that might indicate problems
         system_data = metrics.get("system", {})
