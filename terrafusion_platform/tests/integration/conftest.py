@@ -14,6 +14,7 @@ import pytest
 import pytest_asyncio
 from typing import Dict, Any, Callable, AsyncGenerator
 from pathlib import Path
+from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -262,11 +263,13 @@ except ImportError as e:
 
 
 @pytest_asyncio.fixture(scope="function") # Function scope for client if app state changes or for dep override
-async def sync_client(db_session: AsyncSession) -> AsyncGenerator:
+async def sync_client(pg_engine) -> AsyncGenerator:
     """
     Provides a FastAPI TestClient for the terrafusion_sync service.
-    Crucially, it overrides the `get_session` dependency in the app
-    to use the test-specific, transaction-managed `db_session` from this conftest.
+    
+    This version creates separate sessions for each request 
+    instead of trying to share the same session, which can
+    cause asyncpg transaction conflicts.
     """
     if actual_sync_app is None:
         pytest.skip("FastAPI app could not be imported. Skipping test.")
@@ -282,26 +285,39 @@ async def sync_client(db_session: AsyncSession) -> AsyncGenerator:
         pytest.skip("fastapi and httpx must be installed for testing: pip install fastapi httpx")
         return
 
-    # Define a dependency override for get_db_session
-    async def override_get_db_session() -> AsyncGenerator[AsyncSession, None]:
-        yield db_session # Use the test-managed session
-
-    # Apply the overrides to the FastAPI app
-    actual_sync_app.dependency_overrides[app_get_db_session] = override_get_db_session
+    # Create a sessionmaker for our test engine
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+    TestAsyncSessionFactory = async_sessionmaker(
+        bind=pg_engine, 
+        expire_on_commit=False,
+        autocommit=False, 
+        autoflush=False
+    )
     
-    # Also override get_db if it was imported successfully
+    # Define test-specific get_db function that uses a new session for each request
+    async def override_get_db():
+        session = TestAsyncSessionFactory()
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+    
+    # Let's replace just the get_db function which is used by the routes
     if get_db is not None:
-        actual_sync_app.dependency_overrides[get_db] = override_get_db_session
-        print("\nTest Client: Initialized with DB session overrides for both get_db_session and get_db.")
+        actual_sync_app.dependency_overrides[get_db] = override_get_db
+        print("\nTest Client: Initialized with a fresh session override for get_db.")
     else:
-        print("\nTest Client: Initialized with DB session override for get_db_session only.")
+        print("\nTest Client: Could not initialize session override: get_db not found.")
     
     # Create client
     client = TestClient(actual_sync_app, base_url="http://testserver-sync")
     yield client
     
     # Clear the dependency overrides after the test
-    del actual_sync_app.dependency_overrides[app_get_db_session]
     if get_db is not None:
         del actual_sync_app.dependency_overrides[get_db]
     print("Test Client: DB session overrides cleared.")
