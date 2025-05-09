@@ -42,7 +42,7 @@ class SessionManagementTests(unittest.TestCase):
             self.client = app.test_client()
             
             # Login page should be accessible without a session
-            response = self.client.get('/login_page')
+            response = self.client.get('/login')
             self.assertEqual(response.status_code, 200)
             
             # Log in as admin
@@ -50,7 +50,7 @@ class SessionManagementTests(unittest.TestCase):
                 'username': 'admin',
                 'password': 'admin123'
             }
-            response = self.client.post('/login_page', data=login_data, follow_redirects=True)
+            response = self.client.post('/login', data=login_data, follow_redirects=True)
             
             # Check if login was successful
             self.assertEqual(response.status_code, 200)
@@ -71,7 +71,7 @@ class SessionManagementTests(unittest.TestCase):
                 'username': 'admin',
                 'password': 'admin123'
             }
-            response = self.client.post('/login_page', data=login_data, follow_redirects=False)
+            response = self.client.post('/login', data=login_data, follow_redirects=False)
             
             # Check if there's a redirect (indicating successful login)
             self.assertIn(response.status_code, [301, 302, 303, 307, 308])
@@ -91,7 +91,7 @@ class SessionManagementTests(unittest.TestCase):
                 'username': 'admin',
                 'password': 'admin123'
             }
-            response = self.client.post('/login_page', data=login_data, follow_redirects=True)
+            response = self.client.post('/login', data=login_data, follow_redirects=True)
             
             # Verify we have a session
             with self.client.session_transaction() as sess:
@@ -124,7 +124,7 @@ class SessionManagementTests(unittest.TestCase):
                     'username': username,
                     'password': password
                 }
-                response = self.client.post('/login_page', data=login_data, follow_redirects=True)
+                response = self.client.post('/login', data=login_data, follow_redirects=True)
                 
                 # Check session has the correct role
                 with self.client.session_transaction() as sess:
