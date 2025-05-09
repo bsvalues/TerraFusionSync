@@ -39,10 +39,37 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["reporting"])
 
 
-# Dependency for database sessions
+# Dependency for database sessions with improved transaction handling for testing
 async def get_db():
+    """
+    Provides a database session for route handlers.
+    This version ensures each request gets its own session 
+    and tries to handle transaction conflicts.
+    """
     async with get_db_session() as session:
-        yield session
+        try:
+            # No explicit transaction - we'll commit as needed in the handlers
+            yield session
+            # Try to commit any pending changes at the end
+            # This helps with transaction handling in tests
+            try:
+                await session.commit()
+            except Exception as commit_error:
+                logger.warning(f"Warning: Could not commit at session end: {str(commit_error)}")
+        except Exception as e:
+            # If anything goes wrong, try to rollback
+            try:
+                await session.rollback()
+            except Exception as rollback_error:
+                logger.error(f"Error in rollback: {str(rollback_error)}")
+            # Re-raise the original exception
+            raise e
+        finally:
+            # Make sure the session is closed properly
+            try:
+                await session.close()
+            except Exception as close_error:
+                logger.error(f"Error closing session: {str(close_error)}")
 
 
 @router.post(

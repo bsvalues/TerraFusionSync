@@ -137,7 +137,6 @@ async def db_session(pg_engine) -> AsyncGenerator[AsyncSession, None]:
         # Test isolation is maintained by using unique IDs for test data
         await session.close()
         print(f"Test DB Session: Closed")
-            print(f"Test DB Session: ROLLBACK (Test: {os.environ.get('PYTEST_CURRENT_TEST', '').split(' ')[0]})")
 
 
 @pytest_asyncio.fixture(scope="function")

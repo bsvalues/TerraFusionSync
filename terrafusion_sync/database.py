@@ -66,13 +66,21 @@ if DATABASE_URL.startswith('postgresql+asyncpg://'):
 # Create the async engine
 engine = create_async_engine(DATABASE_URL, **engine_kwargs)
 
-# Create async session factory
+# Create async session factory with settings to help avoid transaction conflicts
 AsyncSessionFactory = async_sessionmaker(
     bind=engine,
     class_=AsyncSession,
     expire_on_commit=False,
     autocommit=False,
-    autoflush=False
+    autoflush=False,
+    execution_options={
+        # These execution options help with transaction handling in asyncpg
+        "isolation_level": "READ COMMITTED",  # Less strict isolation level
+        "execution_options": {
+            "postgresql_readonly": False,
+            "postgresql_deferrable": False,  # Non-deferrable transactions
+        }
+    }
 )
 
 
@@ -97,28 +105,68 @@ async def get_db_session():
     This async context manager handles session lifecycle, including
     commit, rollback, and cleanup on exceptions.
     
+    Enhanced for better transaction handling in asyncpg to help avoid 
+    "cannot perform operation: another operation is in progress" errors.
+    
     Yields:
         AsyncSession: An async SQLAlchemy session
     """
     session = AsyncSessionFactory()
+    session_id = id(session)  # Get unique identifier for logging
     try:
-        logger.debug("Database session opened")
+        logger.debug(f"Database session {session_id} opened")
         yield session
-        await session.commit()
-        logger.debug("Database session committed")
+        
+        # Try to commit any pending changes
+        try:
+            # Only commit if there are actual changes
+            if session.in_transaction():
+                logger.debug(f"Committing database session {session_id}")
+                await session.commit()
+                logger.debug(f"Database session {session_id} committed")
+            else:
+                logger.debug(f"No active transaction in session {session_id} to commit")
+        except SQLAlchemyError as commit_error:
+            logger.error(f"Error committing database session {session_id}: {commit_error}")
+            # Attempt to rollback on commit error
+            try:
+                await session.rollback()
+                logger.debug(f"Database session {session_id} rolled back due to commit error")
+            except Exception as rollback_error:
+                logger.error(f"Error rolling back database session {session_id}: {rollback_error}")
+            # We'll re-raise the original commit error
+            raise commit_error
+    
     except SQLAlchemyError as e:
-        logger.error(f"Database transaction error: {e}", exc_info=True)
-        await session.rollback()
-        logger.debug("Database session rolled back due to SQLAlchemyError")
+        logger.error(f"Database transaction error in session {session_id}: {e}", exc_info=True)
+        # Attempt rollback, but don't raise additional errors if rollback fails
+        try:
+            if session.in_transaction():
+                await session.rollback()
+                logger.debug(f"Database session {session_id} rolled back due to SQLAlchemyError")
+        except Exception as rollback_error:
+            logger.error(f"Failed to rollback session {session_id}: {rollback_error}")
         raise
+        
     except Exception as e:
-        logger.error(f"Unexpected error during database transaction: {e}", exc_info=True)
-        await session.rollback()
-        logger.debug("Database session rolled back due to unexpected error")
+        logger.error(f"Unexpected error during database transaction in session {session_id}: {e}", exc_info=True)
+        # Attempt rollback, but don't raise additional errors if rollback fails
+        try:
+            if session.in_transaction():
+                await session.rollback()
+                logger.debug(f"Database session {session_id} rolled back due to unexpected error")
+        except Exception as rollback_error:
+            logger.error(f"Failed to rollback session {session_id}: {rollback_error}")
         raise
+        
     finally:
-        await session.close()
-        logger.debug("Database session closed")
+        # Always close the session, but don't raise additional errors if close fails
+        try:
+            await session.close()
+            logger.debug(f"Database session {session_id} closed")
+        except Exception as close_error:
+            logger.error(f"Error closing database session {session_id}: {close_error}")
+            # We don't re-raise this error as it would mask the original exception
 
 
 async def initialize_db():
