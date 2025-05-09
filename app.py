@@ -498,6 +498,7 @@ def collect_syncservice_metrics():
                     resource_type="system_metrics",
                     description=f"Collected system metrics from SyncService (CPU: {metrics.cpu_usage:.1f}%, Memory: {metrics.memory_usage:.1f}%)",
                     severity="info",
+                    is_background_task=True,
                     previous_state=None,
                     new_state={
                         "cpu_usage": metrics.cpu_usage,
@@ -737,7 +738,8 @@ def check_and_ensure_service_health():
                 event_type="service_outage_detected",
                 resource_type="system",
                 description="SyncService outage detected during periodic health check",
-                severity="warning"
+                severity="warning",
+                is_background_task=True
             )
         
         # Attempt to restart the service
@@ -766,7 +768,8 @@ def check_and_ensure_service_health():
                     event_type="service_unhealthy",
                     resource_type="system",
                     description=f"SyncService is responding but unhealthy (status code: {response.status_code})",
-                    severity="warning"
+                    severity="warning",
+                    is_background_task=True
                 )
             
             # Attempt to restart the service since it's unhealthy
@@ -802,7 +805,8 @@ def check_and_ensure_service_health():
                     new_state={
                         "cpu_usage": cpu_usage,
                         "memory_usage": memory_usage
-                    }
+                    },
+                    is_background_task=True
                 )
         
         # Log successful health check
@@ -2992,6 +2996,7 @@ def create_audit_log(
     username: str = None,
     ip_address: str = None,
     correlation_id: str = None,
+    is_background_task: bool = False,  # Flag to indicate if called from background task
     **kwargs
 ) -> AuditEntry:
     """
@@ -3013,16 +3018,55 @@ def create_audit_log(
     Returns:
         The created AuditEntry instance
     """
-    # Get current user if available and not provided
-    if not user_id or not username:
-        current_user = get_current_user()
-        if current_user:
-            user_id = user_id or current_user.get('id')
-            username = username or current_user.get('username')
+    # Get current user if available and not provided, but only if not a background task
+    if not is_background_task and (not user_id or not username):
+        try:
+            current_user = get_current_user()
+            if current_user:
+                user_id = user_id or current_user.get('id')
+                username = username or current_user.get('username')
+        except RuntimeError:
+            # Working outside request context, this is okay for background tasks
+            if not user_id:
+                user_id = "system"
+            if not username:
+                username = "system"
+    elif is_background_task:
+        # For background tasks, use system if not provided
+        if not user_id:
+            user_id = "system"
+        if not username:
+            username = "system"
+            
+    # Get client information from request if available (won't be for background tasks)
+    ip_address = None
+    user_agent = None
+    try:
+        if request:
+            ip_address = request.remote_addr
+            if request.user_agent:
+                user_agent = request.user_agent.string
+    except RuntimeError:
+        # Working outside request context
+        pass
     
-    # Get client information from request
-    ip_address = request.remote_addr if request else None
-    user_agent = request.user_agent.string if request and request.user_agent else None
+    # Convert dictionaries to JSON strings for database storage
+    if previous_state is not None and isinstance(previous_state, dict):
+        previous_state = json.dumps(previous_state)
+    
+    if new_state is not None and isinstance(new_state, dict):
+        new_state = json.dumps(new_state)
+        
+    # Ensure required fields are never None
+    if user_id is None:
+        user_id = "system"
+        
+    if username is None:
+        username = "system"
+        
+    # If resource_id is None, provide a default
+    if resource_id is None:
+        resource_id = "unknown"
     
     # Create audit entry
     entry = AuditEntry(
