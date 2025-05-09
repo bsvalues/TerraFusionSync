@@ -127,9 +127,13 @@ async def get_metrics():
     except Exception as e:
         logger.error(f"Error collecting database metrics: {e}")
     
-    # Return metrics with string representation for timestamp to ensure JSON serialization 
+    # Format the current timestamp in ISO format for better compatibility
+    from datetime import datetime
+    current_timestamp = datetime.utcnow().isoformat()
+    
+    # Return metrics with ISO format timestamp to ensure compatibility
     return {
-        "timestamp": str(time.time()),
+        "timestamp": current_timestamp,
         "system": {
             "cpu_usage": cpu_percent,
             "memory_usage": memory.percent,
