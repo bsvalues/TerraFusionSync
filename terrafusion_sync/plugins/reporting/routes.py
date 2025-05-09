@@ -118,9 +118,11 @@ async def create_new_report(
     summary="Get report job details",
     description="Retrieve details for a specific report job by its ID."
 )
+@track_api_request(endpoint="get_report_details")
 async def get_report_details(
     report_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    req: Request = None
 ) -> ReportJobResponse:
     """Get details for a specific report job."""
     job = await get_report_job(db, report_id)
@@ -141,13 +143,15 @@ async def get_report_details(
     summary="List report jobs",
     description="Retrieve a list of report jobs with optional filtering by county, type, and status."
 )
+@track_api_request(endpoint="list_reports")
 async def list_reports(
     county_id: Optional[str] = Query(None, description="Filter by county ID"),
     report_type: Optional[str] = Query(None, description="Filter by report type"),
     status: Optional[str] = Query(None, description="Filter by status"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of results"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    req: Request = None
 ) -> ReportJobListResponse:
     """List report jobs with optional filtering."""
     try:
@@ -184,10 +188,12 @@ async def list_reports(
     summary="Update report job status",
     description="Update the status of a report job and optionally provide result information."
 )
+@track_api_request(endpoint="update_report_status")
 async def update_report_status(
     report_id: str,
     update_data: ReportJobUpdate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    req: Request = None
 ) -> ReportJobResponse:
     """Update the status of a report job."""
     try:
@@ -239,9 +245,11 @@ async def update_report_status(
     description="Create and start a new report generation job with the specified parameters. "
                 "Returns immediately with the created job in PENDING status."
 )
+@track_api_request(endpoint="run_report")
 async def run_report(
     request: ReportJobRunRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    req: Request = None
 ) -> ReportJobResponse:
     """Create and start a new report generation job."""
     try:
@@ -336,9 +344,11 @@ async def run_report(
     summary="Check report job status",
     description="Get the current status of a report generation job."
 )
+@track_api_request(endpoint="get_report_status")
 async def get_report_status(
     report_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    req: Request = None
 ) -> ReportJobStatusResponse:
     """Get the status of a report job."""
     job = await get_report_job(db, report_id)
@@ -370,9 +380,11 @@ async def get_report_status(
     summary="Get report results",
     description="Get the results of a completed report job. Returns result location and metadata for completed jobs."
 )
+@track_api_request(endpoint="get_report_results")
 async def get_report_results(
     report_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    req: Request = None
 ) -> ReportJobResultResponse:
     """Get the results of a completed report job."""
     job = await get_report_job(db, report_id)
