@@ -12,7 +12,14 @@ import datetime # For datetime objects in model creation
 # Add project root to sys.path to allow importing application modules
 # This assumes conftest.py is in tests/integration/ and project root is two levels up.
 PROJECT_ROOT_FOR_TESTS = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-TERRAFUSION_SYNC_ROOT = os.path.join(PROJECT_ROOT_FOR_TESTS, 'terrafusion_sync') # Path to terrafusion_sync
+# Terrafusion_sync might be directly at the project root, not under the platform directory
+TERRAFUSION_SYNC_ROOT = os.path.abspath(os.path.join(PROJECT_ROOT_FOR_TESTS, '..', 'terrafusion_sync'))
+if not os.path.exists(TERRAFUSION_SYNC_ROOT):
+    # As a fallback, try the platform subdirectory
+    TERRAFUSION_SYNC_ROOT = os.path.join(PROJECT_ROOT_FOR_TESTS, 'terrafusion_sync')
+    if not os.path.exists(TERRAFUSION_SYNC_ROOT):
+        # If still not found, try the absolute path
+        TERRAFUSION_SYNC_ROOT = '/home/runner/workspace/terrafusion_sync'
 import sys
 sys.path.insert(0, PROJECT_ROOT_FOR_TESTS)
 sys.path.insert(0, TERRAFUSION_SYNC_ROOT) # Ensure terrafusion_sync modules can be found
