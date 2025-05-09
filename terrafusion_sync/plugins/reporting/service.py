@@ -220,52 +220,90 @@ async def simulate_report_generation(db: AsyncSession, report_id: str) -> None:
     a few seconds and updates the job status when finished.
     
     Args:
-        db: The database session
+        db: The database session - NOTE: We create a new session instead of using this one
         report_id: ID of the report job to process
     """
     import asyncio
     import random
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlalchemy.orm import sessionmaker
+    from terrafusion_sync.database import engine
     
-    # Get the job
-    job = await get_report_job(db, report_id)
-    if not job:
-        logger.error(f"Report job {report_id} not found for processing")
-        return
-    
-    # Update status to RUNNING
-    await update_report_job_status(
-        db=db,
-        report_id=report_id,
-        status="RUNNING",
-        message="Report generation in progress"
+    # Create a new session instead of reusing the passed one
+    # This prevents transaction conflicts in asyncpg when running in background tasks
+    AsyncSessionFactory = sessionmaker(
+        bind=engine, class_=AsyncSession, expire_on_commit=False
     )
     
-    # Simulate processing time (1-3 seconds)
-    await asyncio.sleep(random.uniform(1, 3))
+    # Function to perform operations with a fresh session
+    async def with_fresh_session(operation_func, *args, **kwargs):
+        """Execute an operation with a fresh session"""
+        async with AsyncSessionFactory() as fresh_db:
+            try:
+                result = await operation_func(fresh_db, *args, **kwargs)
+                await fresh_db.commit()
+                return result
+            except Exception as e:
+                await fresh_db.rollback()
+                logger.error(f"Error in background task: {str(e)}")
+                raise
     
-    # Check if this is a failing report type for testing
-    if job.report_type == "FAILING_REPORT_SIM":
-        # Simulate failure
-        await update_report_job_status(
-            db=db,
+    try:
+        # Get the job with a fresh session
+        job = await with_fresh_session(get_report_job, report_id)
+        if not job:
+            logger.error(f"Report job {report_id} not found for processing")
+            return
+        
+        # Update status to RUNNING with a fresh session
+        await with_fresh_session(
+            update_report_job_status,
             report_id=report_id,
-            status="FAILED",
-            message="Simulated report generation failure"
+            status="RUNNING",
+            message="Report generation in progress"
         )
-        return
-    
-    # Prepare result details
-    result_location = f"s3://terrafusion-reports/{job.county_id}/{job.report_type}/{report_id}.pdf"
-    result_metadata = {"file_size_kb": 1024, "pages": 10}
-    
-    # Update status to COMPLETED with result information
-    await update_report_job_status(
-        db=db,
-        report_id=report_id,
-        status="COMPLETED",
-        message="Report generation completed successfully",
-        result_location=result_location,
-        result_metadata=result_metadata
-    )
-    
-    logger.info(f"Simulated report generation completed for job {report_id}")
+        
+        # Simulate processing time (1-3 seconds)
+        await asyncio.sleep(random.uniform(1, 3))
+        
+        # Check if this is a failing report type for testing
+        if job.report_type == "FAILING_REPORT_SIM":
+            # Simulate failure with a fresh session
+            await with_fresh_session(
+                update_report_job_status,
+                report_id=report_id,
+                status="FAILED",
+                message="Simulated report generation failure"
+            )
+            return
+        
+        # Prepare result details
+        result_location = f"s3://terrafusion-reports/{job.county_id}/{job.report_type}/{report_id}.pdf"
+        result_metadata = {"file_size_kb": 1024, "pages": 10}
+        
+        # Update status to COMPLETED with result information using a fresh session
+        await with_fresh_session(
+            update_report_job_status,
+            report_id=report_id,
+            status="COMPLETED",
+            message="Report generation completed successfully",
+            result_location=result_location,
+            result_metadata=result_metadata
+        )
+        
+        logger.info(f"Simulated report generation completed for job {report_id}")
+    except Exception as e:
+        logger.error(f"Error in report generation task for job {report_id}: {str(e)}")
+        # Try to update the job status to FAILED
+        try:
+            async with AsyncSessionFactory() as error_db:
+                await update_report_job_status(
+                    db=error_db,
+                    report_id=report_id,
+                    status="FAILED",
+                    message=f"Unexpected error during report generation: {str(e)}"
+                )
+                await error_db.commit()
+        except Exception as recovery_error:
+            logger.error(f"Failed to update job status after error: {str(recovery_error)}")
+            # We can't do much more at this point

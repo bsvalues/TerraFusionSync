@@ -118,21 +118,25 @@ async def pg_engine(alembic_cfg_obj):
 async def db_session(pg_engine) -> AsyncGenerator[AsyncSession, None]:
     """
     Provides an SQLAlchemy AsyncSession for a single test function.
-    It begins a transaction before the test and rolls it back after,
-    ensuring test isolation.
+    
+    This version does NOT use a transaction. Instead, it commits changes 
+    to the database. Test isolation is maintained by using unique IDs and
+    prefixes for test data.
+    
+    This approach avoids asyncpg transaction conflicts when 
+    the API endpoints create their own transactions.
     """
     AsyncSessionFactory = sessionmaker(
         bind=pg_engine, class_=AsyncSession, expire_on_commit=False, future=True
     )
     
     async with AsyncSessionFactory() as session:
-        # Start a top-level transaction for the test.
-        # If your code uses nested transactions (savepoints), this will work.
-        async with session.begin() as transaction: 
-            print(f"\nTest DB Session: BEGIN (Test: {os.environ.get('PYTEST_CURRENT_TEST', '').split(' ')[0]})")
-            yield session
-            # Rollback the transaction after the test to undo any changes
-            await transaction.rollback()
+        print(f"\nTest DB Session: Created (Test: {os.environ.get('PYTEST_CURRENT_TEST', '').split(' ')[0]})")
+        yield session
+        # Do not rollback - just close the session
+        # Test isolation is maintained by using unique IDs for test data
+        await session.close()
+        print(f"Test DB Session: Closed")
             print(f"Test DB Session: ROLLBACK (Test: {os.environ.get('PYTEST_CURRENT_TEST', '').split(' ')[0]})")
 
 
