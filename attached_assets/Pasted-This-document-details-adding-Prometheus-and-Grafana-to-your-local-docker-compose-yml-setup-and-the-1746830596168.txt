@@ -1,0 +1,238 @@
+This document details adding Prometheus and Grafana to your local `docker-compose.yml` setup and the initial Prometheus configuration.
+
+#### 1. Update `terrafusion_platform/docker-compose.yml`
+
+Add Prometheus and Grafana services to your existing `docker-compose.yml`.
+
+```yaml
+# terrafusion_platform/docker-compose.yml
+version: '3.8'
+
+services:
+  # --- Operational PostgreSQL Database ---
+  terrafusion_db_operational:
+    image: postgres:15-alpine
+    container_name: terrafusion_db_op
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-terrafusion_operational}
+    ports:
+      - "${POSTGRES_PORT_HOST:-5432}:${POSTGRES_PORT_CONTAINER:-5432}"
+    volumes:
+      - terrafusion_op_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-user} -d $${POSTGRES_DB:-terrafusion_operational}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - terrafusion_network
+
+  # --- TerraFusion Sync Service (FastAPI + Plugins) ---
+  terrafusion_sync:
+    build:
+      context: ./terrafusion_sync
+      dockerfile: Dockerfile 
+    container_name: terrafusion_sync_core
+    command: uvicorn terrafusion_sync.app:app --host 0.0.0.0 --port 8001 --reload
+    volumes:
+      - ./terrafusion_sync:/app
+    ports:
+      - "${TERRAFUSION_SYNC_PORT_HOST:-8001}:${TERRAFUSION_SYNC_PORT_CONTAINER:-8001}"
+    environment:
+      - TERRAFUSION_OPERATIONAL_DB_URL=postgresql+asyncpg://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@terrafusion_db_operational:${POSTGRES_PORT_CONTAINER:-5432}/${POSTGRES_DB:-terrafusion_operational}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - SQLALCHEMY_ECHO=${SQLALCHEMY_ECHO:-False}
+    depends_on:
+      terrafusion_db_operational:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - terrafusion_network
+
+  # --- TerraFusion API Gateway (Flask) ---
+  terrafusion_gateway:
+    build:
+      context: ./terrafusion_gateway
+      dockerfile: Dockerfile
+    container_name: terrafusion_api_gateway
+    command: flask --app terrafusion_gateway.main:create_app run --host=0.0.0.0 --port=5000 --debug
+    volumes:
+      - ./terrafusion_gateway:/app
+    ports:
+      - "${TERRAFUSION_GATEWAY_PORT_HOST:-5000}:${TERRAFUSION_GATEWAY_PORT_CONTAINER:-5000}"
+    environment:
+      - FLASK_APP=terrafusion_gateway.main:create_app
+      - FLASK_DEBUG=${FLASK_DEBUG:-True}
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-a_very_secret_key_for_dev_change_me_in_prod}
+      - TERRAFUSION_SYNC_SERVICE_URL=http://terrafusion_sync_core:${TERRAFUSION_SYNC_PORT_CONTAINER:-8001}/plugins/v1
+      - GATEWAY_TO_SYNC_SERVICE_TOKEN=${GATEWAY_TO_SYNC_SERVICE_TOKEN}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      - terrafusion_sync
+    restart: unless-stopped
+    networks:
+      - terrafusion_network
+
+  # --- Prometheus ---
+  prometheus:
+    image: prom/prometheus:v2.47.0 # Use a specific version
+    container_name: terrafusion_prometheus
+    volumes:
+      - ./infra/prometheus:/etc/prometheus/ # Mount local config directory
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle' # Allows reloading config via HTTP POST to /-/reload
+    ports:
+      - "9090:9090"
+    networks:
+      - terrafusion_network
+    restart: unless-stopped
+    depends_on: # Prometheus should start after services it scrapes are likely up
+      - terrafusion_sync
+      - terrafusion_gateway
+
+  # --- Grafana ---
+  grafana:
+    image: grafana/grafana-oss:10.1.1 # Use a specific version
+    container_name: terrafusion_grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      # Optional: Mount custom Grafana configuration or provisioning files
+      # - ./infra/grafana/provisioning/:/etc/grafana/provisioning/
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      # Optional: Configure Grafana to auto-provision Prometheus datasource
+      # - GF_DATASOURCES_DEFAULT_PROMETHEUS_URL=http://terrafusion_prometheus:9090 
+    networks:
+      - terrafusion_network
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+volumes:
+  terrafusion_op_data:
+  prometheus_data: # Persistent storage for Prometheus
+  grafana_data:    # Persistent storage for Grafana
+
+networks:
+  terrafusion_network:
+    driver: bridge
+```
+
+#### 2. Create `terrafusion_platform/infra/prometheus/prometheus.yml`
+
+This is the configuration file for Prometheus, telling it which targets to scrape for metrics.
+
+```yaml
+# terrafusion_platform/infra/prometheus/prometheus.yml
+global:
+  scrape_interval: 15s # How frequently to scrape targets by default.
+  evaluation_interval: 15s # How frequently to evaluate rules.
+
+# Alertmanager configuration (optional, can be added later)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           # - alertmanager:9093
+
+# Load rules once and periodically evaluate them according to the global 'evaluation_interval'.
+# rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+# A scrape configuration containing exactly one endpoint to scrape:
+# Here it's Prometheus itself.
+scrape_configs:
+  # The job name is added as a label `job=<job_name>` to any timeseries scraped from this config.
+  - job_name: "prometheus"
+    # metrics_path defaults to '/metrics'
+    # scheme defaults to 'http'.
+    static_configs:
+      - targets: ["localhost:9090"] # Prometheus scraping itself
+
+  - job_name: "terrafusion_sync_service"
+    metrics_path: /metrics # Path where terrafusion_sync exposes metrics
+    static_configs:
+      # 'terrafusion_sync_core' is the service name in docker-compose.yml
+      # Prometheus will resolve this to the container's IP on the terrafusion_network.
+      - targets: ["terrafusion_sync_core:8001"] # service_name:container_port
+
+  # Uncomment and configure if/when terrafusion_gateway has a /metrics endpoint
+  # - job_name: "terrafusion_api_gateway"
+  #   metrics_path: /metrics 
+  #   static_configs:
+  #     - targets: ["terrafusion_api_gateway:5000"]
+```
+
+**Explanation and How to Use:**
+
+1.  **`docker-compose.yml` Updates:**
+    * **Prometheus Service (`prometheus`):**
+        * Uses the official `prom/prometheus` image.
+        * Mounts a local directory `./infra/prometheus` into the container at `/etc/prometheus/`. This is where `prometheus.yml` will live.
+        * Mounts a Docker volume `prometheus_data` for persistent storage of metrics data.
+        * Configures command-line flags, including pointing to the `prometheus.yml` config file.
+        * Exposes port `9090` for accessing the Prometheus UI.
+        * Connects to the `terrafusion_network`.
+    * **Grafana Service (`grafana`):**
+        * Uses the official `grafana/grafana-oss` image.
+        * Exposes port `3000` for the Grafana UI.
+        * Mounts a Docker volume `grafana_data` for persistent dashboards, data sources, etc.
+        * Sets environment variables for the default admin user/password and disables sign-ups.
+        * Connects to the `terrafusion_network`.
+    * **Volumes:** Defines `prometheus_data` and `grafana_data` for persistence.
+    * **Networks:** All services are on the `terrafusion_network` for easy inter-service communication using service names.
+
+2.  **`infra/prometheus/prometheus.yml`:**
+    * **`global`:** Sets default scrape and evaluation intervals.
+    * **`scrape_configs`:** This is where you define your targets.
+        * **`prometheus` job:** Prometheus scrapes its own metrics.
+        * **`terrafusion_sync_service` job:**
+            * `metrics_path: /metrics`: Tells Prometheus to scrape the `/metrics` endpoint on the target.
+            * `targets: ["terrafusion_sync_core:8001"]`: `terrafusion_sync_core` is the service name of your FastAPI application as defined in `docker-compose.yml`. Prometheus, being on the same Docker network, can resolve this service name to the container's IP. `8001` is the port the `terrafusion_sync` service listens on *inside the Docker network*.
+        * A commented-out section is provided for `terrafusion_api_gateway` for when you add metrics there.
+
+**Next Steps for You:**
+
+1.  **Create Directories and Files:**
+    * Create the directory `terrafusion_platform/infra/prometheus/`.
+    * Save the `prometheus.yml` content into `terrafusion_platform/infra/prometheus/prometheus.yml`.
+    * Update your main `terrafusion_platform/docker-compose.yml` with the new `prometheus` and `grafana` service definitions, and the new `volumes` and `networks` sections if they don't fully exist.
+
+2.  **Set Environment Variables (Optional for Grafana):**
+    * You can add `GRAFANA_ADMIN_USER` and `GRAFANA_ADMIN_PASSWORD` to your `.env` file if you want to customize the Grafana admin credentials.
+
+3.  **Run Docker Compose:**
+    * From your `terrafusion_platform/` root directory:
+        ```bash
+        docker-compose up --build -d
+        ```
+        (The `-d` runs it in detached mode. `--build` is good if you made changes to Dockerfiles, though not strictly necessary if only `docker-compose.yml` changed).
+
+4.  **Verify Services:**
+    * **Prometheus:** Open your browser to `http://localhost:9090`.
+        * Go to "Status" -> "Targets". You should see your `terrafusion_sync_service` listed, and its state should eventually be "UP". If it's "DOWN", check Prometheus logs (`docker-compose logs prometheus`) and ensure `terrafusion_sync` is running and its `/metrics` endpoint is accessible from within the Docker network.
+        * You can also try querying some of your metrics in the Prometheus query browser (e.g., `valuation_jobs_submitted_total`).
+    * **Grafana:** Open your browser to `http://localhost:3000`.
+        * Log in with the default credentials (admin/admin) or what you set in `.env`.
+        * You'll need to add Prometheus as a data source:
+            * Go to "Connections" (or "Configuration" -> "Data Sources").
+            * Click "Add new data source".
+            * Select "Prometheus".
+            * For the "Prometheus server URL", use `http://terrafusion_prometheus:9090` (Grafana uses the service name `terrafusion_prometheus` to connect to Prometheus over the Docker network).
+            * Click "Save & Test". It should say "Data source is working".
+    * **TerraFusion Services:** Ensure `terrafusion_sync` and `terrafusion_gateway` are also running correctly (`docker-compose ps`).
+
+Once this is set up, you'll have Prometheus scraping metrics from `terrafusion_sync`, and Grafana ready for you to build dashboards to visualize these metrics. The next step after this would be to create a basic Grafana dashboard.
