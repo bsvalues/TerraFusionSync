@@ -62,7 +62,8 @@ async def create_new_report(
             county_id=request.county_id,
             parameters=request.parameters
         )
-        return ReportJobResponse.from_orm(job)
+        # Model to Pydantic conversion
+        return ReportJobResponse.model_validate(job)
     except Exception as e:
         logger.error(f"Failed to create report job: {e}")
         raise HTTPException(
@@ -92,7 +93,7 @@ async def get_report_details(
             status_code=404,
             detail=f"Report job with ID {report_id} not found"
         )
-    return ReportJobResponse.from_orm(job)
+    return ReportJobResponse.model_validate(job)
 
 
 @router.get(
@@ -125,7 +126,7 @@ async def list_reports(
         
         # Convert ORM objects to response schema
         return ReportJobListResponse(
-            items=[ReportJobResponse.from_orm(job) for job in jobs],
+            items=[ReportJobResponse.model_validate(job) for job in jobs],
             count=len(jobs)
         )
     except Exception as e:
@@ -178,7 +179,7 @@ async def update_report_status(
                 detail=f"Report job with ID {report_id} not found"
             )
             
-        return ReportJobResponse.from_orm(updated_job)
+        return ReportJobResponse.model_validate(updated_job)
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
