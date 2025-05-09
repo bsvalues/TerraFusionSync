@@ -145,6 +145,10 @@ def run_grafana():
         'GF_PATHS_PROVISIONING': os.path.join(GRAFANA_HOME, 'conf/provisioning'),
         'GF_SECURITY_ADMIN_USER': 'admin',
         'GF_SECURITY_ADMIN_PASSWORD': 'admin',
+        'GF_SECURITY_DISABLE_INITIAL_ADMIN_CREATION': 'false',
+        'GF_SECURITY_ADMIN_PASSWORD_SET': 'false',
+        'GF_AUTH_ANONYMOUS_ENABLED': 'true',
+        'GF_AUTH_ANONYMOUS_ORG_ROLE': 'Viewer',
         'GF_USERS_ALLOW_SIGN_UP': 'false',
         'GF_LOG_LEVEL': 'info'
     })
@@ -183,13 +187,15 @@ def run_grafana():
         
         # Monitor the process
         while True:
-            line = process.stderr.readline()
-            if line:
-                logger.info(f"Grafana: {line.strip()}")
+            if process.stderr:
+                line = process.stderr.readline()
+                if line:
+                    logger.info(f"Grafana: {line.strip()}")
             
-            line = process.stdout.readline()
-            if line:
-                logger.info(f"Grafana: {line.strip()}")
+            if process.stdout:
+                line = process.stdout.readline()
+                if line:
+                    logger.info(f"Grafana: {line.strip()}")
             
             # Check if process is still running
             if process.poll() is not None:

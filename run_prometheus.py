@@ -126,13 +126,15 @@ def run_prometheus():
         
         # Monitor the process
         while True:
-            line = process.stderr.readline()
-            if line:
-                logger.info(f"Prometheus: {line.strip()}")
+            if process.stderr:
+                line = process.stderr.readline()
+                if line:
+                    logger.info(f"Prometheus: {line.strip()}")
             
-            line = process.stdout.readline()
-            if line:
-                logger.info(f"Prometheus: {line.strip()}")
+            if process.stdout:
+                line = process.stdout.readline()
+                if line:
+                    logger.info(f"Prometheus: {line.strip()}")
             
             # Check if process is still running
             if process.poll() is not None:
