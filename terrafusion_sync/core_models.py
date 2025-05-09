@@ -131,7 +131,7 @@ class PropertyValuation(Base):
     __tablename__ = 'property_valuations'
     
     id = mapped_column(Integer, primary_key=True)
-    property_id = mapped_column(String(50), ForeignKey('properties_operational.property_id'), nullable=False)
+    property_id = mapped_column(String(50), ForeignKey('property_operational.property_id'), nullable=False)
     
     # Valuation details
     valuation_date = mapped_column(DateTime, default=datetime.utcnow)
@@ -176,7 +176,7 @@ class PropertyImprovement(Base):
     __tablename__ = 'property_improvements'
     
     id = mapped_column(Integer, primary_key=True)
-    property_id = mapped_column(String(50), ForeignKey('properties_operational.property_id'), nullable=False)
+    property_id = mapped_column(String(50), ForeignKey('property_operational.property_id'), nullable=False)
     
     # Improvement details
     improvement_type = mapped_column(String(50), nullable=False)  # addition, renovation, pool, outbuilding, etc.
