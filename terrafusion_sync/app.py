@@ -8,11 +8,22 @@ It initializes the database and sets up routes for property assessment synchroni
 import logging
 import os
 import json
+import sys
+from pathlib import Path
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+
+# Configure logging
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
+logger = logging.getLogger(__name__)
+
+# Add the project root to the Python path to allow importing from terrafusion_platform
+project_root = Path(__file__).parent.parent.resolve()
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
 
 # Import database and models
 from terrafusion_sync.database import get_db_session, initialize_db, get_db_status
@@ -24,9 +35,14 @@ from terrafusion_sync.core_models import (
     ImportJob
 )
 
-# Configure logging
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
-logger = logging.getLogger(__name__)
+# Import county config manager - this will be used to retrieve county-specific settings
+try:
+    from terrafusion_platform.sdk.county_config import CountyConfigManager
+    county_manager = CountyConfigManager()
+    logger.info(f"CountyConfigManager loaded with {len(county_manager.list_available_counties())} available counties")
+except ImportError as e:
+    logger.warning(f"Unable to import CountyConfigManager: {e}. County-specific configurations won't be available.")
+    county_manager = None
 
 # Create FastAPI application
 app = FastAPI(

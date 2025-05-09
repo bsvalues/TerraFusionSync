@@ -27,3 +27,5 @@ werkzeug
 flask-session
 asyncpg
 aiosqlite
+python-dotenv
+pyyaml
