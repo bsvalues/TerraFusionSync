@@ -33,3 +33,6 @@ alembic
 asyncpg
 greenlet
 prometheus-client
+flask-login
+flask-wtf
+pytest
