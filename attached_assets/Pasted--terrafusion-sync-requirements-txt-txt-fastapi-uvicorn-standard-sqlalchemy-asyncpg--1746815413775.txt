@@ -1,0 +1,319 @@
+#### `terrafusion_sync/requirements.txt`
+```txt
+fastapi
+uvicorn[standard]
+sqlalchemy
+asyncpg # PostgreSQL async driver
+python-dotenv
+pydantic
+# Add other dependencies as needed
+```
+
+#### `terrafusion_sync/connectors/postgres.py`
+```python
+# terrafusion_sync/connectors/postgres.py
+import os
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.exc import SQLAlchemyError
+from fastapi import HTTPException, status
+import logging
+
+# Configure logging
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
+
+DATABASE_URL = os.getenv("TERRAFUSION_OPERATIONAL_DB_URL") # e.g., "postgresql+asyncpg://user:pass@host/dbname"
+
+if not DATABASE_URL:
+    logger.error("TERRAFUSION_OPERATIONAL_DB_URL environment variable not set.")
+    # In a real app, you'd likely prevent startup or use a mock for testing if in dev mode.
+    # For this handoff, we assume it will be set in the Replit environment.
+
+# Create an async engine instance.
+engine_kwargs = {"echo": os.getenv("SQLALCHEMY_ECHO", "False").lower() == "true"}
+engine = None
+if DATABASE_URL:
+    try:
+        engine = create_async_engine(DATABASE_URL, **engine_kwargs)
+    except Exception as e:
+        logger.error(f"Failed to create database engine: {e}")
+
+# Create a session factory
+AsyncSessionFactory = None
+if engine:
+    AsyncSessionFactory = sessionmaker(
+        bind=engine, class_=AsyncSession, expire_on_commit=False
+    )
+else:
+    logger.warning("Database engine not initialized. AsyncSessionFactory will be None.")
+
+
+async def get_db_session() -> AsyncSession:
+    """
+    FastAPI dependency that provides a database session.
+    It ensures the session is closed after the request is finished.
+    """
+    if not AsyncSessionFactory:
+        logger.error("Database session factory not initialized. Check DATABASE_URL and engine initialization.")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database service is not configured or available."
+        )
+    
+    session: AsyncSession = AsyncSessionFactory()
+    try:
+        logger.debug("Database session opened.")
+        yield session
+        await session.commit()
+        logger.debug("Database session committed.")
+    except SQLAlchemyError as e:
+        logger.error(f"Database transaction error: {e}", exc_info=True)
+        await session.rollback()
+        logger.debug("Database session rolled back due to SQLAlchemyError.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred during database transaction."
+        )
+    except Exception as e:
+        logger.error(f"An unexpected error occurred with the database session: {e}", exc_info=True)
+        await session.rollback()
+        logger.debug("Database session rolled back due to generic Exception.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred with the database."
+        )
+    finally:
+        await session.close()
+        logger.debug("Database session closed.")
+
+# Example Model (move to a dedicated models.py or core_models.py later)
+# from sqlalchemy.orm import declarative_base
+# from sqlalchemy import Column, String, Float
+# Base = declarative_base()
+# class PropertyDB(Base):
+#     __tablename__ = "properties_operational" # Example table name
+#     property_id = Column(String, primary_key=True, index=True)
+#     county_id = Column(String, index=True)
+#     address = Column(String)
+#     # ... other relevant fields
+```
+
+#### `terrafusion_sync/plugins/__init__.py`
+```python
+# terrafusion_sync/plugins/__init__.py
+from fastapi import APIRouter
+
+# Import routers from each plugin module
+# Ensure these files exist and define 'router = APIRouter(...)'
+try:
+    from .valuation import router as valuation_router
+    from .reporting import router as reporting_router # Assuming reporting.py will be created
+    # from .market_analysis import router as market_router # Example for future
+except ImportError as e:
+    # This helps in debugging if a plugin file is missing or has import errors itself
+    print(f"Error importing plugin routers: {e}. Ensure plugin files (valuation.py, reporting.py) exist and are correct.")
+    # Depending on strictness, you might re-raise or define them as None
+    valuation_router = None 
+    reporting_router = None
+
+all_plugin_routers = APIRouter()
+
+if valuation_router:
+    all_plugin_routers.include_router(valuation_router, prefix="/valuation", tags=["Valuation Services"])
+if reporting_router:
+    all_plugin_routers.include_router(reporting_router, prefix="/reporting", tags=["Reporting Services"])
+# if market_router:
+#     all_plugin_routers.include_router(market_router, prefix="/market", tags=["Market Analysis"])
+
+def get_all_plugin_routers_instance(): # Renamed to avoid conflict if this file is imported elsewhere
+    return all_plugin_routers
+```
+
+#### `terrafusion_sync/plugins/valuation.py`
+```python
+# terrafusion_sync/plugins/valuation.py
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+# from sqlalchemy.future import select # For SQLAlchemy 2.0 style queries
+import logging
+from pydantic import BaseModel, Field # Ensure Pydantic is installed
+from typing import Optional
+
+# Corrected import path for get_db_session assuming connectors is a sibling to plugins
+from ..connectors.postgres import get_db_session 
+# Example: If you create a models.py in terrafusion_sync/
+# from ..core_models import PropertyOperational # Assuming PropertyOperational is defined there
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter() # Removed prefix here, will be added when including in all_plugin_routers
+
+class ValuationRequest(BaseModel):
+    property_id: str = Field(..., example="PROP12345", description="The unique identifier for the property.")
+    county_id: str = Field(..., example="COUNTY01", description="The county identifier.")
+    # Add other relevant fields for valuation
+
+class ValuationResponse(BaseModel):
+    property_id: str
+    county_id: str
+    estimated_value: float
+    valuation_method: str
+    message: Optional[str] = None
+
+@router.post("/run", response_model=ValuationResponse)
+async def run_valuation(
+    request_data: ValuationRequest, 
+    db: AsyncSession = Depends(get_db_session) # Corrected dependency injection
+):
+    """
+    Triggers a valuation process for a given property in a county.
+    This is a simplified example.
+    """
+    logger.info(f"Received valuation request for property_id: {request_data.property_id} in county: {request_data.county_id}")
+
+    # --- Simulate Database Interaction ---
+    # Example: Fetch property details (assuming PropertyOperational model exists)
+    # try:
+    #     stmt = select(PropertyOperational).where(
+    #         PropertyOperational.property_id == request_data.property_id,
+    #         PropertyOperational.county_id == request_data.county_id
+    #     )
+    #     result = await db.execute(stmt)
+    #     property_record = result.scalars().first()
+    # except Exception as e:
+    #     logger.error(f"Database error during valuation for {request_data.property_id}: {e}")
+    #     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database query failed")
+
+    # if not property_record:
+    #     logger.warning(f"Property not found: {request_data.property_id} in county {request_data.county_id}")
+    #     raise HTTPException(
+    #         status_code=status.HTTP_404_NOT_FOUND,
+    #         detail=f"Property {request_data.property_id} not found in county {request_data.county_id}"
+    #     )
+    # logger.info(f"Found property (simulated): {request_data.property_id}")
+    # --- End Simulate Database Interaction ---
+
+    # TODO: Integrate with core sync-service logic to start an actual valuation job/pipeline.
+    # This might involve queuing a job, calling other internal services, etc.
+
+    simulated_value = 123456.78 
+    
+    if request_data.property_id == "UNKNOWN_PROP": # Simple check for example
+        logger.warning(f"Simulated: Property not found: {request_data.property_id}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Property {request_data.property_id} not found (simulated)."
+        )
+
+    logger.info(f"Valuation for {request_data.property_id} completed (simulated). Value: {simulated_value}")
+    
+    return ValuationResponse(
+        property_id=request_data.property_id,
+        county_id=request_data.county_id,
+        estimated_value=simulated_value,
+        valuation_method="Simulated Comparable Sales",
+        message="Valuation process initiated and completed (simulated)."
+    )
+```
+
+#### `terrafusion_sync/plugins/reporting.py` (Stub)
+```python
+# terrafusion_sync/plugins/reporting.py
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+import logging
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any
+
+from ..connectors.postgres import get_db_session
+
+logger = logging.getLogger(__name__)
+router = APIRouter() # Removed prefix here
+
+class ReportRequest(BaseModel):
+    report_type: str = Field(..., example="sales_ratio_study", description="Type of report to generate.")
+    county_id: str = Field(..., example="COUNTY01")
+    parameters: Optional[Dict[str, Any]] = None
+
+class ReportResponse(BaseModel):
+    report_id: str
+    county_id: str
+    report_type: str
+    status: str
+    download_url: Optional[str] = None # Or report data directly for small reports
+    message: Optional[str] = None
+
+@router.post("/generate", response_model=ReportResponse)
+async def generate_report(
+    request_data: ReportRequest,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Generates a specified report for a county.
+    """
+    logger.info(f"Received request to generate report type '{request_data.report_type}' for county '{request_data.county_id}'.")
+    
+    # TODO: Implement actual report generation logic.
+    # This would involve querying data (likely from an analytics DB via a different connector),
+    # processing it, and generating the report file or data.
+    # This could be an asynchronous task.
+
+    report_id = f"REPORT_{request_data.report_type.upper()}_{request_data.county_id}_{os.urandom(4).hex()}"
+    
+    logger.info(f"Report generation for {report_id} started (simulated).")
+
+    return ReportResponse(
+        report_id=report_id,
+        county_id=request_data.county_id,
+        report_type=request_data.report_type,
+        status="PENDING", # Or "COMPLETED" if synchronous and small
+        message="Report generation initiated (simulated)."
+    )
+```
+
+#### `terrafusion_sync/app.py`
+```python
+# terrafusion_sync/app.py
+from fastapi import FastAPI
+import logging
+import os
+
+# Corrected import path for get_all_plugin_routers_instance
+# This assumes plugins is a package in the same directory as app.py
+try:
+    from .plugins import get_all_plugin_routers_instance
+except ImportError as e:
+    print(f"Could not import plugins, ensure plugins/__init__.py is correct: {e}")
+    # Define a fallback if plugins can't be loaded to allow app to start for basic checks
+    def get_all_plugin_routers_instance():
+        from fastapi import APIRouter
+        return APIRouter()
+
+
+# Configure logging
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
+logger = logging.getLogger(__name__)
+
+app = FastAPI(
+    title="TerraFusion Sync Engine & SaaS Plugins",
+    description="Handles core data synchronization and hosts business logic plugins for TerraFusion.",
+    version="0.1.0"
+)
+
+# Include core SyncService specific routes if any (e.g., for managing sync jobs, health)
+@app.get("/sync-health", tags=["Core Sync Service"])
+async def health_check_sync_core():
+    logger.info("TerraFusion Sync Engine health check accessed.")
+    return {"status": "TerraFusion Sync Engine is healthy and running!"}
+
+# Include all plugin routers under a common prefix
+plugin_routers = get_all_plugin_routers_instance()
+app.include_router(plugin_routers, prefix="/plugins/v1") # e.g. /plugins/v1/valuation/run
+
+logger.info("TerraFusion Sync Engine FastAPI application initialized with plugin routers.")
+
+# To run this app (from the terrafusion_platform directory):
+# Ensure TERRAFUSION_OPERATIONAL_DB_URL is set in your environment or .env file
+# uvicorn terrafusion_sync.app:app --host 0.0.0.0 --port 8001 --reload
+```

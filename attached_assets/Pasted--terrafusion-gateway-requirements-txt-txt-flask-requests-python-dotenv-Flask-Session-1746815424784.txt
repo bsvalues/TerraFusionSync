@@ -1,0 +1,302 @@
+#### `terrafusion_gateway/requirements.txt`
+```txt
+flask
+requests
+python-dotenv
+# Flask-Session, Flask-Login, PyJWT for auth later
+# Add other dependencies as needed
+```
+
+#### `terrafusion_gateway/services/sync_core_client.py`
+```python
+# terrafusion_gateway/services/sync_core_client.py
+import requests
+import os
+from flask import current_app, session # For user context if needed
+import logging
+
+logger = logging.getLogger(__name__)
+
+# The Gateway needs to know where the terrafusion_sync service is running.
+# This should come from environment variables.
+SYNC_CORE_BASE_URL = os.getenv("TERRAFUSION_SYNC_SERVICE_URL") # e.g., "http://terrafusion_sync:8001/plugins/v1"
+                                                            # Note: /plugins/v1 is the prefix we set in sync/app.py
+
+if not SYNC_CORE_BASE_URL:
+    logger.error("TERRAFUSION_SYNC_SERVICE_URL environment variable not set for Gateway.")
+    # This is critical for the gateway to function.
+
+class SyncCoreClient:
+    def _get_auth_headers(self):
+        headers = {"Content-Type": "application/json"}
+        # Pass along user identity or a service-to-service token if configured
+        # For example, if user_id and roles are in Flask session:
+        user_id = session.get("user_id")
+        user_roles = session.get("roles_list") # Assuming roles are stored as a list
+        if user_id:
+            headers["X-User-ID"] = str(user_id)
+        if user_roles:
+            headers["X-User-Roles"] = ",".join(user_roles)
+        
+        service_token = os.getenv("GATEWAY_TO_SYNC_SERVICE_TOKEN")
+        if service_token:
+            headers["Authorization"] = f"Bearer {service_token}"
+        return headers
+
+    def post(self, plugin_endpoint: str, data: dict):
+        """
+        Makes a POST request to a specific plugin endpoint in the Sync Core.
+        plugin_endpoint should be like "/valuation/run" or "/reporting/generate".
+        """
+        if not SYNC_CORE_BASE_URL:
+            logger.error("Sync Core URL not configured. Cannot make POST request.")
+            return {"error": "Internal configuration error", "detail": "Sync service URL missing."}, 503
+
+        url = f"{SYNC_CORE_BASE_URL}{plugin_endpoint}" # e.g. http://host:port/plugins/v1/valuation/run
+        req_headers = self._get_auth_headers()
+        
+        try:
+            current_app.logger.info(f"Gateway calling Sync Core: POST {url} with data {data} and headers {req_headers}")
+            response = requests.post(url, json=data, headers=req_headers, timeout=15) # Increased timeout
+            response.raise_for_status()
+            return response.json(), response.status_code
+        except requests.exceptions.HTTPError as e:
+            error_detail_text = e.response.text
+            try:
+                error_detail_json = e.response.json()
+            except ValueError:
+                error_detail_json = {"detail_text": error_detail_text} # Wrap non-JSON in a dict
+            current_app.logger.error(f"HTTPError from Sync Core ({url}): {e.response.status_code} - {error_detail_json}")
+            return error_detail_json, e.response.status_code
+        except requests.exceptions.RequestException as e:
+            current_app.logger.error(f"RequestException calling Sync Core ({url}): {str(e)}")
+            return {"error": "Sync Core communication error", "detail": str(e)}, 503 # Service Unavailable
+
+    def get(self, plugin_endpoint: str, params: dict = None):
+        """
+        Makes a GET request to a specific plugin endpoint in the Sync Core.
+        """
+        if not SYNC_CORE_BASE_URL:
+            logger.error("Sync Core URL not configured. Cannot make GET request.")
+            return {"error": "Internal configuration error", "detail": "Sync service URL missing."}, 503
+
+        url = f"{SYNC_CORE_BASE_URL}{plugin_endpoint}"
+        req_headers = self._get_auth_headers()
+
+        try:
+            current_app.logger.info(f"Gateway calling Sync Core: GET {url} with params {params} and headers {req_headers}")
+            response = requests.get(url, params=params, headers=req_headers, timeout=10)
+            response.raise_for_status()
+            return response.json(), response.status_code
+        except requests.exceptions.HTTPError as e:
+            error_detail_text = e.response.text
+            try:
+                error_detail_json = e.response.json()
+            except ValueError:
+                error_detail_json = {"detail_text": error_detail_text}
+            current_app.logger.error(f"HTTPError from Sync Core ({url}): {e.response.status_code} - {error_detail_json}")
+            return error_detail_json, e.response.status_code
+        except requests.exceptions.RequestException as e:
+            current_app.logger.error(f"RequestException calling Sync Core ({url}): {str(e)}")
+            return {"error": "Sync Core communication error", "detail": str(e)}, 503
+
+sync_core_client = SyncCoreClient()
+```
+
+#### `terrafusion_gateway/routes/valuation_routes.py`
+```python
+# terrafusion_gateway/routes/valuation_routes.py
+from flask import Blueprint, request, jsonify, current_app
+from functools import wraps # For decorators
+
+# Corrected import path for sync_core_client assuming services is a sibling to routes
+from ..services.sync_core_client import sync_core_client 
+# Placeholder for your actual RBAC decorator, e.g., from ..middleware.auth import rbac_required
+# For now, let's define a simple one here.
+def rbac_required(permission_needed: str):
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            # This is a placeholder. Implement actual RBAC logic in middleware/auth.py
+            # For example, check flask.session.get('user_permissions')
+            # if permission_needed not in session.get('user_permissions', []):
+            #     return jsonify({"error": "Forbidden", "message": "Insufficient permissions"}), 403
+            current_app.logger.info(f"RBAC check: '{permission_needed}' (simulated pass)")
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+valuation_bp = Blueprint('valuation_external_routes', __name__, url_prefix='/api/v1/valuation') # External facing prefix
+
+@valuation_bp.route('/run', methods=['POST'])
+@rbac_required('execute_valuation') # Example permission
+def proxy_run_valuation():
+    """
+    Gateway endpoint to proxy valuation requests to the TerraFusion Sync service's valuation plugin.
+    """
+    if not request.is_json:
+        current_app.logger.warning("Bad request to /run valuation: payload not JSON")
+        return jsonify({"error": "Invalid request format", "message": "Request payload must be JSON."}), 400
+
+    payload = request.get_json()
+    current_app.logger.info(f"Gateway received /api/v1/valuation/run request: {payload}")
+
+    # The plugin_endpoint for the client is just the path after the base Sync Core URL
+    # e.g., if Sync Core plugin is at /plugins/v1/valuation/run, and base is /plugins/v1
+    # then plugin_endpoint is "/valuation/run"
+    response_data, status_code = sync_core_client.post("/valuation/run", data=payload)
+    
+    current_app.logger.info(f"Response from Sync Core forwarded with status {status_code}")
+    return jsonify(response_data), status_code
+```
+
+#### `terrafusion_gateway/routes/reporting_routes.py` (Stub)
+```python
+# terrafusion_gateway/routes/reporting_routes.py
+from flask import Blueprint, request, jsonify, current_app
+from ..services.sync_core_client import sync_core_client
+# from ..middleware.auth import rbac_required # Import your actual decorator
+
+# Placeholder RBAC decorator (same as in valuation_routes.py for example)
+from functools import wraps
+def rbac_required(permission_needed: str):
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            current_app.logger.info(f"RBAC check: '{permission_needed}' (simulated pass)")
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+reporting_bp = Blueprint('reporting_external_routes', __name__, url_prefix='/api/v1/reporting')
+
+@reporting_bp.route('/generate', methods=['POST'])
+@rbac_required('generate_report')
+def proxy_generate_report():
+    if not request.is_json:
+        return jsonify({"error": "Invalid request format", "message": "Request payload must be JSON."}), 400
+    payload = request.get_json()
+    current_app.logger.info(f"Gateway received /api/v1/reporting/generate request: {payload}")
+    response_data, status_code = sync_core_client.post("/reporting/generate", data=payload)
+    return jsonify(response_data), status_code
+```
+
+#### `terrafusion_gateway/routes/__init__.py`
+```python
+# terrafusion_gateway/routes/__init__.py
+# This file can be empty or used to group imports if needed later.
+# For now, blueprints are registered directly in main.py.
+```
+
+#### `terrafusion_gateway/middleware/auth.py` (Stub)
+```python
+# terrafusion_gateway/middleware/auth.py
+from functools import wraps
+from flask import request, jsonify, session, current_app # Add session
+import os
+
+# This is a very basic placeholder.
+# A real implementation would involve:
+# - JWT validation if using tokens.
+# - Session checking.
+# - Loading user roles/permissions from a database or identity provider.
+# - Integration with Flask-Login or a similar extension.
+
+# Example: Load mock users and permissions for development
+MOCK_USERS = {
+    "admin": {"password": "admin123", "roles": ["admin_role", "valuation_user"], "permissions": ["execute_valuation", "generate_report", "superuser"]},
+    "assessor": {"password": "assessor123", "roles": ["assessor_role", "valuation_user"], "permissions": ["execute_valuation"]},
+    "reporter": {"password": "reporter123", "roles": ["reporter_role"], "permissions": ["generate_report"]},
+}
+# In a real app, this would come from a database or identity provider
+
+def init_auth(app):
+    # If using Flask-Login, initialize it here
+    # login_manager.init_app(app)
+    # app.secret_key = os.getenv("FLASK_SECRET_KEY", "a_very_secret_key_for_dev") # Essential for sessions
+    pass
+
+def rbac_required_actual(required_permission: str):
+    """
+    A more fleshed-out (but still basic) RBAC decorator.
+    Assumes user identity (e.g., username) and permissions are stored in the session.
+    """
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            user_id = session.get('user_id')
+            if not user_id:
+                current_app.logger.warning("RBAC: No user_id in session. Unauthorized.")
+                return jsonify({"error": "Unauthorized", "message": "Authentication required."}), 401
+            
+            user_permissions = session.get('permissions', [])
+            current_app.logger.debug(f"RBAC: User '{user_id}' permissions: {user_permissions}. Required: '{required_permission}'")
+
+            if "superuser" in user_permissions or required_permission in user_permissions:
+                return f(*args, **kwargs)
+            else:
+                current_app.logger.warning(f"RBAC: User '{user_id}' lacks permission '{required_permission}'.")
+                return jsonify({"error": "Forbidden", "message": f"Missing required permission: {required_permission}"}), 403
+        return decorated_function
+    return decorator
+
+# Placeholder for authentication routes (e.g., /login)
+# These would typically set the session variables like 'user_id' and 'permissions'
+# This should be in terrafusion_gateway/routes/auth_routes.py
+```
+
+#### `terrafusion_gateway/main.py` (Flask App Loader)
+```python
+# terrafusion_gateway/main.py
+from flask import Flask, jsonify
+import logging
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file if it exists
+load_dotenv()
+
+# Import blueprints
+from .routes.valuation_routes import valuation_bp
+from .routes.reporting_routes import reporting_bp
+# from .routes.auth_routes import auth_bp # You'll create this for login/logout
+# from .middleware.auth import init_auth # For initializing auth mechanisms
+
+def create_app():
+    app = Flask(__name__)
+
+    # Configuration
+    app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "dev_secret_key_change_me") # CRITICAL for sessions
+    # Add other configurations as needed, e.g., from config.py
+    
+    # Initialize logging
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    logging.basicConfig(level=log_level, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    
+    if app.debug:
+        logging.getLogger('werkzeug').setLevel(logging.INFO) # Quieter Werkzeug logs in debug
+    
+    app.logger.info(f"TerraFusion Gateway starting up with log level {log_level}...")
+    app.logger.info(f"Sync Service URL configured: {os.getenv('TERRAFUSION_SYNC_SERVICE_URL')}")
+
+
+    # Initialize extensions (e.g., Flask-Login, Flask-Session)
+    # init_auth(app) # Call this if you have an init_auth function
+
+    # Register blueprints
+    app.register_blueprint(valuation_bp)
+    app.register_blueprint(reporting_bp)
+    # app.register_blueprint(auth_bp, url_prefix='/auth') # Example for auth routes
+
+    @app.route('/gateway-health', methods=['GET'])
+    def health_check():
+        app.logger.info("Gateway health check accessed.")
+        return jsonify({"status": "TerraFusion Gateway is healthy and running!"}), 200
+
+    app.logger.info("Blueprints registered. Gateway initialization complete.")
+    return app
+
+# To run this app (from the terrafusion_platform directory):
+# Ensure FLASK_SECRET_KEY and TERRAFUSION_SYNC_SERVICE_URL are set in .env
+# flask --app terrafusion_gateway.main:create_app run --host=0.0.0.0 --port=5000 --debug
+```

@@ -1,0 +1,217 @@
+#### `.env.sample` (Project Root)
+```ini
+# TerraFusion Platform Environment Variables Sample
+
+# --- General ---
+LOG_LEVEL=INFO
+# For development, set to "true" to see SQL queries from SQLAlchemy
+SQLALCHEMY_ECHO=False 
+
+# --- terrafusion_gateway ---
+FLASK_APP=terrafusion_gateway.main:create_app
+FLASK_DEBUG=True
+FLASK_SECRET_KEY="a_very_strong_and_unique_secret_key_for_production_or_random_for_dev"
+# URL for the terrafusion_sync service, accessible from the gateway
+# If using Docker Compose, this might be http://terrafusion_sync:8001 (service_name:port)
+TERRAFUSION_SYNC_SERVICE_URL="http://localhost:8001/plugins/v1" 
+# Optional token for service-to-service authentication between Gateway and Sync Core
+GATEWAY_TO_SYNC_SERVICE_TOKEN="your_secure_service_to_service_token"
+
+# --- terrafusion_sync ---
+# Connection URL for the primary operational PostgreSQL database (used by SQLAlchemy async engine)
+# Example: postgresql+asyncpg://your_db_user:your_db_password@your_db_host:5432/terrafusion_op_db
+TERRAFUSION_OPERATIONAL_DB_URL="postgresql+asyncpg://user:password@localhost:5432/terrafusion_operational"
+# Add other DB URLs as needed (GIS, Analytics, Archive)
+# TERRAFUSION_GIS_DB_URL=...
+# TERRAFUSION_ANALYTICS_DB_URL=...
+# TERRAFUSION_ARCHIVE_S3_BUCKET=...
+
+# --- Orchestration (e.g., Airflow) ---
+# AIRFLOW_CONN_TERRAFUSION_SYNC_API=http://terrafusion_sync:8001 # Connection for Airflow to call Sync APIs
+# AIRFLOW_CONN_TERRAFUSION_DB=... # Connection for Airflow to directly interact with DB if needed
+
+# --- For Connectors (Legacy Systems) ---
+# Example for a PACS SQL Server connection (used by terrafusion_sync connectors)
+# PACS_DB_HOST=your_pacs_db_host
+# PACS_DB_PORT=1433
+# PACS_DB_NAME=pacs_database
+# PACS_DB_USER=pacs_user
+# PACS_DB_PASSWORD=pacs_password
+```
+
+#### `docker-compose.yml` (Conceptual Stub - Project Root)
+```yaml
+# docker-compose.yml (Conceptual - for local development)
+version: '3.8'
+
+services:
+  terrafusion_db_operational:
+    image: postgres:15-alpine
+    container_name: terrafusion_db_op
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: terrafusion_operational
+    ports:
+      - "5432:5432" # Expose for local access/debugging
+    volumes:
+      - terrafusion_op_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d terrafusion_operational"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Add PostGIS service if needed, extending postgres
+  # terrafusion_db_gis:
+  #   image: postgis/postgis:15-3.3 
+  #   container_name: terrafusion_db_gis
+  #   environment:
+  #     POSTGRES_USER: user
+  #     POSTGRES_PASSWORD: password
+  #     POSTGRES_DB: terrafusion_gis
+  #   ports:
+  #     - "5433:5432" # Different host port
+  #   volumes:
+  #     - terrafusion_gis_data:/var/lib/postgresql/data
+
+  terrafusion_sync:
+    build:
+      context: ./terrafusion_sync
+      dockerfile: Dockerfile # You'll need to create this
+    container_name: terrafusion_sync_core
+    command: uvicorn terrafusion_sync.app:app --host 0.0.0.0 --port 8001 --reload
+    volumes:
+      - ./terrafusion_sync:/app # Mount code for live reload
+    ports:
+      - "8001:8001"
+    environment:
+      # Pass environment variables from a .env file or define here
+      - TERRAFUSION_OPERATIONAL_DB_URL=postgresql+asyncpg://user:password@terrafusion_db_operational:5432/terrafusion_operational
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - SQLALCHEMY_ECHO=${SQLALCHEMY_ECHO:-False}
+    depends_on:
+      terrafusion_db_operational:
+        condition: service_healthy
+    restart: unless-stopped
+
+  terrafusion_gateway:
+    build:
+      context: ./terrafusion_gateway
+      dockerfile: Dockerfile # You'll need to create this
+    container_name: terrafusion_api_gateway
+    command: flask --app terrafusion_gateway.main:create_app run --host=0.0.0.0 --port=5000 --debug
+    volumes:
+      - ./terrafusion_gateway:/app # Mount code for live reload
+    ports:
+      - "5000:5000"
+    environment:
+      # Pass environment variables
+      - FLASK_APP=terrafusion_gateway.main:create_app
+      - FLASK_DEBUG=${FLASK_DEBUG:-True}
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-please_change_this_dev_secret}
+      - TERRAFUSION_SYNC_SERVICE_URL=http://terrafusion_sync_core:8001/plugins/v1 # Internal service name
+      - GATEWAY_TO_SYNC_SERVICE_TOKEN=${GATEWAY_TO_SYNC_SERVICE_TOKEN}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      - terrafusion_sync
+    restart: unless-stopped
+
+  # Add other services like Kafka, Zookeeper, Debezium, ClickHouse if needed for advanced features
+
+volumes:
+  terrafusion_op_data:
+  # terrafusion_gis_data:
+
+# To run: docker-compose up --build
+# Ensure you have .env file in the project root or configure environment variables directly.
+```
+
+#### `orchestration/dags/terrafusion_pacs_bulk_load_dag.py` (Conceptual Airflow DAG)
+```python
+# orchestration/dags/terrafusion_pacs_bulk_load_dag.py
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+# from airflow.providers.http.operators.http import SimpleHttpOperator # If triggering via API
+from airflow.utils.dates import days_ago
+from datetime import timedelta
+import os
+import logging
+
+logger = logging.getLogger("airflow.task")
+
+# This would be the URL of your terrafusion_sync service if Airflow calls its API
+# TERRAFUSION_SYNC_API_ENDPOINT = os.getenv("AIRFLOW_CONN_TERRAFUSION_SYNC_API", "http://terrafusion_sync_core:8001")
+
+def trigger_pacs_bulk_load_pipeline_callable(**kwargs):
+    """
+    This callable would contain the logic to trigger the bulk load.
+    For a real scenario, this might involve:
+    1. Making an API call to a specific endpoint in terrafusion_sync that starts the bulk load.
+    2. Or, if Airflow workers have access to the terrafusion_sync codebase,
+       it could import and run a specific Python function from that codebase.
+    """
+    county_id_to_load = kwargs['dag_run'].conf.get('county_id', 'default_county') # Example of passing params
+    source_system_config_key = kwargs['dag_run'].conf.get('source_config', 'pacs_training_db_config')
+    
+    logger.info(f"Attempting to trigger PACS bulk load for county: {county_id_to_load} from source: {source_system_config_key}")
+    
+    # Option 1: API Call (Example - you'd need an endpoint in terrafusion_sync)
+    # http_conn_id = 'terrafusion_sync_api' # Define this connection in Airflow UI
+    # endpoint = '/core-sync/v1/pipelines/bulk-load/start'
+    # payload = {"source_config_key": source_system_config_key, "target_db_key": "operational_oltp", "county_id": county_id_to_load}
+    # trigger_task = SimpleHttpOperator(
+    #     task_id='call_sync_service_bulk_load',
+    #     http_conn_id=http_conn_id,
+    #     endpoint=endpoint,
+    #     method='POST',
+    #     json=payload,
+    #     response_check=lambda response: response.status_code == 200 or response.status_code == 202,
+    #     dag=kwargs['dag'] # Pass the dag object if using in a callable that defines an operator
+    # )
+    # trigger_task.execute(context=kwargs) # This is a bit meta, usually operator is defined directly in DAG
+
+    # Option 2: Direct Python call (if codebase is accessible and designed for it)
+    # from terrafusion_sync.pipelines.bulk_load_pipeline import run_specific_bulk_load # Fictional import
+    # try:
+    #     result = run_specific_bulk_load(source_config_key, county_id_to_load)
+    #     logger.info(f"Bulk load completed. Result: {result}")
+    # except Exception as e:
+    #     logger.error(f"Bulk load failed: {e}")
+    #     raise
+
+    logger.info("Simulated trigger of PACS bulk load pipeline. Implement actual trigger logic.")
+    # For this handoff, we'll just log. The AI agent can implement the actual trigger.
+    return {"status": "simulated_trigger_success", "county_id": county_id_to_load}
+
+
+default_args = {
+    'owner': 'TerraFusionAdmin',
+    'depends_on_past': False,
+    'email_on_failure': False, # Configure as needed
+    'email_on_retry': False,
+    'retries': 1,
+    'retry_delay': timedelta(minutes=2),
+}
+
+with DAG(
+    dag_id='terrafusion_pacs_to_operational_bulk_load',
+    default_args=default_args,
+    description='Scheduled bulk load from legacy PACS systems to TerraFusion Operational DB.',
+    schedule_interval=None, # Manual trigger, or set a cron schedule e.g., '0 1 * * *' for 1 AM daily
+    start_date=days_ago(1),
+    catchup=False, # Don't run for past missed schedules on DAG unpause
+    tags=['terrafusion', 'etl', 'bulk-load', 'pacs'],
+) as dag:
+
+    trigger_bulk_load_task = PythonOperator(
+        task_id='trigger_pacs_bulk_load',
+        python_callable=trigger_pacs_bulk_load_pipeline_callable,
+        # op_kwargs={'county_id': 'some_county_id_from_params'}, # Can be passed via DAG run config
+    )
+
+    # Future tasks could include:
+    # - Data validation task post-load
+    # - Notification task
+    # - Triggering ETL to analytics DB task
+```
