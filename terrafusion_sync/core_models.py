@@ -23,7 +23,7 @@ class PropertyOperational(Base):
     This core model represents property assessment data in the operational database.
     It contains essential property details for valuation, assessment, and sync operations.
     """
-    __tablename__ = 'properties_operational'
+    __tablename__ = 'property_operational'
     
     # Primary identification fields
     property_id = mapped_column(String(50), primary_key=True)
@@ -316,7 +316,7 @@ class ReportJob(Base):
     This model is used to track the lifecycle of report generation jobs, including
     their configuration, status, and where to find the generated reports.
     """
-    __tablename__ = 'report_jobs'
+    __tablename__ = 'report_job'
 
     # Primary identification fields
     report_id = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
