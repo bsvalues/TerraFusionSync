@@ -705,7 +705,9 @@ def ensure_syncservice_running() -> bool:
             event_type="service_restart_failure",
             resource_type="system",
             description=f"Failed to restart SyncService after {max_attempts} attempts",
-            severity="error"
+            severity="error",
+            user_id=None,  # NULL for system-generated entries
+            username="system"
         )
     
     return False
@@ -751,6 +753,8 @@ def check_and_ensure_service_health():
                 resource_type="system",
                 description="SyncService outage detected during periodic health check",
                 severity="warning",
+                user_id=None,  # NULL for system-generated entries
+                username="system",
                 is_background_task=True
             )
         
@@ -781,6 +785,8 @@ def check_and_ensure_service_health():
                     resource_type="system",
                     description=f"SyncService is responding but unhealthy (status code: {response.status_code})",
                     severity="warning",
+                    user_id=None,  # NULL for system-generated entries
+                    username="system",
                     is_background_task=True
                 )
             
@@ -818,6 +824,8 @@ def check_and_ensure_service_health():
                         "cpu_usage": cpu_usage,
                         "memory_usage": memory_usage
                     },
+                    user_id=None,  # NULL for system-generated entries
+                    username="system",
                     is_background_task=True
                 )
         
@@ -834,7 +842,9 @@ def check_and_ensure_service_health():
                 event_type="service_health_check_error",
                 resource_type="system",
                 description=f"Error during SyncService health check: {str(e)}",
-                severity="error"
+                severity="error",
+                user_id=None,  # NULL for system-generated entries
+                username="system"
             )
         
         # Even though there was an error checking health, we know the service is responding
