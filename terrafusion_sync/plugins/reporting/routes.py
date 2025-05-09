@@ -360,11 +360,11 @@ async def get_report_status(
     
     # Map to the status response model
     return ReportJobStatusResponse(
-        report_id=job.job_id,
+        report_id=job.report_id,
         report_type=job.report_type,
         county_id=job.county_id,
         status=job.status,
-        message=job.error_message,
+        message=job.message,
         created_at=job.created_at,
         updated_at=job.updated_at
     )
