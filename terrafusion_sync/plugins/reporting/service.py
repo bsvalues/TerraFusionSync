@@ -209,3 +209,63 @@ async def _is_job_already_running(db: AsyncSession, report_id: str) -> bool:
     """
     job = await get_report_job(db, report_id)
     return job is not None and job.status == "RUNNING" and job.started_at is not None
+
+
+async def simulate_report_generation(db: AsyncSession, report_id: str) -> None:
+    """
+    Simulate report generation process.
+    
+    In a real implementation, this would start a background task to generate the report.
+    For testing purposes, this function simulates a report generation process that takes
+    a few seconds and updates the job status when finished.
+    
+    Args:
+        db: The database session
+        report_id: ID of the report job to process
+    """
+    import asyncio
+    import random
+    
+    # Get the job
+    job = await get_report_job(db, report_id)
+    if not job:
+        logger.error(f"Report job {report_id} not found for processing")
+        return
+    
+    # Update status to RUNNING
+    await update_report_job_status(
+        db=db,
+        report_id=report_id,
+        status="RUNNING",
+        message="Report generation in progress"
+    )
+    
+    # Simulate processing time (1-3 seconds)
+    await asyncio.sleep(random.uniform(1, 3))
+    
+    # Check if this is a failing report type for testing
+    if job.report_type == "FAILING_REPORT_SIM":
+        # Simulate failure
+        await update_report_job_status(
+            db=db,
+            report_id=report_id,
+            status="FAILED",
+            message="Simulated report generation failure"
+        )
+        return
+    
+    # Prepare result details
+    result_location = f"s3://terrafusion-reports/{job.county_id}/{job.report_type}/{report_id}.pdf"
+    result_metadata = {"file_size_kb": 1024, "pages": 10}
+    
+    # Update status to COMPLETED with result information
+    await update_report_job_status(
+        db=db,
+        report_id=report_id,
+        status="COMPLETED",
+        message="Report generation completed successfully",
+        result_location=result_location,
+        result_metadata=result_metadata
+    )
+    
+    logger.info(f"Simulated report generation completed for job {report_id}")

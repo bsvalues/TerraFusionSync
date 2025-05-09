@@ -195,3 +195,58 @@ class ReportJobListResponse(BaseModel):
     """Schema for a list of report jobs."""
     items: List[ReportJobResponse] = Field(..., description="List of report jobs")
     count: int = Field(..., description="Number of jobs in the response")
+
+
+class ReportJobRunRequest(BaseModel):
+    """Schema for requesting a new report job to run."""
+    report_type: str = Field(
+        ...,
+        description="Type of report to generate (e.g., 'sales_ratio_study', 'assessment_roll')"
+    )
+    county_id: str = Field(
+        ...,
+        description="County ID for which to generate the report"
+    )
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Optional parameters for report generation"
+    )
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "report_type": "sales_ratio_study",
+                "county_id": "county-123",
+                "parameters": {
+                    "year": 2025,
+                    "property_class": "ALL"
+                }
+            }
+        }
+
+
+class ReportJobStatusResponse(BaseModel):
+    """Schema for report job status checks."""
+    report_id: str = Field(..., description="Unique identifier for the report job")
+    report_type: str = Field(..., description="Type of report")
+    county_id: str = Field(..., description="County ID for which the report is generated")
+    status: str = Field(..., description="Current status of the report job")
+    message: Optional[str] = Field(None, description="Status message or error details")
+    created_at: datetime = Field(..., description="Timestamp when the job was created")
+    updated_at: datetime = Field(..., description="Timestamp of the last status update")
+
+
+class ReportJobResultDetail(BaseModel):
+    """Schema for report job result details."""
+    result_location: str = Field(..., description="Location of the generated report")
+    result_metadata: Dict[str, Any] = Field(..., description="Metadata about the report result")
+
+
+class ReportJobResultResponse(BaseModel):
+    """Schema for report job result responses."""
+    report_id: str = Field(..., description="Unique identifier for the report job")
+    report_type: str = Field(..., description="Type of report")
+    county_id: str = Field(..., description="County ID for which the report is generated")
+    status: str = Field(..., description="Current status of the report job")
+    message: Optional[str] = Field(None, description="Status message or error details")
+    result: Optional[ReportJobResultDetail] = Field(None, description="Result details if job is completed")

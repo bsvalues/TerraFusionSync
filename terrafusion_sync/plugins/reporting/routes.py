@@ -6,8 +6,9 @@ status updates, and result retrieval.
 """
 
 import logging
+import asyncio
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from terrafusion_sync.database import get_db_session
@@ -17,13 +18,18 @@ from .schemas import (
     ReportJobResponse,
     ReportJobUpdate,
     ReportJobListResponse,
-    ErrorResponse
+    ErrorResponse,
+    ReportJobRunRequest,
+    ReportJobStatusResponse,
+    ReportJobResultResponse,
+    ReportJobResultDetail
 )
 from .service import (
     create_report_job,
     get_report_job,
     list_report_jobs,
-    update_report_job_status
+    update_report_job_status,
+    simulate_report_generation
 )
 
 # Configure logging
@@ -189,3 +195,124 @@ async def update_report_status(
             status_code=500,
             detail=f"Failed to update report job status: {str(e)}"
         )
+
+
+@router.post(
+    "/run",
+    response_model=ReportJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses={
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse}
+    },
+    summary="Start a new report generation",
+    description="Create and start a new report generation job with the specified parameters. "
+                "Returns immediately with the created job in PENDING status."
+)
+async def run_report(
+    request: ReportJobRunRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+) -> ReportJobResponse:
+    """Create and start a new report generation job."""
+    try:
+        # Create the job first
+        job = await create_report_job(
+            db=db,
+            report_type=request.report_type,
+            county_id=request.county_id,
+            parameters=request.parameters
+        )
+        
+        # Start report generation in the background
+        background_tasks.add_task(
+            simulate_report_generation,
+            db,
+            job.report_id
+        )
+        
+        logger.info(f"Started report generation job {job.report_id} of type {request.report_type}")
+        return ReportJobResponse.model_validate(job)
+    
+    except Exception as e:
+        logger.error(f"Failed to start report generation: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to start report generation: {str(e)}"
+        )
+
+
+@router.get(
+    "/status/{report_id}",
+    response_model=ReportJobStatusResponse,
+    responses={
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse}
+    },
+    summary="Check report job status",
+    description="Get the current status of a report generation job."
+)
+async def get_report_status(
+    report_id: str,
+    db: AsyncSession = Depends(get_db)
+) -> ReportJobStatusResponse:
+    """Get the status of a report job."""
+    job = await get_report_job(db, report_id)
+    if not job:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Report job with ID {report_id} not found"
+        )
+    
+    # Map to the status response model
+    return ReportJobStatusResponse(
+        report_id=job.report_id,
+        report_type=job.report_type,
+        county_id=job.county_id,
+        status=job.status,
+        message=job.message,
+        created_at=job.created_at,
+        updated_at=job.updated_at
+    )
+
+
+@router.get(
+    "/results/{report_id}",
+    response_model=ReportJobResultResponse,
+    responses={
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse}
+    },
+    summary="Get report results",
+    description="Get the results of a completed report job. Returns result location and metadata for completed jobs."
+)
+async def get_report_results(
+    report_id: str,
+    db: AsyncSession = Depends(get_db)
+) -> ReportJobResultResponse:
+    """Get the results of a completed report job."""
+    job = await get_report_job(db, report_id)
+    if not job:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Report job with ID {report_id} not found"
+        )
+    
+    # Prepare response
+    response = ReportJobResultResponse(
+        report_id=job.report_id,
+        report_type=job.report_type,
+        county_id=job.county_id,
+        status=job.status,
+        message=job.message,
+        result=None  # Default to None
+    )
+    
+    # If the job is completed and has results, include them
+    if job.status == "COMPLETED" and job.result_location:
+        response.result = ReportJobResultDetail(
+            result_location=job.result_location,
+            result_metadata=job.result_metadata_json or {}
+        )
+    
+    return response
