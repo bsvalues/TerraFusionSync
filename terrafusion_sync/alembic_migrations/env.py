@@ -55,6 +55,18 @@ def get_url():
     
     return db_url
 
+def get_connect_args():
+    """Get connection arguments for asyncpg to handle SSL properly."""
+    connect_args = {}
+    db_url = get_url()
+    
+    # For asyncpg, we need to handle SSL parameters differently
+    # The asyncpg driver doesn't accept 'sslmode' parameter directly
+    if "sslmode=require" in db_url:
+        connect_args["ssl"] = True
+    
+    return connect_args
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 
@@ -100,9 +112,18 @@ async def run_migrations_online() -> None:
 
     """
     url = get_url()
+    connect_args = get_connect_args()
     
-    # Create an async engine
-    connectable = create_async_engine(url, poolclass=pool.NullPool)
+    # Remove sslmode from URL if it exists, as asyncpg doesn't support it
+    if "sslmode=require" in url:
+        url = url.replace("?sslmode=require", "").replace("&sslmode=require", "")
+    
+    # Create an async engine with proper connect args
+    connectable = create_async_engine(
+        url, 
+        connect_args=connect_args,
+        poolclass=pool.NullPool
+    )
 
     async with connectable.connect() as connection:
         # This await is necessary for the async engine

@@ -72,10 +72,19 @@ async def pg_engine(alembic_cfg_obj):
     # Check if we need to convert non-async URL to async
     if "postgresql://" in test_db_url and "asyncpg" not in test_db_url:
         test_db_url = test_db_url.replace("postgresql://", "postgresql+asyncpg://")
-
-    # Create the engine
+    
+    # For asyncpg, we need to handle SSL parameters differently
+    # The asyncpg driver doesn't accept 'sslmode' parameter directly
+    connect_args = {}
+    if "sslmode=require" in test_db_url:
+        # Remove sslmode from URL and add it to connect_args
+        test_db_url = test_db_url.replace("?sslmode=require", "").replace("&sslmode=require", "")
+        connect_args["ssl"] = True
+    
+    # Create the engine with proper connect args
     engine = create_async_engine(
         test_db_url, 
+        connect_args=connect_args,
         echo=os.getenv("SQLALCHEMY_TEST_ECHO", "False").lower() == "true"
     )
     
@@ -88,9 +97,11 @@ async def pg_engine(alembic_cfg_obj):
         # Apply migrations using the SQLAlchemy async engine directly
         # instead of command.upgrade which relies on asyncio.run()
         async with engine.begin() as connection:
-            # Set up alembic context 
+            # Set up alembic context
+            # Directly use connection since we're already in an async context
+            # with proper typing for SQLAlchemy's AsyncConnection
             context = MigrationContext.configure(
-                connection._connection, 
+                connection, 
                 opts={"target_metadata": Base.metadata}
             )
             

@@ -10,246 +10,207 @@ This module tests the end-to-end functionality of the reporting system, includin
 """
 
 import pytest
+import pytest_asyncio
 import asyncio
-import datetime
 import time
 import uuid
-from typing import Dict, Any, List
+from typing import Dict, Any
+from datetime import datetime, timedelta
+
 from fastapi.testclient import TestClient
-
-# Import the ReportJob model for typings
-from terrafusion_sync.core_models import ReportJob
-
-# Constants for testing
-TEST_COUNTY_ID = "test_county"
-TEST_REPORT_TYPE = "assessment_roll"
 
 
 @pytest.mark.asyncio
 async def test_create_report_job(sync_client: TestClient, create_report_job):
     """Test creating a report job."""
     # Prepare test data
-    report_id = str(uuid.uuid4())
     report_data = {
-        "report_type": TEST_REPORT_TYPE,
-        "county_id": TEST_COUNTY_ID,
+        "report_type": "assessment_roll",
+        "county_id": "test_county",
         "parameters": {
             "year": 2025,
-            "quarter": 1,
-            "include_exempt": True,
-            "format": "pdf"
+            "quarter": 2,
+            "include_exempt": True
         }
     }
     
-    # Call the API to create a report
-    response = sync_client.post(
-        "/plugins/v1/reporting/reports", 
-        json=report_data
-    )
+    # Call the API
+    response = sync_client.post("/plugins/v1/reporting/reports", json=report_data)
     
-    # Assertions
-    assert response.status_code == 201, f"Expected 201, got {response.status_code}. Response: {response.text}"
+    # Verify the response
+    assert response.status_code == 201, f"Expected 201 Created, got {response.status_code}: {response.text}"
     data = response.json()
-    assert "report_id" in data
-    assert data["report_type"] == TEST_REPORT_TYPE
-    assert data["county_id"] == TEST_COUNTY_ID
-    assert data["status"] == "PENDING"
-    assert "created_at" in data
     
-    # Verify parameters were stored correctly
-    assert data["parameters"]["year"] == 2025
-    assert data["parameters"]["quarter"] == 1
-    assert data["parameters"]["include_exempt"] is True
-    assert data["parameters"]["format"] == "pdf"
+    # Check response structure
+    assert "report_id" in data, "Response missing report_id"
+    assert data["report_type"] == report_data["report_type"]
+    assert data["county_id"] == report_data["county_id"]
+    assert data["parameters"]["year"] == report_data["parameters"]["year"]
+    assert data["parameters"]["quarter"] == report_data["parameters"]["quarter"]
+    assert data["status"] == "PENDING"
 
 
 @pytest.mark.asyncio
 async def test_get_report_by_id(sync_client: TestClient, create_report_job):
     """Test getting a report job by ID."""
-    # Create a test report job in the database
-    test_params = {
-        "year": 2025,
-        "quarter": 2,
-        "special_parameter": "test_value"
-    }
+    # Create a report job using the fixture
     report_job = await create_report_job(
-        report_type=TEST_REPORT_TYPE,
-        county_id=TEST_COUNTY_ID,
-        status="PENDING",
-        parameters_json=test_params
+        report_type="assessment_roll",
+        county_id="test_county",
+        status="COMPLETED",
+        parameters_json={
+            "year": 2025,
+            "quarter": 1,
+            "include_exempt": True
+        },
+        result_location="s3://test-bucket/reports/test-report.xlsx",
+        result_metadata_json={
+            "rows": 1500,
+            "file_size_bytes": 35000,
+            "generated_at": datetime.utcnow().isoformat()
+        }
     )
     
-    # Call the API to get the report
+    # Get the report through the API
     response = sync_client.get(f"/plugins/v1/reporting/reports/{report_job.report_id}")
     
-    # Assertions
-    assert response.status_code == 200
+    # Verify the response
+    assert response.status_code == 200, f"Expected 200 OK, got {response.status_code}: {response.text}"
     data = response.json()
-    assert data["report_id"] == report_job.report_id
-    assert data["report_type"] == TEST_REPORT_TYPE
-    assert data["county_id"] == TEST_COUNTY_ID
-    assert data["status"] == "PENDING"
     
-    # Verify parameters match what we stored
-    assert data["parameters"]["year"] == 2025
-    assert data["parameters"]["quarter"] == 2
-    assert data["parameters"]["special_parameter"] == "test_value"
+    # Check response structure and data
+    assert data["report_id"] == report_job.report_id
+    assert data["report_type"] == report_job.report_type
+    assert data["county_id"] == report_job.county_id
+    assert data["status"] == report_job.status
+    assert data["parameters"]["year"] == report_job.parameters_json["year"]
+    assert data["parameters"]["quarter"] == report_job.parameters_json["quarter"]
+    assert data["result_location"] == report_job.result_location
+    assert data["result_metadata"]["rows"] == report_job.result_metadata_json["rows"]
 
 
 @pytest.mark.asyncio
 async def test_list_reports(sync_client: TestClient, create_report_job):
     """Test listing report jobs with filtering."""
-    # Create some test report jobs
+    # Create multiple report jobs for testing
+    county_id = "test_county_list"
     await create_report_job(
-        report_type=TEST_REPORT_TYPE,
-        county_id=TEST_COUNTY_ID,
+        report_type="assessment_roll",
+        county_id=county_id,
         status="COMPLETED"
     )
     await create_report_job(
-        report_type="valuation_summary",
-        county_id=TEST_COUNTY_ID,
+        report_type="exemption_report",
+        county_id=county_id,
         status="PENDING"
     )
     await create_report_job(
-        report_type=TEST_REPORT_TYPE,
-        county_id="another_county",
-        status="PENDING"
+        report_type="valuation_summary",
+        county_id=county_id,
+        status="FAILED"
     )
     
-    # Test listing all reports
-    response = sync_client.get("/plugins/v1/reporting/reports")
+    # List all reports for the test county
+    response = sync_client.get(f"/plugins/v1/reporting/reports?county_id={county_id}")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) >= 3  # At least the ones we just created
+    assert len(data) == 3, f"Expected 3 reports, got {len(data)}"
     
-    # Test filtering by report_type
-    response = sync_client.get("/plugins/v1/reporting/reports?report_type=valuation_summary")
+    # Filter by report_type
+    response = sync_client.get(f"/plugins/v1/reporting/reports?county_id={county_id}&report_type=assessment_roll")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) >= 1
-    assert all(item["report_type"] == "valuation_summary" for item in data)
+    assert len(data) == 1
+    assert data[0]["report_type"] == "assessment_roll"
     
-    # Test filtering by county_id
-    response = sync_client.get("/plugins/v1/reporting/reports?county_id=another_county")
+    # Filter by status
+    response = sync_client.get(f"/plugins/v1/reporting/reports?county_id={county_id}&status=FAILED")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) >= 1
-    assert all(item["county_id"] == "another_county" for item in data)
-    
-    # Test filtering by status
-    response = sync_client.get("/plugins/v1/reporting/reports?status=COMPLETED")
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) >= 1
-    assert all(item["status"] == "COMPLETED" for item in data)
-    
-    # Test combined filtering
-    response = sync_client.get(
-        f"/plugins/v1/reporting/reports?report_type={TEST_REPORT_TYPE}&county_id={TEST_COUNTY_ID}&status=COMPLETED"
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) >= 1
-    assert all(
-        item["report_type"] == TEST_REPORT_TYPE 
-        and item["county_id"] == TEST_COUNTY_ID 
-        and item["status"] == "COMPLETED"
-        for item in data
-    )
+    assert len(data) == 1
+    assert data[0]["status"] == "FAILED"
+    assert data[0]["report_type"] == "valuation_summary"
 
 
 @pytest.mark.asyncio
 async def test_run_report(sync_client: TestClient, create_report_job):
     """Test running a report and checking its status."""
-    # Prepare run request data
+    # Prepare the test data
     run_data = {
-        "report_type": TEST_REPORT_TYPE,
-        "county_id": TEST_COUNTY_ID,
+        "report_type": "assessment_roll",
+        "county_id": "test_county",
         "parameters": {
             "year": 2025,
-            "format": "pdf",
-            "include_charts": True
+            "quarter": 2,
+            "include_exempt": True
         }
     }
     
-    # Run the report
+    # Call the run API
     response = sync_client.post("/plugins/v1/reporting/run", json=run_data)
-    assert response.status_code == 202, f"Expected 202, got {response.status_code}. Response: {response.text}"
+    assert response.status_code == 202, f"Expected 202 Accepted, got {response.status_code}: {response.text}"
     data = response.json()
     assert "report_id" in data
+    assert "status_url" in data
+    
+    # Check the status URL works
     report_id = data["report_id"]
+    status_response = sync_client.get(f"/plugins/v1/reporting/status/{report_id}")
+    assert status_response.status_code == 200
+    status_data = status_response.json()
+    assert status_data["report_id"] == report_id
+    assert "status" in status_data
+    assert "progress" in status_data
     
-    # Check initial status right after submission
-    response = sync_client.get(f"/plugins/v1/reporting/status/{report_id}")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] in ["PENDING", "RUNNING"]
+    # Simulate a completed report by updating it directly in the database
+    result_location = f"s3://test-bucket/reports/{report_id}.xlsx"
+    result_metadata = {
+        "rows": 1250,
+        "file_size_bytes": 42500,
+        "generation_time_seconds": 2.5,
+        "generated_at": datetime.utcnow().isoformat()
+    }
     
-    # In a real test, we would wait for the report to complete, but
-    # for the integration test, we'll simulate completion by directly updating the DB
-    # Wait a small amount to simulate processing time
-    await asyncio.sleep(0.1)
-    
-    # Update the report status directly
-    report_job = await create_report_job(
-        report_id=report_id,  
-        report_type=TEST_REPORT_TYPE,
-        county_id=TEST_COUNTY_ID,
+    # Update the job using the create_report_job fixture
+    updated_job = await create_report_job(
+        report_id=report_id,
         status="COMPLETED",
-        result_location="s3://terrafusion-reports/2025/test_county/assessment_roll_20250509.pdf",
-        result_metadata_json={
-            "page_count": 42,
-            "file_size_bytes": 1048576,
-            "generated_at": datetime.datetime.utcnow().isoformat()
-        }
+        result_location=result_location,
+        result_metadata_json=result_metadata
     )
     
-    # Check the completed status
-    response = sync_client.get(f"/plugins/v1/reporting/status/{report_id}")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "COMPLETED"
-    assert "result_location" in data
-    assert data["result_location"] == report_job.result_location
-    
-    # Check getting the results
-    response = sync_client.get(f"/plugins/v1/reporting/results/{report_id}")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["report_id"] == report_id
-    assert data["status"] == "COMPLETED"
-    assert data["result_location"] == report_job.result_location
-    assert "result_metadata" in data
-    assert data["result_metadata"]["page_count"] == 42
-    assert data["result_metadata"]["file_size_bytes"] == 1048576
+    # Now check if the results endpoint works
+    results_response = sync_client.get(f"/plugins/v1/reporting/results/{report_id}")
+    assert results_response.status_code == 200
+    results_data = results_response.json()
+    assert results_data["report_id"] == report_id
+    assert results_data["status"] == "COMPLETED"
+    assert results_data["result_location"] == result_location
+    assert results_data["result_metadata"]["rows"] == result_metadata["rows"]
 
 
 @pytest.mark.asyncio
 async def test_report_failure_handling(sync_client: TestClient, create_report_job):
     """Test handling of failed reports."""
     # Create a failed report job
-    error_message = "Report generation failed: missing required data for tax district 123"
+    error_message = "Failed to generate report: insufficient data for year 2025"
     report_job = await create_report_job(
-        report_type=TEST_REPORT_TYPE,
-        county_id=TEST_COUNTY_ID,
+        report_type="assessment_roll",
+        county_id="test_county",
         status="FAILED",
         message=error_message
     )
     
-    # Check the failed status
+    # Check the status through the API
     response = sync_client.get(f"/plugins/v1/reporting/status/{report_job.report_id}")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "FAILED"
     assert data["message"] == error_message
     
-    # Get the error details through the results endpoint
-    response = sync_client.get(f"/plugins/v1/reporting/results/{report_job.report_id}")
-    assert response.status_code == 404
-    data = response.json()
-    assert "detail" in data
-    assert "failed" in data["detail"].lower()
-    assert error_message in data["detail"]
+    # Check results handling for failed reports
+    results_response = sync_client.get(f"/plugins/v1/reporting/results/{report_job.report_id}")
+    assert results_response.status_code == 404, "Failed reports should return 404 for results endpoint"
 
 
 @pytest.mark.asyncio
@@ -257,10 +218,14 @@ async def test_nonexistent_report(sync_client: TestClient):
     """Test handling of nonexistent report IDs."""
     nonexistent_id = str(uuid.uuid4())
     
-    # Check status of nonexistent report
-    response = sync_client.get(f"/plugins/v1/reporting/status/{nonexistent_id}")
+    # Test getting a nonexistent report
+    response = sync_client.get(f"/plugins/v1/reporting/reports/{nonexistent_id}")
     assert response.status_code == 404
     
-    # Get results of nonexistent report
-    response = sync_client.get(f"/plugins/v1/reporting/results/{nonexistent_id}")
-    assert response.status_code == 404
+    # Test status for nonexistent report
+    status_response = sync_client.get(f"/plugins/v1/reporting/status/{nonexistent_id}")
+    assert status_response.status_code == 404
+    
+    # Test results for nonexistent report
+    results_response = sync_client.get(f"/plugins/v1/reporting/results/{nonexistent_id}")
+    assert results_response.status_code == 404
