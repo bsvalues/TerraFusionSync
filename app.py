@@ -3057,10 +3057,10 @@ def create_audit_log(
     if new_state is not None and isinstance(new_state, dict):
         new_state = json.dumps(new_state)
         
-    # Ensure required fields are never None
-    if user_id is None:
-        user_id = 0  # Use 0 for system user ID (integer type in DB)
-        
+    # For system actions or background tasks, we leave user_id as NULL
+    # since it's a foreign key to the users table
+    
+    # Ensure username is never None
     if username is None:
         username = "system"
         
@@ -3209,7 +3209,7 @@ def seed_initial_data():
             sample_audit_entries = [
                 AuditEntry(
                     timestamp=datetime(2023, 1, 1, 8, 0, 0),
-                    user_id=0,  # 0 for system user
+                    user_id=None,  # None for system-generated entries
                     username="system",
                     event_type="sync_started",
                     resource_type="sync_operation",
@@ -3222,7 +3222,7 @@ def seed_initial_data():
                 ),
                 AuditEntry(
                     timestamp=datetime(2023, 1, 1, 10, 30, 0),
-                    user_id=0,  # 0 for system user
+                    user_id=None,  # None for system-generated entries
                     username="system",
                     event_type="sync_completed",
                     resource_type="sync_operation",
@@ -3235,7 +3235,7 @@ def seed_initial_data():
                 ),
                 AuditEntry(
                     timestamp=datetime(2023, 1, 1, 10, 30, 0),
-                    user_id=0,  # 0 for system user
+                    user_id=None,  # None for system-generated entries
                     username="system",
                     event_type="error_detected",
                     resource_type="sync_record",
@@ -3289,7 +3289,7 @@ def seed_initial_data():
                 ),
                 AuditEntry(
                     timestamp=datetime(2023, 1, 4, 9, 15, 0),
-                    user_id=0,  # 0 for system user
+                    user_id=None,  # None for system-generated entries
                     username="system",
                     event_type="system_alert",
                     resource_type="system",

@@ -1,0 +1,339 @@
+This document details the `ReportJob` SQLAlchemy model and the initial scaffold for the `reporting.py` plugin.
+
+#### 1. Update `terrafusion_sync/core_models.py`
+
+Add the `ReportJob` model. This model will mirror the structure you've outlined for the Alembic migration (report_id, report_type, county_id, status, timestamps, parameters, result_location).
+
+```python
+# terrafusion_sync/core_models.py
+import datetime
+from sqlalchemy import Column, String, Float, DateTime, Integer, Text, Boolean, JSON
+from sqlalchemy.orm import declarative_base
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID # For PostgreSQL specific UUID type
+import uuid # For generating UUIDs as default
+
+# Define the base for declarative models (should be defined only once if in the same file)
+# If Base is already defined above for PropertyOperational and ValuationJob, you don't need to redefine it.
+# For clarity, assuming Base is already available from the top of this file.
+# Base = declarative_base() # Remove if already defined
+
+# --- Existing Models (PropertyOperational, ValuationJob) ---
+# ... (ensure PropertyOperational and ValuationJob models from previous steps are here) ...
+# For example:
+# class PropertyOperational(Base):
+#     __tablename__ = "properties_operational"
+#     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+#     property_id = Column(String, unique=True, index=True, nullable=False)
+#     county_id = Column(String, index=True, nullable=False)
+#     # ... other fields ...
+#     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+#     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+# class ValuationJob(Base):
+#     __tablename__ = "valuation_jobs"
+#     job_id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+#     property_id = Column(String, index=True, nullable=False)
+#     county_id = Column(String, index=True, nullable=False)
+#     status = Column(String, index=True, nullable=False, default="PENDING")
+#     # ... other fields ...
+#     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+#     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+
+class ReportJob(Base):
+    """
+    Represents a reporting job, its status, parameters, and results location.
+    """
+    __tablename__ = "report_jobs"
+
+    report_id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, comment="Unique identifier for the reporting job")
+    report_type = Column(String, index=True, nullable=False, comment="Type of report being generated (e.g., sales_ratio_study, assessment_roll)")
+    county_id = Column(String, index=True, nullable=False, comment="County ID for which the report is generated")
+    
+    status = Column(String, index=True, nullable=False, default="PENDING", comment="e.g., PENDING, RUNNING, COMPLETED, FAILED")
+    message = Column(Text, nullable=True, comment="Status message or error details")
+    
+    parameters_json = Column(JSON, nullable=True, comment="JSON object storing the parameters used for report generation")
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, comment="Timestamp when the job was created")
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, comment="Timestamp of the last status update")
+    started_at = Column(DateTime, nullable=True, comment="Timestamp when report generation started")
+    completed_at = Column(DateTime, nullable=True, comment="Timestamp when report generation completed or failed")
+
+    # Result Information
+    # This could be a path to a file in S3, a direct link, or an identifier to retrieve the report
+    result_location = Column(String, nullable=True, comment="Location/identifier of the generated report (e.g., S3 path, URL)")
+    result_metadata_json = Column(JSON, nullable=True, comment="Optional metadata about the report result (e.g., file size, page count)")
+
+
+    def __repr__(self):
+        return f"<ReportJob(report_id='{self.report_id}', report_type='{self.report_type}', county_id='{self.county_id}', status='{self.status}')>"
+
+# Ensure your Alembic env.py's target_metadata = Base.metadata includes this new model
+# when you generate the next migration.
+```
+
+#### 2. Scaffold `terrafusion_sync/plugins/reporting.py`
+
+This will contain the API endpoints for initiating, checking status, and retrieving results for reports.
+
+```python
+# terrafusion_sync/plugins/reporting.py
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+import logging
+from pydantic import BaseModel, Field as PydanticField
+from typing import Optional, Dict, Any
+import uuid
+import asyncio
+import time
+import datetime
+
+from ..connectors.postgres import get_db_session 
+from ..core_models import ReportJob # Import the new ReportJob model
+# from ..core_models import PropertyOperational # If needed for report generation
+
+# Import Prometheus metrics if you're ready to instrument this plugin
+# from ..app import (
+#     # Define specific metrics for reporting if different from valuation
+#     # REPORT_JOBS_SUBMITTED_TOTAL, 
+#     # REPORT_PROCESSING_DURATION_SECONDS, etc.
+# )
+
+logger = logging.getLogger(__name__)
+router = APIRouter() # Prefix "/reporting" will be added by plugins/__init__.py
+
+# --- Pydantic Models for Reporting API ---
+class ReportRunRequest(BaseModel):
+    report_type: str = PydanticField(..., example="sales_ratio_study", description="Type of report to generate.")
+    county_id: str = PydanticField(..., example="COUNTY01", description="County for the report.")
+    parameters: Optional[Dict[str, Any]] = PydanticField(None, example={"year": 2024, "property_class": "RESIDENTIAL"})
+
+class ReportJobStatusResponse(BaseModel):
+    report_id: uuid.UUID
+    report_type: str
+    county_id: str
+    status: str
+    message: Optional[str] = None
+    parameters: Optional[Dict[str, Any]] = None
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+    started_at: Optional[datetime.datetime] = None
+    completed_at: Optional[datetime.datetime] = None
+
+class ReportResultData(BaseModel): # Represents the actual report content or link
+    result_location: Optional[str] = None # e.g., S3 URL, API endpoint to download
+    result_metadata: Optional[Dict[str, Any]] = None
+    # For small reports, you might embed data directly:
+    # report_data_summary: Optional[Dict[str, Any]] = None 
+
+class ReportJobResultResponse(ReportJobStatusResponse):
+    result: Optional[ReportResultData] = None
+
+
+# --- Placeholder Background Task for Report Generation ---
+async def _simulate_report_generation(report_id: uuid.UUID, report_type: str, county_id: str, parameters: Optional[Dict[str, Any]], db_session_factory):
+    """Simulates actual report generation and updates the DB."""
+    # duration_metric = REPORT_PROCESSING_DURATION_SECONDS.labels(county_id=county_id, report_type=report_type) # Example
+    # with duration_metric.time(): # Auto-records duration
+    async with db_session_factory() as db:
+        logger.info(f"ReportJob {report_id}: Background task started for report type '{report_type}', county '{county_id}'.")
+        job_query = select(ReportJob).where(ReportJob.report_id == report_id)
+        
+        try:
+            result = await db.execute(job_query)
+            job = result.scalars().first()
+            if not job:
+                logger.error(f"ReportJob {report_id}: Not found in DB at start of background task.")
+                # REPORT_JOBS_FAILED_TOTAL.labels(county_id=county_id, report_type=report_type, failure_reason="job_not_found_in_bg").inc()
+                return
+
+            job.status = "RUNNING"
+            job.started_at = datetime.datetime.utcnow()
+            job.updated_at = datetime.datetime.utcnow()
+            await db.commit()
+            logger.info(f"ReportJob {report_id}: Status updated to RUNNING.")
+
+            # Simulate report generation logic
+            # This would involve querying data (e.g., from PropertyOperational, ValuationJob, Analytics DB)
+            # and formatting it into a report (PDF, CSV, Excel).
+            logger.info(f"ReportJob {report_id}: Simulating generation of '{report_type}' with params: {parameters}")
+            await asyncio.sleep(5) # Simulate processing time 
+
+            # Simulate success or failure
+            if report_type == "FAILING_REPORT_SIM":
+                job.status = "FAILED"
+                job.message = "Simulated report generation failure."
+                # REPORT_JOBS_FAILED_TOTAL.labels(county_id=county_id, report_type=report_type, failure_reason="simulated_failure").inc()
+            else:
+                job.status = "COMPLETED"
+                job.message = f"{report_type} generated successfully."
+                job.result_location = f"s3://terrafusion-reports/{county_id}/{report_type}/{report_id}.pdf" # Example S3 path
+                job.result_metadata_json = {"file_size_kb": 1024, "pages": 10}
+                # REPORT_JOBS_COMPLETED_TOTAL.labels(county_id=county_id, report_type=report_type).inc()
+            
+            job.completed_at = datetime.datetime.utcnow()
+            job.updated_at = datetime.datetime.utcnow()
+            await db.commit()
+            logger.info(f"ReportJob {report_id}: Final status '{job.status}' committed to DB.")
+
+        except Exception as e:
+            logger.error(f"ReportJob {report_id}: Error during background report generation: {e}", exc_info=True)
+            # REPORT_JOBS_FAILED_TOTAL.labels(county_id=county_id, report_type=report_type, failure_reason="processing_exception").inc()
+            try:
+                async with db_session_factory() as error_db: # New session for error handling
+                    error_result = await error_db.execute(job_query)
+                    job_to_fail = error_result.scalars().first()
+                    if job_to_fail:
+                        job_to_fail.status = "FAILED"
+                        job_to_fail.message = f"Processing error: {str(e)[:250]}"
+                        job_to_fail.completed_at = datetime.datetime.utcnow()
+                        job_to_fail.updated_at = datetime.datetime.utcnow()
+                        await error_db.commit()
+                    logger.info(f"ReportJob {report_id}: Marked as FAILED in DB due to processing error.")
+            except Exception as db_error:
+                logger.error(f"ReportJob {report_id}: CRITICAL - Failed to update job status to FAILED: {db_error}", exc_info=True)
+
+# --- API Endpoints for Reporting Plugin ---
+@router.post("/run", response_model=ReportJobStatusResponse, status_code=status.HTTP_202_ACCEPTED)
+async def run_report_job(
+    request_data: ReportRunRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Initiates a report generation job.
+    """
+    report_job_id = uuid.uuid4()
+    
+    new_report_job = ReportJob(
+        report_id=report_job_id,
+        report_type=request_data.report_type,
+        county_id=request_data.county_id,
+        status="PENDING",
+        message="Report job accepted and queued.",
+        parameters_json=request_data.parameters, # Store parameters
+        created_at=datetime.datetime.utcnow(),
+        updated_at=datetime.datetime.utcnow()
+    )
+    
+    try:
+        db.add(new_report_job)
+        await db.commit()
+        await db.refresh(new_report_job)
+        logger.info(f"ReportJob {new_report_job.report_id} created in DB for type '{new_report_job.report_type}', county '{new_report_job.county_id}'.")
+        # REPORT_JOBS_SUBMITTED_TOTAL.labels(county_id=request_data.county_id, report_type=request_data.report_type).inc()
+    except Exception as e:
+        logger.error(f"Failed to create report job in DB: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to initiate report job.")
+
+    from sqlalchemy.orm import sessionmaker # Local import or ensure available
+    db_session_factory = sessionmaker(bind=db.get_bind(), class_=AsyncSession, expire_on_commit=False)
+    
+    background_tasks.add_task(
+        _simulate_report_generation, 
+        new_report_job.report_id, 
+        new_report_job.report_type, 
+        new_report_job.county_id,
+        new_report_job.parameters_json, # Pass parameters to background task
+        db_session_factory
+    )
+    
+    return ReportJobStatusResponse.model_validate(new_report_job)
+
+
+@router.get("/status/{report_job_id_str}", response_model=ReportJobStatusResponse)
+async def get_report_job_status(report_job_id_str: str, db: AsyncSession = Depends(get_db_session)):
+    """
+    Retrieves the status of a report generation job.
+    """
+    try:
+        report_uuid = uuid.UUID(report_job_id_str)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid report_job_id format.")
+
+    logger.info(f"Status request for ReportJob ID: {report_uuid}")
+    result = await db.execute(select(ReportJob).where(ReportJob.report_id == report_uuid))
+    job = result.scalars().first()
+    
+    if not job:
+        logger.warning(f"ReportJob status request for unknown ID: {report_uuid}")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Report job '{report_uuid}' not found.")
+    
+    # Map SQLAlchemy model to Pydantic response model
+    return ReportJobStatusResponse(
+        report_id=job.report_id,
+        report_type=job.report_type,
+        county_id=job.county_id,
+        status=job.status,
+        message=job.message,
+        parameters=job.parameters_json,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+        started_at=job.started_at,
+        completed_at=job.completed_at
+    )
+
+@router.get("/results/{report_job_id_str}", response_model=ReportJobResultResponse)
+async def get_report_job_results(report_job_id_str: str, db: AsyncSession = Depends(get_db_session)):
+    """
+    Retrieves the results (or link to results) of a completed report job.
+    """
+    try:
+        report_uuid = uuid.UUID(report_job_id_str)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid report_job_id format.")
+
+    logger.info(f"Results request for ReportJob ID: {report_uuid}")
+    result = await db.execute(select(ReportJob).where(ReportJob.report_id == report_uuid))
+    job = result.scalars().first()
+
+    if not job:
+        logger.warning(f"ReportJob results request for unknown ID: {report_uuid}")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Report job '{report_uuid}' not found.")
+
+    job_status_data = ReportJobStatusResponse.model_validate(job).model_dump()
+    report_result_data = None
+
+    if job.status == "COMPLETED":
+        report_result_data = ReportResultData(
+            result_location=job.result_location,
+            result_metadata=job.result_metadata_json
+        )
+        logger.info(f"ReportJob {report_uuid} results retrieved. Location: {job.result_location}")
+    else:
+        logger.info(f"ReportJob {report_uuid} not yet completed. Status: {job.status}")
+        
+    return ReportJobResultResponse(**job_status_data, result=report_result_data)
+
+```
+
+#### 3. Update `terrafusion_sync/plugins/__init__.py`
+
+Ensure the new `reporting_router` is correctly imported and included. (This was already anticipated in the previous `plugins/__init__.py` stub).
+
+```python
+# terrafusion_sync/plugins/__init__.py
+from fastapi import APIRouter
+
+# Import routers from each plugin module
+try:
+    from .valuation import router as valuation_router
+    from .reporting import router as reporting_router # This should now correctly import
+except ImportError as e:
+    print(f"Error importing plugin routers: {e}. Ensure plugin files (valuation.py, reporting.py) exist and are correct.")
+    valuation_router = None 
+    reporting_router = None
+
+all_plugin_routers = APIRouter()
+
+if valuation_router:
+    all_plugin_routers.include_router(valuation_router, prefix="/valuation", tags=["Valuation Services"])
+if reporting_router:
+    all_plugin_routers.include_router(reporting_router, prefix="/reporting", tags=["Reporting Services"]) # This line activates it
+
+def get_all_plugin_routers_instance():
+    return all_plugin_routers
+```
