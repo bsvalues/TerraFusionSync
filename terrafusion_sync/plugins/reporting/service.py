@@ -225,28 +225,42 @@ async def simulate_report_generation(db: AsyncSession, report_id: str) -> None:
     """
     import asyncio
     import random
-    from sqlalchemy.ext.asyncio import AsyncSession
-    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
     from terrafusion_sync.database import engine
     
-    # Create a new session instead of reusing the passed one
+    # Create an async session maker using the async engine
     # This prevents transaction conflicts in asyncpg when running in background tasks
-    AsyncSessionFactory = sessionmaker(
-        bind=engine, class_=AsyncSession, expire_on_commit=False
+    AsyncSessionFactory = async_sessionmaker(
+        bind=engine,
+        expire_on_commit=False,
+        autocommit=False,
+        autoflush=False
     )
     
     # Function to perform operations with a fresh session
     async def with_fresh_session(operation_func, *args, **kwargs):
         """Execute an operation with a fresh session"""
-        async with AsyncSessionFactory() as fresh_db:
-            try:
-                result = await operation_func(fresh_db, *args, **kwargs)
-                await fresh_db.commit()
-                return result
-            except Exception as e:
-                await fresh_db.rollback()
-                logger.error(f"Error in background task: {str(e)}")
-                raise
+        session = AsyncSessionFactory()
+        session_id = id(session)
+        try:
+            logger.debug(f"Background task: Created fresh session {session_id}")
+            result = await operation_func(session, *args, **kwargs)
+            
+            # Only commit if there are actual changes
+            if session.in_transaction():
+                await session.commit()
+                logger.debug(f"Background task: Committed session {session_id}")
+            
+            return result
+        except Exception as e:
+            if session.in_transaction():
+                await session.rollback()
+                logger.debug(f"Background task: Rolled back session {session_id}")
+            logger.error(f"Error in background task with session {session_id}: {str(e)}")
+            raise
+        finally:
+            await session.close()
+            logger.debug(f"Background task: Closed session {session_id}")
     
     try:
         # Get the job with a fresh session
@@ -264,7 +278,9 @@ async def simulate_report_generation(db: AsyncSession, report_id: str) -> None:
         )
         
         # Simulate processing time (1-3 seconds)
-        await asyncio.sleep(random.uniform(1, 3))
+        processing_time = random.uniform(1, 3)
+        logger.info(f"Simulating report generation process for {processing_time:.2f} seconds")
+        await asyncio.sleep(processing_time)
         
         # Check if this is a failing report type for testing
         if job.report_type == "FAILING_REPORT_SIM":
@@ -279,7 +295,12 @@ async def simulate_report_generation(db: AsyncSession, report_id: str) -> None:
         
         # Prepare result details
         result_location = f"s3://terrafusion-reports/{job.county_id}/{job.report_type}/{report_id}.pdf"
-        result_metadata = {"file_size_kb": 1024, "pages": 10}
+        result_metadata = {
+            "file_size_kb": 1024, 
+            "pages": 10,
+            "generation_time_seconds": processing_time,
+            "generated_at": datetime.utcnow().isoformat()
+        }
         
         # Update status to COMPLETED with result information using a fresh session
         await with_fresh_session(
@@ -295,15 +316,17 @@ async def simulate_report_generation(db: AsyncSession, report_id: str) -> None:
     except Exception as e:
         logger.error(f"Error in report generation task for job {report_id}: {str(e)}")
         # Try to update the job status to FAILED
+        session = AsyncSessionFactory()
         try:
-            async with AsyncSessionFactory() as error_db:
-                await update_report_job_status(
-                    db=error_db,
-                    report_id=report_id,
-                    status="FAILED",
-                    message=f"Unexpected error during report generation: {str(e)}"
-                )
-                await error_db.commit()
+            await update_report_job_status(
+                db=session,
+                report_id=report_id,
+                status="FAILED",
+                message=f"Unexpected error during report generation: {str(e)}"
+            )
+            await session.commit()
         except Exception as recovery_error:
             logger.error(f"Failed to update job status after error: {str(recovery_error)}")
-            # We can't do much more at this point
+            await session.rollback()
+        finally:
+            await session.close()

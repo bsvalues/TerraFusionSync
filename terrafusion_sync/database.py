@@ -66,21 +66,20 @@ if DATABASE_URL.startswith('postgresql+asyncpg://'):
 # Create the async engine
 engine = create_async_engine(DATABASE_URL, **engine_kwargs)
 
-# Create async session factory with settings to help avoid transaction conflicts
+# Create async session factory
 AsyncSessionFactory = async_sessionmaker(
     bind=engine,
     class_=AsyncSession,
     expire_on_commit=False,
     autocommit=False,
-    autoflush=False,
-    execution_options={
-        # These execution options help with transaction handling in asyncpg
-        "isolation_level": "READ COMMITTED",  # Less strict isolation level
-        "execution_options": {
-            "postgresql_readonly": False,
-            "postgresql_deferrable": False,  # Non-deferrable transactions
-        }
-    }
+    autoflush=False
+)
+
+# Configure engine with execution options to help with transaction handling
+engine = engine.execution_options(
+    isolation_level="READ COMMITTED",  # Less strict isolation level
+    postgresql_readonly=False,
+    postgresql_deferrable=False  # Non-deferrable transactions
 )
 
 

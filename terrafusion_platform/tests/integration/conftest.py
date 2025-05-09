@@ -126,17 +126,39 @@ async def db_session(pg_engine) -> AsyncGenerator[AsyncSession, None]:
     This approach avoids asyncpg transaction conflicts when 
     the API endpoints create their own transactions.
     """
-    AsyncSessionFactory = sessionmaker(
-        bind=pg_engine, class_=AsyncSession, expire_on_commit=False, future=True
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+    
+    # Create a fresh async sessionmaker with our test engine
+    TestAsyncSessionFactory = async_sessionmaker(
+        bind=pg_engine,
+        expire_on_commit=False,
+        autocommit=False,
+        autoflush=False
     )
     
-    async with AsyncSessionFactory() as session:
-        print(f"\nTest DB Session: Created (Test: {os.environ.get('PYTEST_CURRENT_TEST', '').split(' ')[0]})")
+    # Create a fresh session
+    session = TestAsyncSessionFactory()
+    session_id = id(session)
+    current_test = os.environ.get('PYTEST_CURRENT_TEST', '').split(' ')[0]
+    print(f"\nTest DB Session {session_id}: Created (Test: {current_test})")
+    
+    try:
         yield session
-        # Do not rollback - just close the session
-        # Test isolation is maintained by using unique IDs for test data
+        
+        # Commit any pending changes to make them visible to API calls
+        if session.in_transaction():
+            await session.commit()
+            print(f"Test DB Session {session_id}: Committed at cleanup")
+    except Exception as e:
+        print(f"Test DB Session {session_id}: Error: {str(e)}")
+        if session.in_transaction():
+            await session.rollback()
+            print(f"Test DB Session {session_id}: Rolled back")
+        raise
+    finally:
+        # Always close the session properly
         await session.close()
-        print(f"Test DB Session: Closed")
+        print(f"Test DB Session {session_id}: Closed")
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -334,8 +356,11 @@ async def sync_client(pg_engine) -> AsyncGenerator:
         pytest.skip("FastAPI app could not be imported. Skipping test.")
         return
         
-    if app_get_db_session is None:
-        pytest.skip("Database session dependency could not be imported. Skipping test.")
+    try:
+        # Try to import the reporting routes directly
+        from terrafusion_sync.plugins.reporting.routes import get_db
+    except ImportError:
+        pytest.skip("Could not import get_db from reporting routes. Skipping test.")
         return
     
     try:
@@ -344,7 +369,7 @@ async def sync_client(pg_engine) -> AsyncGenerator:
         pytest.skip("fastapi and httpx must be installed for testing: pip install fastapi httpx")
         return
 
-    # Create a sessionmaker for our test engine
+    # Create a sessionmaker for our test engine with explicit transaction settings
     from sqlalchemy.ext.asyncio import async_sessionmaker
     TestAsyncSessionFactory = async_sessionmaker(
         bind=pg_engine, 
@@ -353,30 +378,46 @@ async def sync_client(pg_engine) -> AsyncGenerator:
         autoflush=False
     )
     
-    # Define test-specific get_db function that uses a new session for each request
-    async def override_get_db():
+    # Create a consistently reliable override for get_db that controls session lifecycle
+    @asynccontextmanager
+    async def test_db_session():
+        """Test-specific DB session provider"""
         session = TestAsyncSessionFactory()
+        session_id = id(session)
+        print(f"\nTest DB Session {session_id}: Created for test API call")
         try:
             yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
+            if session.in_transaction():
+                await session.commit()
+                print(f"Test DB Session {session_id}: Committed")
+        except Exception as e:
+            print(f"Test DB Session {session_id}: Error: {str(e)}")
+            if session.in_transaction():
+                await session.rollback()
+                print(f"Test DB Session {session_id}: Rolled back")
             raise
         finally:
             await session.close()
+            print(f"Test DB Session {session_id}: Closed")
     
-    # Let's replace just the get_db function which is used by the routes
-    if get_db is not None:
-        actual_sync_app.dependency_overrides[get_db] = override_get_db
-        print("\nTest Client: Initialized with a fresh session override for get_db.")
-    else:
-        print("\nTest Client: Could not initialize session override: get_db not found.")
+    # Define test-specific get_db function that uses our controlled session
+    async def override_get_db():
+        async with test_db_session() as session:
+            yield session
     
-    # Create client
-    client = TestClient(actual_sync_app, base_url="http://testserver-sync")
+    # Override the dependency in the app
+    actual_sync_app.dependency_overrides[get_db] = override_get_db
+    print("\nTest Client: Initialized with test DB session provider")
+    
+    # Create client with force_exit=False to ensure graceful closing of connections
+    client = TestClient(
+        actual_sync_app, 
+        base_url="http://testserver-sync",
+        raise_server_exceptions=True
+    )
+    
     yield client
     
     # Clear the dependency overrides after the test
-    if get_db is not None:
-        del actual_sync_app.dependency_overrides[get_db]
+    del actual_sync_app.dependency_overrides[get_db]
     print("Test Client: DB session overrides cleared.")
