@@ -252,8 +252,7 @@ async def get_property(
 @app.get("/sync-sources", tags=["Sync"], response_model=List[Dict[str, Any]])
 async def get_sync_sources(
     county_id: Optional[str] = None,
-    system_type: Optional[str] = None,
-    db: AsyncSession = Depends(get_db_session)
+    system_type: Optional[str] = None
 ):
     """
     Get sync source systems with optional filtering.
@@ -261,11 +260,12 @@ async def get_sync_sources(
     Args:
         county_id: Filter by county ID
         system_type: Filter by system type
-        db: Database session dependency
         
     Returns:
         List of sync source system dictionaries
     """
+    from terrafusion_sync.database import get_session
+    
     query = select(SyncSourceSystem)
     
     # Apply filters if provided
@@ -274,8 +274,9 @@ async def get_sync_sources(
     if system_type:
         query = query.where(SyncSourceSystem.system_type == system_type)
     
+    session = await get_session()
     try:
-        result = await db.execute(query)
+        result = await session.execute(query)
         systems = result.scalars().all()
         return [
             {
@@ -296,13 +297,16 @@ async def get_sync_sources(
             status_code=500,  # HTTP_500_INTERNAL_SERVER_ERROR
             detail=f"Error fetching sync sources: {str(e)}"
         )
+    finally:
+        await session.close()
 
 
 # Data seeding endpoint for development/testing
 @app.post("/seed-sample-data", tags=["Development"])
 async def seed_sample_data(
     count: int = 10,
-    county_id: str = "SAMPLE-001"
+    county_id: str = "SAMPLE-001",
+    include_sync_sources: bool = False
 ):
     """
     Seed the database with sample property data for testing.
@@ -311,6 +315,7 @@ async def seed_sample_data(
     Args:
         count: Number of sample properties to create (default: 10)
         county_id: County ID to use for sample data (default: SAMPLE-001)
+        include_sync_sources: Whether to add sample sync sources (default: False)
         
     Returns:
         Dict with status and count of created records
@@ -335,9 +340,11 @@ async def seed_sample_data(
     
     # Create sample properties
     created_count = 0
+    sync_sources_count = 0
     session = await get_session()
     
     try:
+        # Create sample properties
         for i in range(count):
             # Generate a unique property ID
             property_id = f"PROP-{uuid.uuid4().hex[:8]}"
@@ -392,14 +399,96 @@ async def seed_sample_data(
             # Add the property to the session
             session.add(new_property)
             created_count += 1
+        
+        # Create sample sync sources if requested
+        if include_sync_sources:
+            # System types for random selection
+            system_types = ["tax", "assessment", "gis", "permits", "legacy"]
+            connection_types = ["api", "database", "file", "sftp", "web"]
+            
+            # Create 3 sample sync sources for the county
+            for i in range(3):
+                system_type = system_types[i % len(system_types)]
+                connection_type = connection_types[i % len(connection_types)]
+                
+                # Create the sync source
+                new_source = SyncSourceSystem(
+                    name=f"{county_id} {system_type.capitalize()} System",
+                    system_type=system_type,
+                    county_id=county_id,
+                    connection_type=connection_type,
+                    connection_details={
+                        "host": f"sample-{system_type}-host.example.com",
+                        "port": random.randint(1000, 9000),
+                        "username": f"demo_user_{system_type}",
+                        "auth_type": "basic" if random.random() > 0.5 else "oauth",
+                        "use_ssl": random.choice([True, False])
+                    },
+                    is_active=random.random() > 0.3,  # 70% chance of being active
+                    last_successful_sync=datetime.utcnow() - timedelta(days=random.randint(1, 30)) if random.random() > 0.2 else None
+                )
+                
+                # Add the sync source to the session
+                session.add(new_source)
+                sync_sources_count += 1
+                
+                # If this is the first sync source, add a few import jobs for it
+                if i == 0:
+                    # We'll need to flush to get the ID of the new source
+                    await session.flush()
+                    source_id = new_source.id
+                    
+                    # Add 3 sample import jobs with different statuses
+                    job_statuses = ["completed", "in_progress", "failed"]
+                    for j in range(3):
+                        status = job_statuses[j]
+                        start_time = datetime.utcnow() - timedelta(hours=random.randint(1, 48))
+                        
+                        # For completed jobs, set end time and success metrics
+                        end_time = None
+                        if status == "completed":
+                            end_time = start_time + timedelta(minutes=random.randint(5, 60))
+                        elif status == "failed":
+                            end_time = start_time + timedelta(minutes=random.randint(1, 20))
+                        
+                        total_records = random.randint(100, 5000)
+                        processed_records = total_records if status != "in_progress" else random.randint(0, total_records)
+                        successful_records = processed_records - random.randint(0, 50) if status == "completed" else processed_records - random.randint(50, 200) if status == "failed" else 0
+                        failed_records = processed_records - successful_records
+                        
+                        # Calculate metrics
+                        progress = processed_records / total_records * 100 if total_records > 0 else 0
+                        success_rate = successful_records / processed_records * 100 if processed_records > 0 else 0
+                        duration = (end_time - start_time).total_seconds() if end_time else None
+                        
+                        # Create the import job
+                        new_job = ImportJob(
+                            source_system_id=source_id,
+                            job_type="full_sync" if random.random() > 0.7 else "incremental_sync",
+                            status=status,
+                            total_records=total_records,
+                            processed_records=processed_records,
+                            successful_records=successful_records,
+                            failed_records=failed_records,
+                            start_time=start_time,
+                            end_time=end_time,
+                            created_by="seed_utility",
+                            progress_percentage=round(progress, 2),
+                            success_rate=round(success_rate, 2),
+                            duration_seconds=duration
+                        )
+                        
+                        # Add the import job to the session
+                        session.add(new_job)
             
         # Commit all changes
         await session.commit()
-        logger.info(f"Successfully created {created_count} sample properties")
+        logger.info(f"Successfully created {created_count} sample properties and {sync_sources_count} sync sources")
         
         return {
             "status": "success",
             "created_count": created_count,
+            "sync_sources_count": sync_sources_count,
             "county_id": county_id
         }
         
@@ -420,8 +509,7 @@ async def get_import_jobs(
     source_system_id: Optional[int] = None,
     status: Optional[str] = None,
     limit: int = 100,
-    offset: int = 0,
-    db: AsyncSession = Depends(get_db_session)
+    offset: int = 0
 ):
     """
     Get import jobs with optional filtering.
@@ -431,11 +519,12 @@ async def get_import_jobs(
         status: Filter by job status
         limit: Maximum number of jobs to return
         offset: Offset for pagination
-        db: Database session dependency
         
     Returns:
         List of import job dictionaries
     """
+    from terrafusion_sync.database import get_session
+    
     query = select(ImportJob).order_by(ImportJob.created_at.desc())
     
     # Apply filters if provided
@@ -447,8 +536,9 @@ async def get_import_jobs(
     # Apply pagination
     query = query.limit(limit).offset(offset)
     
+    session = await get_session()
     try:
-        result = await db.execute(query)
+        result = await session.execute(query)
         jobs = result.scalars().all()
         return [
             {
@@ -476,3 +566,5 @@ async def get_import_jobs(
             status_code=500,  # HTTP_500_INTERNAL_SERVER_ERROR
             detail=f"Error fetching import jobs: {str(e)}"
         )
+    finally:
+        await session.close()
