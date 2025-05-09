@@ -1,0 +1,34 @@
+Key Improvements and Explanations:
+
+PYTHONPATH Setup: Added sys.path.insert to help Python find your terrafusion_sync modules. This is crucial for pytest to discover your application code and models.
+Environment Loading (.env): Explicitly loads the .env file from the project root to ensure TEST_TERRAFUSION_OPERATIONAL_DB_URL is available.
+Alembic Integration (alembic_cfg_obj, pg_engine):
+The alembic_cfg_obj fixture now correctly loads alembic.ini and, importantly, overrides sqlalchemy.url to point to your TEST_TERRAFUSION_OPERATIONAL_DB_URL. This ensures migrations run against the test database.
+It temporarily changes the current working directory to TERRAFUSION_SYNC_ROOT before loading the Alembic config, as Alembic often expects to be run from where its alembic.ini is located.
+The pg_engine fixture uses this alembic_cfg_obj to run command.upgrade(alembic_cfg_obj, "head") once per session, setting up your test database schema.
+db_session Fixture:
+Now uses async with session.begin() as transaction: and await transaction.rollback() to ensure each test runs in its own transaction that is rolled back, providing excellent test isolation.
+create_property_operational Factory:
+More robust, uses await db_session.flush() and await db_session.refresh() to ensure the created object has all its attributes populated from the database (like auto-generated IDs or defaults) before being returned.
+sync_client Fixture (Crucial for Integration Testing terrafusion_sync):
+Dependency Override: This is the most important change. It now correctly overrides the get_db_session dependency within your actual_sync_app (the FastAPI app from terrafusion_sync.app).
+Python
+
+actual_sync_app.dependency_overrides[app_get_db_session] = override_get_db_session
+The override_get_db_session function then yield db_session (the test-managed, transactional session). This means when your FastAPI path operations (like those in valuation.py) call Depends(get_db_session), they will receive the test session, not one created from the application's main database pool.
+The override is cleared after the client fixture is done.
+The base_url for TestClient is set to http://testserver-sync (or similar); your tests will make requests to relative paths like /plugins/v1/valuation/run.
+Before Running Tests:
+
+Create .env file: In your terrafusion_platform root, create/update .env and ensure TEST_TERRAFUSION_OPERATIONAL_DB_URL is set, e.g.:
+Ini, TOML
+
+TEST_TERRAFUSION_OPERATIONAL_DB_URL="postgresql+asyncpg://your_test_user:your_test_password@localhost:5432/terrafusion_test_db"
+# Ensure your other variables like TERRAFUSION_OPERATIONAL_DB_URL (for Alembic's env.py default) are also present
+TERRAFUSION_OPERATIONAL_DB_URL="postgresql+asyncpg://user:password@localhost:5432/terrafusion_operational" # Used by alembic env.py if not overridden by test
+Test Database: Make sure a PostgreSQL database named terrafusion_test_db (or whatever you configure) exists and is accessible by your_test_user. The pg_engine fixture will create the tables in it.
+Alembic Setup: Ensure your terrafusion_sync/alembic.ini and terrafusion_sync/alembic_migrations/env.py are correctly configured as per the terrafusion_alembic_setup_v1 document (especially the target_metadata = TargetBase.metadata line in env.py and that env.py can import core_models.Base).
+Install Dependencies: pip install pytest pytest-asyncio httpx sqlalchemy alembic python-dotenv asyncpg greenlet (and any others your project needs).
+With this conftest.py, your test_valuation_end_to_end.py should now be able to run correctly, with a properly migrated test database and isolated test sessions.
+
+The next logical step, after confirming these tests pass locally, would be to integrate this into your CI pipeline.

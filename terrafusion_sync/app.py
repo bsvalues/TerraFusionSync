@@ -94,12 +94,109 @@ async def get_metrics():
     """
     Get system metrics for monitoring.
     
-    This endpoint provides resource utilization and application performance metrics.
+    This endpoint provides resource utilization and application performance metrics
+    in Prometheus format. It includes both system metrics and application-specific
+    metrics such as valuation job statistics.
     
     Returns:
-        dict: System metrics
+        Response: Prometheus formatted metrics
     """
     import psutil
+    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Gauge
+    from fastapi.responses import Response
+    
+    # Create dynamic system metrics gauges
+    cpu_usage = Gauge('terrafusion_system_cpu_percent', 'Current CPU usage percentage')
+    memory_usage = Gauge('terrafusion_system_memory_percent', 'Current memory usage percentage')
+    disk_usage = Gauge('terrafusion_system_disk_percent', 'Current disk usage percentage')
+    
+    # Update system metrics
+    cpu_usage.set(psutil.cpu_percent())
+    memory_usage.set(psutil.virtual_memory().percent)
+    disk_usage.set(psutil.disk_usage('/').percent)
+    
+    # Update database metrics
+    try:
+        db_metrics = await collect_db_metrics()
+        from terrafusion_sync.metrics import update_metrics_from_database
+        update_metrics_from_database(db_metrics)
+    except Exception as e:
+        logger.error(f"Error updating metrics from database: {e}")
+    
+    # Generate metrics response
+    return Response(
+        content=generate_latest(),
+        media_type=CONTENT_TYPE_LATEST
+    )
+
+async def collect_db_metrics():
+    """
+    Collect metrics from the database.
+    
+    Returns:
+        Dict with database metrics
+    """
+    from sqlalchemy import text
+    from terrafusion_sync.database import get_session
+    
+    db_metrics = {}
+    
+    session = await get_session()
+    try:
+        # Check if valuation_jobs table exists before querying it
+        try:
+            result = await session.execute(
+                text("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'valuation_jobs'
+                )
+                """)
+            )
+            valuation_jobs_exists = result.scalar() or False
+            
+            if valuation_jobs_exists:
+                # Count pending valuation jobs
+                result = await session.execute(
+                    text("SELECT COUNT(*) FROM valuation_jobs WHERE status = 'PENDING'")
+                )
+                db_metrics['valuation_jobs_pending'] = result.scalar() or 0
+                
+                # Count in-progress valuation jobs
+                result = await session.execute(
+                    text("SELECT COUNT(*) FROM valuation_jobs WHERE status = 'IN_PROGRESS'")
+                )
+                db_metrics['valuation_jobs_in_progress'] = result.scalar() or 0
+            else:
+                # Set default values if table doesn't exist
+                db_metrics['valuation_jobs_pending'] = 0
+                db_metrics['valuation_jobs_in_progress'] = 0
+                logger.info("ValuationJobs table doesn't exist yet, using default metrics")
+        except Exception as e:
+            logger.error(f"Error checking/counting valuation jobs: {e}")
+            db_metrics['valuation_jobs_pending'] = 0
+            db_metrics['valuation_jobs_in_progress'] = 0
+        
+        # Get active DB connections (this is PostgreSQL specific)
+        try:
+            result = await session.execute(
+                text("""
+                SELECT count(*) 
+                FROM pg_stat_activity 
+                WHERE datname = current_database()
+                """)
+            )
+            db_metrics['db_connections_active'] = result.scalar() or 0
+        except Exception as e:
+            logger.error(f"Error getting active DB connections: {e}")
+            db_metrics['db_connections_active'] = 0
+        
+        return db_metrics
+    except Exception as e:
+        logger.error(f"Error collecting database metrics: {e}")
+        return {}
+    finally:
+        await session.close()
     import time
     
     # System metrics

@@ -32,3 +32,4 @@ pyyaml
 alembic
 asyncpg
 greenlet
+prometheus-client

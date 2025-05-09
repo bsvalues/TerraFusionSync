@@ -1,0 +1,54 @@
+This is an absolutely stellar plan – you've laid out the perfect sequence for taking the Valuation Plugin MVP to a production-grade component and then replicating that success across the platform. The "live task list" is clear, logical, and covers all the critical aspects from local testing to CI, observability, and feature expansion.
+
+Your "Strategic Truths" are also spot on and reflect a mature approach to building scalable and maintainable SaaS.
+
+Let's break down your proposed steps and then decide on the immediate next focus:
+
+Run the Integration Suite Locally:
+
+This is the absolute, immediate next step. Before anything else, we need to confirm that the test_valuation_end_to_end.py (from terrafusion_valuation_integration_test_v1) passes successfully using the conftest.py fixtures (from terrafusion_conftest_v2) against a test PostgreSQL instance.
+Your instructions for doing this are perfect:
+Install dependencies.
+Spin up Postgres (e.g., via docker-compose -f infra/docker-compose.yml up -d terrafusion_db_operational – assuming your docker-compose.yml names the Postgres service terrafusion_db_operational and your .env file's TEST_TERRAFUSION_OPERATIONAL_DB_URL points to it correctly).
+Ensure the test database exists and the user has permissions.
+Run Alembic migrations against the test DB (the pg_engine fixture in conftest.py should handle this: command.upgrade(alembic_cfg_obj, "head")).
+Execute pytest tests/integration/test_valuation_end_to_end.py -q.
+Outcome: Green tests! This validates that the plugin, its database interactions, and the async job flow are working as expected in an isolated environment.
+Wire It Into CI (.github/workflows/ci.yml):
+
+Logical Next Step after Local Success: Once the integration tests pass locally, automating them in a CI pipeline is crucial. Your example GitHub Actions workflow is a great starting point. It correctly includes:
+Setting up a PostgreSQL service.
+Setting the TEST_TERRAFUSION_OPERATIONAL_DB_URL environment variable for the tests.
+Installing dependencies.
+Applying Alembic migrations to the CI Postgres instance.
+Running unit and integration tests.
+Scrape & Dashboard Metrics (Prometheus & Grafana):
+
+Builds Confidence: Adding Prometheus metrics to the terrafusion_sync service (and specifically the valuation plugin) for job counts, durations, and failures will provide vital observability. Your suggested metrics are excellent.
+Exposing a /metrics endpoint and then visualizing this in Grafana makes the system's health and performance transparent.
+Replicate for Reporting Plugin (and others):
+
+The Blueprint: This is where the power of the pattern shines. Once the Valuation Plugin is robust, tested, and observable, replicating this structure (Model & Migration, Plugin Endpoints, Integration Tests, Metrics) for the Reporting Plugin, Market Analysis, etc., becomes much faster and more reliable.
+Addressing Your Question: "Let me know which of these you’d like to kick off next—CI integration, metrics scraping, or the Reporting plugin—or if you’d prefer to tackle them in parallel."
+
+Assuming Step 1 (Run Integration Suite Locally) is successfully completed and the tests are green:
+
+I would recommend the following order for kicking off the next set of tasks:
+
+CI Integration:
+
+Why: Immediately lock in the stability you've achieved with the passing integration tests. Automating these tests ensures that any future changes don't break this core functionality. This provides the biggest immediate return in terms of development confidence and regression prevention.
+Action: Implement the .github/workflows/ci.yml as you've drafted.
+Scrape & Dashboard Metrics:
+
+Why: With a CI pipeline ensuring the valuation plugin works, the next step is to make its operation observable. Adding Prometheus metrics will allow you to understand its performance and error rates in a deployed (even if dev/staging) environment.
+Action: Implement the prometheus_client instrumentation in terrafusion_sync/app.py and the valuation background task.
+Replicate for Reporting Plugin:
+
+Why: Once the valuation plugin is tested via CI and is observable, you have a very solid blueprint. Applying this blueprint to the Reporting Plugin will be the first real test of its reusability and will start expanding the functional footprint of your SaaS platform.
+Action: Begin scaffolding the ReportJob model, Alembic migration, reporting.py plugin logic, and its own set of integration tests.
+Tackling them in parallel is possible if you have distinct resources or if the tasks are sufficiently independent, but this sequential approach (CI -> Metrics -> New Plugin) builds layers of stability and observability before expanding complexity.
+
+So, my vote is for CI Integration as the immediate next focus after you confirm the local integration tests for the valuation plugin are passing.
+
+How does that sound?

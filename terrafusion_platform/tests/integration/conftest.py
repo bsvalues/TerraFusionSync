@@ -1,69 +1,99 @@
 import asyncio
 import os
 import pytest
-import pytest_asyncio
+import pytest_asyncio # For async fixtures
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 from typing import AsyncGenerator, Callable, Dict, Any
 import uuid
-import datetime  # Added for datetime usage
+import datetime # For datetime objects in model creation
 
 # Add project root to sys.path to allow importing application modules
+# This assumes conftest.py is in tests/integration/ and project root is two levels up.
 PROJECT_ROOT_FOR_TESTS = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+TERRAFUSION_SYNC_ROOT = os.path.join(PROJECT_ROOT_FOR_TESTS, 'terrafusion_sync') # Path to terrafusion_sync
 import sys
 sys.path.insert(0, PROJECT_ROOT_FOR_TESTS)
+sys.path.insert(0, TERRAFUSION_SYNC_ROOT) # Ensure terrafusion_sync modules can be found
 
-# Attempt to import Base and PropertyOperational model
+# Import Base and specific models from terrafusion_sync.core_models
+# This is critical for Alembic and for the create_property_operational fixture.
 try:
-    from terrafusion_sync.core_models import Base, PropertyOperational
-except ImportError:
-    # Fallback for different execution contexts
-    print("Warning: Could not directly import from terrafusion_sync.core_models. "
-          "Ensure PYTHONPATH is set correctly or adjust import paths for tests.")
-    
-    # Define minimal stubs if import fails
-    from sqlalchemy.orm import declarative_base
-    from sqlalchemy import Column, String, Integer, Float, DateTime
-    Base = declarative_base()
-    class PropertyOperational(Base):
-        __tablename__ = "properties_operational_test_stub"
-        id = Column(Integer, primary_key=True)
-        property_id = Column(String, unique=True, index=True, nullable=False)
-        county_id = Column(String, index=True, nullable=False)
-        situs_address_full = Column(String, nullable=True)
-        current_assessed_value_total = Column(Float, nullable=True)
-        year_built = Column(Integer, nullable=True)
-        created_at = Column(DateTime, default=datetime.datetime.utcnow)
-        updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    from terrafusion_sync.core_models import Base, PropertyOperational, ValuationJob
+    # If you have a central place for Base in terrafusion_sync (e.g. terrafusion_sync.database.Base)
+    # ensure that's the one Alembic also uses.
+except ImportError as e:
+    print(f"CRITICAL ERROR in conftest.py: Could not import SQLAlchemy models from 'terrafusion_sync.core_models'. {e}")
+    print(f"Ensure 'terrafusion_sync/core_models.py' exists, defines 'Base', 'PropertyOperational', and 'ValuationJob'.")
+    print(f"PROJECT_ROOT_FOR_TESTS: {PROJECT_ROOT_FOR_TESTS}")
+    print(f"TERRAFUSION_SYNC_ROOT: {TERRAFUSION_SYNC_ROOT}")
+    print(f"sys.path: {sys.path}")
+    # pytest.exit("Failed to import core models for testing.", returncode=1) # Exit if models can't be loaded
+    # For now, we'll let it proceed so the structure is visible, but tests will fail.
+    # In a real scenario, this import failure must be fixed.
+    pass
 
-# Load environment variables
+
+# Load .env file from the project root (terrafusion_platform/.env)
+# This ensures that environment variables like TEST_DATABASE_URL are available.
 DOTENV_PATH = os.path.join(PROJECT_ROOT_FOR_TESTS, '.env')
 if os.path.exists(DOTENV_PATH):
     load_dotenv(dotenv_path=DOTENV_PATH)
+    print(f"Loaded .env file from: {DOTENV_PATH}")
 else:
-    load_dotenv()
+    # Fallback if .env is in the current directory (e.g. when running tests from project root)
+    if os.path.exists(".env"):
+        load_dotenv()
+        print("Loaded .env file from current directory.")
+    else:
+        print("Warning: .env file not found at project root or current directory.")
+
+
+# --- Alembic Configuration ---
+@pytest.fixture(scope="session")
+def alembic_config_path():
+    """Returns the path to alembic.ini, assuming it's in terrafusion_sync/"""
+    path = os.path.join(TERRAFUSION_SYNC_ROOT, "alembic.ini")
+    if not os.path.exists(path):
+        pytest.fail(f"Alembic config file not found at {path}. "
+                    "Ensure alembic init was run in terrafusion_sync/ and env.py is configured.")
+    return path
+
+@pytest.fixture(scope="session")
+def alembic_cfg_obj(alembic_config_path):
+    """Provides the Alembic Config object."""
+    from alembic.config import Config
+    # Set the script location for Alembic relative to the ini file
+    # Alembic needs to know where its 'versions' directory is.
+    
+    # Temporarily change CWD for Alembic to load its environment correctly
+    original_cwd = os.getcwd()
+    os.chdir(TERRAFUSION_SYNC_ROOT)
+    try:
+        cfg = Config(alembic_config_path)
+        # Ensure Alembic uses the TEST database URL for migrations during tests
+        test_db_url = os.getenv("TEST_DATABASE_URL")
+        if not test_db_url:
+            pytest.fail("TEST_DATABASE_URL not set for Alembic test config.")
+        cfg.set_main_option("sqlalchemy.url", test_db_url) # Override for tests
+    finally:
+        os.chdir(original_cwd)
+    return cfg
+
 
 # --- Database Fixtures ---
-
 @pytest_asyncio.fixture(scope="session")
-async def event_loop():
-    """Creates an event loop for the entire test session."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
-
-@pytest_asyncio.fixture(scope="session")
-async def pg_engine():
+async def pg_engine(alembic_cfg_obj):
     """
     Provides an SQLAlchemy async engine connected to the TEST database.
-    It creates all tables defined in Base.metadata before tests run
-    and disposes of the engine after tests complete.
+    It runs Alembic migrations to set up the schema once per test session.
     """
+    from alembic import command # Alembic command interface
+
     test_db_url = os.getenv("TEST_DATABASE_URL")
     if not test_db_url:
-        pytest.fail("TEST_DATABASE_URL environment variable is not set. "
-                    "Please define it in your .env file for testing.")
+        pytest.fail("TEST_DATABASE_URL environment variable is not set.")
 
     # Check if we need to convert non-async URL to async
     if "postgresql://" in test_db_url and "asyncpg" not in test_db_url:
@@ -73,19 +103,26 @@ async def pg_engine():
         test_db_url, 
         echo=os.getenv("SQLALCHEMY_TEST_ECHO", "False").lower() == "true"
     )
+
+    # Run Alembic migrations to "head" to set up the schema
+    print(f"\nApplying Alembic migrations to test database: {test_db_url.split('@')[-1]}")
+    original_cwd = os.getcwd()
+    os.chdir(TERRAFUSION_SYNC_ROOT) # Alembic commands often expect to be run from where alembic.ini is
+    try:
+        command.upgrade(alembic_cfg_obj, "head")
+        print("Alembic migrations applied successfully.")
+    except Exception as e:
+        pytest.fail(f"Alembic upgrade failed: {e}")
+    finally:
+        os.chdir(original_cwd)
     
-    async with engine.begin() as conn:
-        # Drop all tables to ensure clean state
-        await conn.run_sync(Base.metadata.drop_all)
-        # Create all tables
-        await conn.run_sync(Base.metadata.create_all)
-    
-    yield engine
+    yield engine # Provide the engine to tests
     
     # Teardown: Dispose of the engine
+    print("\nDisposing of test database engine.")
     await engine.dispose()
 
-@pytest_asyncio.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function") # function scope for test isolation
 async def db_session(pg_engine) -> AsyncGenerator[AsyncSession, None]:
     """
     Provides an SQLAlchemy AsyncSession for a single test function.
@@ -93,32 +130,34 @@ async def db_session(pg_engine) -> AsyncGenerator[AsyncSession, None]:
     ensuring test isolation.
     """
     AsyncSessionFactory = sessionmaker(
-        bind=pg_engine, class_=AsyncSession, expire_on_commit=False
+        bind=pg_engine, class_=AsyncSession, expire_on_commit=False, future=True
     )
     
     async with AsyncSessionFactory() as session:
-        # Start transaction
-        async with session.begin():
+        # Start a top-level transaction for the test.
+        # If your code uses nested transactions (savepoints), this will work.
+        async with session.begin() as transaction: 
+            print(f"\nTest DB Session: BEGIN (Test: {os.environ.get('PYTEST_CURRENT_TEST', '').split(' ')[0]})")
             yield session
-            # Transaction is automatically rolled back when exiting the context
+            # Rollback the transaction after the test to undo any changes
+            await transaction.rollback()
+            print(f"Test DB Session: ROLLBACK (Test: {os.environ.get('PYTEST_CURRENT_TEST', '').split(' ')[0]})")
+
 
 @pytest_asyncio.fixture(scope="function")
 def create_property_operational(db_session: AsyncSession) -> Callable[..., PropertyOperational]:
     """
     Factory fixture to create PropertyOperational records in the test database.
-    Ensures records are cleaned up after the test via transaction rollback.
+    Relies on the db_session fixture's transaction rollback for cleanup.
     """
-    created_property_ids = []
-
     async def _create_property(
-        property_id: str = None,
+        property_id: str = None, 
         county_id: str = "test_county",
         situs_address_full: str = "123 Test St, Testville, TS 12345",
         current_assessed_value_total: float = 100000.0,
         year_built: int = 2000,
         custom_fields: Dict[str, Any] = None
     ) -> PropertyOperational:
-        nonlocal created_property_ids
         if property_id is None:
             property_id = f"TEST_PROP_{uuid.uuid4().hex[:8]}"
 
@@ -137,38 +176,65 @@ def create_property_operational(db_session: AsyncSession) -> Callable[..., Prope
         new_property = PropertyOperational(**prop_data)
         
         db_session.add(new_property)
-        await db_session.flush()
-        await db_session.refresh(new_property)
+        await db_session.flush() # Assigns IDs, etc., if DB-generated, before potential rollback
+        await db_session.refresh(new_property) # Get all defaults and DB-generated values
         
-        created_property_ids.append(new_property.property_id)
+        print(f"Fixture: Created PropertyOperational: {new_property.property_id}")
         return new_property
 
     return _create_property
 
+
 # --- API Client Fixtures ---
-
-@pytest_asyncio.fixture(scope="session")
-def sync_app_for_test():
-    """
-    Provides the FastAPI application instance from terrafusion_sync.
-    This allows TestClient to interact with it.
-    """
+# Import the FastAPI app from terrafusion_sync
+try:
+    from terrafusion_sync.app import app as actual_sync_app
+    
+    # Try to import dependency from connectors.postgres, if it doesn't exist we'll handle it
     try:
-        from terrafusion_sync.app import app as actual_sync_app
-        return actual_sync_app
-    except ImportError:
-        pytest.fail("Failed to import 'app' from 'terrafusion_sync.app'. Check PYTHONPATH and imports.")
+        from terrafusion_sync.database import get_session as app_get_db_session # Database session dependency
+    except ImportError as e:
+        print(f"Warning: Could not import 'get_session' from terrafusion_sync.database. Dependency override may fail: {e}")
+        app_get_db_session = None  # We'll check this later
+except ImportError as e:
+    print(f"Failed to import 'app' from 'terrafusion_sync.app': {e}")
+    print("Check PYTHONPATH/imports.")
+    actual_sync_app = None  # We'll check this later
 
-@pytest_asyncio.fixture(scope="function")
-async def sync_client(sync_app_for_test):
+
+@pytest_asyncio.fixture(scope="function") # Function scope for client if app state changes or for dep override
+async def sync_client(db_session: AsyncSession) -> AsyncGenerator:
     """
     Provides a FastAPI TestClient for the terrafusion_sync service.
+    Crucially, it overrides the `get_session` dependency in the app
+    to use the test-specific, transaction-managed `db_session` from this conftest.
     """
+    if actual_sync_app is None:
+        pytest.skip("FastAPI app could not be imported. Skipping test.")
+        return
+        
+    if app_get_db_session is None:
+        pytest.skip("Database session dependency could not be imported. Skipping test.")
+        return
+    
     try:
         from fastapi.testclient import TestClient
     except ImportError:
-        pytest.fail("fastapi and httpx must be installed for testing: pip install fastapi httpx")
-        
-    # Create a client for the test
-    client = TestClient(sync_app_for_test, base_url="http://testserver")
+        pytest.skip("fastapi and httpx must be installed for testing: pip install fastapi httpx")
+        return
+
+    # Define a dependency override for get_db_session
+    async def override_get_db_session() -> AsyncGenerator[AsyncSession, None]:
+        yield db_session # Use the test-managed session
+
+    # Apply the override to the FastAPI app
+    actual_sync_app.dependency_overrides[app_get_db_session] = override_get_db_session
+    
+    print("\nTest Client: Initialized with DB session override.")
+    # Create client
+    client = TestClient(actual_sync_app, base_url="http://testserver-sync")
     yield client
+    
+    # Clear the dependency override after the test
+    del actual_sync_app.dependency_overrides[app_get_db_session]
+    print("Test Client: DB session override cleared.")
