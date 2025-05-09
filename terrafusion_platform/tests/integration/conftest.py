@@ -137,11 +137,23 @@ async def db_session(pg_engine) -> AsyncGenerator[AsyncSession, None]:
 
 
 @pytest_asyncio.fixture(scope="function")
-async def create_property_operational(db_session: AsyncSession) -> Callable[..., PropertyOperational]:
+async def create_property_operational(pg_engine) -> Callable[..., PropertyOperational]:
     """
     Factory fixture to create PropertyOperational records in the test database.
-    Relies on the db_session fixture's transaction rollback for cleanup.
+    
+    This version creates a fresh session for each property creation,
+    commits immediately, and closes the session to prevent transaction conflicts.
     """
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+    
+    # Create a sessionmaker for our test engine
+    TestAsyncSessionFactory = async_sessionmaker(
+        bind=pg_engine, 
+        expire_on_commit=False,
+        autocommit=False, 
+        autoflush=False
+    )
+    
     async def _create_property(
         property_id: str = None, 
         county_id: str = "test_county",
@@ -155,35 +167,51 @@ async def create_property_operational(db_session: AsyncSession) -> Callable[...,
         assessed_value: float = 100000.0,
         custom_fields: Dict[str, Any] = None
     ) -> PropertyOperational:
-        if property_id is None:
-            property_id = f"TEST_PROP_{uuid.uuid4().hex[:8]}"
+        # Create a fresh session for this operation
+        session = TestAsyncSessionFactory()
+        
+        try:
+            if property_id is None:
+                property_id = f"TEST_PROP_{uuid.uuid4().hex[:8]}"
 
-        prop_data = {
-            "property_id": property_id,
-            "county_id": county_id,
-            "address_street": address_street,
-            "address_city": address_city,
-            "address_state": address_state,
-            "address_zip": address_zip,
-            "property_type": property_type,
-            "parcel_number": parcel_number,
-            "year_built": year_built,
-            "assessed_value": assessed_value,
-            "created_at": datetime.datetime.utcnow(),
-            "updated_at": datetime.datetime.utcnow()
-        }
-        if custom_fields:
-            prop_data.update(custom_fields)
-        
-        new_property = PropertyOperational(**prop_data)
-        
-        db_session.add(new_property)
-        await db_session.flush() # Assigns IDs, etc., if DB-generated, before potential rollback
-        await db_session.refresh(new_property) # Get all defaults and DB-generated values
-        
-        print(f"Fixture: Created PropertyOperational: {new_property.property_id}")
-        return new_property
-
+            prop_data = {
+                "property_id": property_id,
+                "county_id": county_id,
+                "address_street": address_street,
+                "address_city": address_city,
+                "address_state": address_state,
+                "address_zip": address_zip,
+                "property_type": property_type,
+                "parcel_number": parcel_number,
+                "year_built": year_built,
+                "assessed_value": assessed_value,
+                "created_at": datetime.datetime.utcnow(),
+                "updated_at": datetime.datetime.utcnow()
+            }
+            if custom_fields:
+                prop_data.update(custom_fields)
+            
+            new_property = PropertyOperational(**prop_data)
+            
+            session.add(new_property)
+            await session.commit()  # Commit immediately
+            
+            # Refresh after commit to get any DB-generated values
+            await session.refresh(new_property)
+            
+            # Create a detached copy of the property to return
+            # This prevents issues with using the entity after session close
+            detached_property = PropertyOperational(**new_property.__dict__.copy())
+            
+            print(f"Fixture: Created PropertyOperational: {detached_property.property_id}")
+            return detached_property
+        except Exception as e:
+            await session.rollback()
+            print(f"Fixture Error: Failed to create PropertyOperational: {str(e)}")
+            raise
+        finally:
+            await session.close()
+            
     return _create_property
 
 
