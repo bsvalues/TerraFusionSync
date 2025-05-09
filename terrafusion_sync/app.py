@@ -162,8 +162,7 @@ async def get_properties(
     county_id: Optional[str] = None,
     property_type: Optional[str] = None,
     limit: int = 100,
-    offset: int = 0,
-    db: AsyncSession = Depends(get_db_session)
+    offset: int = 0
 ):
     """
     Get properties with optional filtering.
@@ -173,11 +172,12 @@ async def get_properties(
         property_type: Filter by property type
         limit: Maximum number of properties to return
         offset: Offset for pagination
-        db: Database session dependency
         
     Returns:
         List of property dictionaries
     """
+    from terrafusion_sync.database import get_session
+    
     query = select(PropertyOperational)
     
     # Apply filters if provided
@@ -189,8 +189,9 @@ async def get_properties(
     # Apply pagination
     query = query.limit(limit).offset(offset)
     
+    session = await get_session()
     try:
-        result = await db.execute(query)
+        result = await session.execute(query)
         properties = result.scalars().all()
         return [prop.to_dict() for prop in properties]
     except Exception as e:
@@ -199,19 +200,19 @@ async def get_properties(
             status_code=500,  # HTTP_500_INTERNAL_SERVER_ERROR
             detail=f"Error fetching properties: {str(e)}"
         )
+    finally:
+        await session.close()
 
 
 @app.get("/properties/{property_id}", tags=["Properties"], response_model=Dict[str, Any])
 async def get_property(
-    property_id: str,
-    db: AsyncSession = Depends(get_db_session)
+    property_id: str
 ):
     """
     Get a property by ID.
     
     Args:
         property_id: The property ID
-        db: Database session dependency
         
     Returns:
         Property as a dictionary
@@ -219,10 +220,13 @@ async def get_property(
     Raises:
         HTTPException: If property not found
     """
+    from terrafusion_sync.database import get_session
+    
     query = select(PropertyOperational).where(PropertyOperational.property_id == property_id)
     
+    session = await get_session()
     try:
-        result = await db.execute(query)
+        result = await session.execute(query)
         property = result.scalar_one_or_none()
         
         if not property:
@@ -240,6 +244,8 @@ async def get_property(
             status_code=500,  # HTTP_500_INTERNAL_SERVER_ERROR
             detail=f"Error fetching property: {str(e)}"
         )
+    finally:
+        await session.close()
 
 
 # Sync Source System endpoints
@@ -290,6 +296,122 @@ async def get_sync_sources(
             status_code=500,  # HTTP_500_INTERNAL_SERVER_ERROR
             detail=f"Error fetching sync sources: {str(e)}"
         )
+
+
+# Data seeding endpoint for development/testing
+@app.post("/seed-sample-data", tags=["Development"])
+async def seed_sample_data(
+    count: int = 10,
+    county_id: str = "SAMPLE-001"
+):
+    """
+    Seed the database with sample property data for testing.
+    This endpoint is for development and testing purposes only.
+    
+    Args:
+        count: Number of sample properties to create (default: 10)
+        county_id: County ID to use for sample data (default: SAMPLE-001)
+        
+    Returns:
+        Dict with status and count of created records
+    """
+    # Only allow this in development environment
+    if os.getenv("ENV", "development") != "development":
+        raise HTTPException(
+            status_code=403,  # Forbidden
+            detail="Seed endpoint is only available in development environment"
+        )
+    
+    logger.info(f"Seeding {count} sample properties for county {county_id}")
+    
+    from datetime import datetime, timedelta
+    import random
+    import string
+    import uuid
+    from terrafusion_sync.database import get_session
+    
+    # Property types for random selection
+    property_types = ["residential", "commercial", "industrial", "agricultural", "vacant"]
+    
+    # Create sample properties
+    created_count = 0
+    session = await get_session()
+    
+    try:
+        for i in range(count):
+            # Generate a unique property ID
+            property_id = f"PROP-{uuid.uuid4().hex[:8]}"
+            
+            # Create random property data
+            property_type = random.choice(property_types)
+            year_built = random.randint(1950, 2023) if property_type != "vacant" else None
+            sale_date = datetime.utcnow() - timedelta(days=random.randint(30, 3650))
+            
+            # Create the property
+            new_property = PropertyOperational(
+                property_id=property_id,
+                county_id=county_id,
+                parcel_number=f"P-{random.randint(100000, 999999)}",
+                address_street=f"{random.randint(100, 9999)} Sample {random.choice(['St', 'Ave', 'Blvd', 'Rd'])}",
+                address_city="Sample City",
+                address_state="SC",
+                address_zip=f"{random.randint(10000, 99999)}",
+                property_type=property_type,
+                land_area_sqft=random.randint(2000, 20000),
+                building_area_sqft=random.randint(1000, 5000) if property_type != "vacant" else None,
+                year_built=year_built,
+                bedrooms=random.randint(2, 6) if property_type == "residential" else None,
+                bathrooms=random.choice([1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]) if property_type == "residential" else None,
+                last_sale_date=sale_date,
+                last_sale_price=random.randint(100000, 1000000),
+                current_market_value=random.randint(150000, 1200000),
+                assessed_value=random.randint(100000, 800000),
+                assessment_year=datetime.utcnow().year - random.randint(0, 3),
+                tax_district="Sample District",
+                millage_rate=random.uniform(20.0, 50.0),
+                tax_amount=random.randint(2000, 15000),
+                owner_name=f"Sample Owner {i}",
+                owner_type=random.choice(["individual", "business", "trust"]),
+                latitude=random.uniform(32.0, 35.0),
+                longitude=random.uniform(-81.0, -79.0),
+                legal_description=f"Sample legal description for property {property_id}",
+                is_exempt=random.choice([True, False]),
+                exemption_type="Homestead" if random.random() > 0.7 else None,
+                is_historical=random.random() > 0.9,
+                data_source="seed-data",
+                extended_attributes={
+                    "seed_source": "terrafusion_sync",
+                    "generator_version": "0.1.0",
+                    "random_attributes": {
+                        "attr1": random.randint(1, 100),
+                        "attr2": ''.join(random.choices(string.ascii_letters, k=8))
+                    }
+                }
+            )
+            
+            # Add the property to the session
+            session.add(new_property)
+            created_count += 1
+            
+        # Commit all changes
+        await session.commit()
+        logger.info(f"Successfully created {created_count} sample properties")
+        
+        return {
+            "status": "success",
+            "created_count": created_count,
+            "county_id": county_id
+        }
+        
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Error seeding sample data: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error seeding sample data: {str(e)}"
+        )
+    finally:
+        await session.close()
 
 
 # Import Job endpoints
