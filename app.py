@@ -386,7 +386,9 @@ def collect_metrics_safely():
                                 event_type="metrics_collection_retry_success",
                                 resource_type="system_metrics",
                                 description=f"Successfully collected metrics after {attempt} attempts",
-                                severity="info"
+                                severity="info",
+                                user_id=None,  # NULL for system-generated entries
+                                username="system"
                             )
                     return True
                 else:
@@ -404,7 +406,9 @@ def collect_metrics_safely():
                             event_type="metrics_collection_failed",
                             resource_type="system_metrics",
                             description=f"Failed to collect metrics after {max_retries} attempts",
-                            severity="warning"
+                            severity="warning",
+                            user_id=None,  # NULL for system-generated entries
+                            username="system"
                         )
                     except Exception as e:
                         logger.error(f"Failed to create audit log for metrics collection failure: {str(e)}")
@@ -424,7 +428,9 @@ def collect_metrics_safely():
                             event_type="metrics_collection_error",
                             resource_type="system_metrics",
                             description=f"Error collecting metrics after {attempt} attempts: {str(e)}",
-                            severity="error"
+                            severity="error",
+                            user_id=None,  # NULL for system-generated entries
+                            username="system"
                         )
                     except Exception as log_error:
                         logger.error(f"Failed to create audit log for metrics collection error: {str(log_error)}")
@@ -509,7 +515,9 @@ def collect_syncservice_metrics():
                         "active_users": metrics.active_users,
                         "average_response_time": metrics.average_response_time,
                         "error_rate": metrics.error_rate
-                    }
+                    },
+                    user_id=None,  # NULL for system-generated entries
+                    username="system"
                 )
                 logger.info("Created audit log entry for metrics collection")
             except Exception as e:
@@ -629,7 +637,9 @@ def ensure_syncservice_running() -> bool:
             event_type="service_restart_attempt",
             resource_type="system",
             description="Automatic SyncService restart triggered due to detected outage",
-            severity="warning"
+            severity="warning",
+            user_id=None,  # NULL for system-generated entries
+            username="system"
         )
     
     # Maximum number of restart attempts
@@ -670,7 +680,9 @@ def ensure_syncservice_running() -> bool:
                             event_type="service_restart_success",
                             resource_type="system",
                             description=f"SyncService was successfully restarted after {attempt} attempt(s)",
-                            severity="info"
+                            severity="info",
+                            user_id=None,  # NULL for system-generated entries
+                            username="system"
                         )
                     return True
             
