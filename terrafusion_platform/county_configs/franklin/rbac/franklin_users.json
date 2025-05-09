@@ -1,12 +1,12 @@
 {
-  "county_id": "{{ county_name }}",
-  "county_name": "{{ county_name_title_case }} County",
-  "description": "Initial RBAC user definitions for {{ county_name_title_case }} County. These are examples and should be integrated with a proper identity management system (e.g., LDAP/AD group mappings) for production.",
+  "county_id": "franklin",
+  "county_name": "Franklin County",
+  "description": "Initial RBAC user definitions for Franklin County. These are examples and should be integrated with a proper identity management system (e.g., LDAP/AD group mappings) for production.",
   "users": [
     {
-      "username": "${county_name}_assessor",
-      "email": "assessor@${county_name}.county.local",
-      "full_name": "${county_name_title_case} Lead Assessor",
+      "username": "{{ county_name_lower }}_assessor",
+      "email": "assessor@{{ county_name_lower }}.county.local",
+      "full_name": "Franklin Lead Assessor",
       "roles": ["assessor_role", "valuation_user", "reporting_user"],
       "permissions": [
         "execute_valuation", 
@@ -15,12 +15,12 @@
         "generate_report",
         "view_sensitive_reports"
       ],
-      "notes": "Primary assessor for ${county_name_title_case}."
+      "notes": "Primary assessor for Franklin."
     },
     {
-      "username": "${county_name}_staff01",
-      "email": "staff01@${county_name}.county.local",
-      "full_name": "Valuation Staff Member 1 (${county_name_title_case})",
+      "username": "{{ county_name_lower }}_staff01",
+      "email": "staff01@{{ county_name_lower }}.county.local",
+      "full_name": "Valuation Staff Member 1 (Franklin)",
       "roles": ["staff_role", "valuation_user"],
       "permissions": [
         "execute_valuation_batch",
@@ -29,9 +29,9 @@
       "notes": "Valuation support staff."
     },
     {
-      "username": "${county_name}_clerk",
-      "email": "clerk@${county_name}.county.local",
-      "full_name": "County Clerk (${county_name_title_case})",
+      "username": "{{ county_name_lower }}_clerk",
+      "email": "clerk@{{ county_name_lower }}.county.local",
+      "full_name": "County Clerk (Franklin)",
       "roles": ["clerk_role", "reporting_user"],
       "permissions": [
         "generate_standard_reports",

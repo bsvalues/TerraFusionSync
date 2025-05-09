@@ -103,11 +103,16 @@ def process_template(template_path: Path, output_path: Path, context: dict):
         with open(template_path, 'r') as f:
             template_content = f.read()
         
+        # Process with and without spaces to cover different template styles
         for key, value in context.items():
+            # Standard format with spaces: {{ key }}
             template_content = template_content.replace(f"{{{{ {key} }}}}", str(value))
-            # Also handle potential case where spaces might be inconsistent
+            # Without spaces: {{key}}
             template_content = template_content.replace(f"{{{{{key}}}}}", str(value))
-
+            # Also check for direct replacements without braces for flexibility
+            if key in ["county_name_lower", "county_name", "county_name_upper"]:
+                template_content = template_content.replace(f"{{ county_name_lower }}", context["county_name"])
+                template_content = template_content.replace(f"{{county_name_lower}}", context["county_name"])
 
         with open(output_path, 'w') as f:
             f.write(template_content)
