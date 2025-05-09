@@ -1,0 +1,63 @@
+{
+  "county_id": "{{ county_name }}",
+  "county_name": "{{ county_name_title_case }} County",
+  "description": "Initial RBAC user definitions for {{ county_name_title_case }} County. These are examples and should be integrated with a proper identity management system (e.g., LDAP/AD group mappings) for production.",
+  "users": [
+    {
+      "username": "{{ county_name_lower }}_assessor",
+      "email": "assessor@{{ county_name_lower }}.county.local",
+      "full_name": "{{ county_name_title_case }} Lead Assessor",
+      "roles": ["assessor_role", "valuation_user", "reporting_user"],
+      "permissions": [
+        "execute_valuation", 
+        "review_valuation", 
+        "approve_valuation_roll",
+        "generate_report",
+        "view_sensitive_reports"
+      ],
+      "notes": "Primary assessor for {{ county_name_title_case }}."
+    },
+    {
+      "username": "{{ county_name_lower }}_staff01",
+      "email": "staff01@{{ county_name_lower }}.county.local",
+      "full_name": "Valuation Staff Member 1 ({{ county_name_title_case }})",
+      "roles": ["staff_role", "valuation_user"],
+      "permissions": [
+        "execute_valuation_batch",
+        "view_valuation_results"
+      ],
+      "notes": "Valuation support staff."
+    },
+    {
+      "username": "{{ county_name_lower }}_clerk",
+      "email": "clerk@{{ county_name_lower }}.county.local",
+      "full_name": "County Clerk ({{ county_name_title_case }})",
+      "roles": ["clerk_role", "reporting_user"],
+      "permissions": [
+        "generate_standard_reports",
+        "view_public_reports"
+      ],
+      "notes": "Handles standard reporting and public data requests."
+    }
+  ],
+  "role_definitions": {
+    "assessor_role": {
+      "description": "Full access to assessment and valuation workflows.",
+      "inherits_permissions_from": ["valuation_user", "reporting_user"]
+    },
+    "staff_role": {
+      "description": "Operational staff for data entry and preliminary reviews.",
+      "inherits_permissions_from": []
+    },
+    "clerk_role": {
+      "description": "Access to generate and view standard reports.",
+      "inherits_permissions_from": []
+    },
+    "valuation_user": {
+        "description": "Can perform valuation related tasks."
+    },
+    "reporting_user": {
+        "description": "Can perform reporting related tasks."
+    }
+  }
+}

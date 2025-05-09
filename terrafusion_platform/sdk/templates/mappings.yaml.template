@@ -1,0 +1,61 @@
+# {{ county_name }}_mappings.yaml
+# Data mapping configuration for {{ county_name_title_case }} County
+# Source: {{ legacy_system_type_placeholder }} -> Target: TerraFusion Operational DB
+
+# This file defines how fields from the legacy CAMA system
+# for {{ county_name_title_case }} County map to the TerraFusion canonical schema.
+
+# Refer to the main TerraFusion data dictionary for target field names and types.
+# The 'source_table' and 'source_field' should match the legacy system's schema.
+# The 'target_field' should match the fields in your TerraFusion 'PropertyOperational' model (and others).
+# Add 'transformations' for data cleaning, type conversion, or complex mapping logic.
+
+# Example for a core property table (adjust based on actual legacy schema)
+PropertyMaster:
+  source_table: LegacyPropertyTable # Replace with actual legacy table name for {{ county_name }}
+  target_table: properties_operational # Matches your SQLAlchemy model __tablename__
+  fields:
+    - source_field: PARID # Example legacy field for Parcel ID
+      target_field: property_id
+      # transformation: "strip_whitespace | to_upper"
+    - source_field: CNTYID
+      target_field: county_id
+      default_value: "{{ county_name }}" # Automatically set based on this config
+    - source_field: LEGALDESC
+      target_field: legal_description
+    - source_field: SITUSADDR
+      target_field: situs_address_full
+    - source_field: SITUSCITY
+      target_field: situs_city
+    - source_field: SITUSZIP
+      target_field: situs_zip_code
+    - source_field: ASSDVALUE
+      target_field: current_assessed_value_total
+      transformation: "to_float"
+    - source_field: SALEDATE
+      target_field: last_sale_date
+      transformation: "to_datetime:%Y%m%d" # Example date format
+    - source_field: SALEPRICE
+      target_field: last_sale_price
+      transformation: "to_float"
+    - source_field: YRBUILT
+      target_field: year_built
+      transformation: "to_integer"
+    # Add all other relevant property master fields for {{ county_name_title_case }}
+
+# Add other table mappings as needed (e.g., for Improvements, Land Segments, Owners, Tax Bills)
+# Imprv_detail:
+#   source_table: LegacyImprovementTable
+#   target_table: improvement_details_operational
+#   fields:
+#     - source_field: IMPRVID
+#       target_field: improvement_id
+#     - source_field: PARID # Foreign key to PropertyMaster
+#       target_field: property_id_fk # Relates to PropertyOperational.property_id
+#     # ... other improvement fields
+
+# Land_detail:
+#   source_table: LegacyLandTable
+#   target_table: land_segments_operational
+#   fields:
+#     # ... land segment fields
