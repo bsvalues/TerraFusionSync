@@ -109,6 +109,81 @@ class PropertyOperational(Base):
     # valuations: Mapped[List["PropertyValuation"]] = relationship(back_populates="property", cascade="all, delete-orphan")
     # attachments: Mapped[List["PropertyAttachment"]] = relationship(back_populates="property", cascade="all, delete-orphan")
     
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the model to a dictionary for API responses."""
+        # Handle date/datetime serialization
+        def serialize_value(value):
+            if isinstance(value, (datetime, date)):
+                return value.isoformat()
+            return value
+            
+        result = {
+            "id": self.id,
+            "property_id": self.property_id,
+            "parcel_number": self.parcel_number,
+            "county_id": self.county_id,
+            "property_type": self.property_type,
+            "property_class": self.property_class,
+            
+            "address": {
+                "street": self.address_street,
+                "city": self.address_city,
+                "state": self.address_state,
+                "zip": self.address_zip
+            },
+            
+            "location": {
+                "latitude": self.latitude,
+                "longitude": self.longitude,
+                "legal_description": self.legal_description
+            },
+            
+            "physical_details": {
+                "lot_size_sqft": self.lot_size_sqft,
+                "building_size_sqft": self.building_size_sqft,
+                "year_built": self.year_built,
+                "bedrooms": self.bedrooms,
+                "bathrooms": self.bathrooms,
+                "stories": self.stories
+            },
+            
+            "valuation": {
+                "assessed_value": self.assessed_value,
+                "market_value": self.market_value,
+                "land_value": self.land_value,
+                "improvement_value": self.improvement_value,
+                "assessment_year": self.assessment_year,
+                "last_sale_price": self.last_sale_price,
+                "last_sale_date": serialize_value(self.last_sale_date)
+            },
+            
+            "tax_info": {
+                "tax_district": self.tax_district,
+                "tax_year": self.tax_year,
+                "tax_amount": self.tax_amount,
+                "tax_status": self.tax_status
+            },
+            
+            "flags": {
+                "is_exempt": self.is_exempt,
+                "exemption_type": self.exemption_type,
+                "is_historic": self.is_historic
+            },
+            
+            "metadata": {
+                "created_at": serialize_value(self.created_at),
+                "updated_at": serialize_value(self.updated_at),
+                "sync_status": self.sync_status,
+                "sync_timestamp": serialize_value(self.sync_timestamp),
+                "last_modified_by": self.last_modified_by
+            },
+            
+            "attributes": self.attributes,
+            "valuation_history": self.valuation_history
+        }
+        
+        return result
+    
     async def update_valuation(self, assessed_value: float, market_value: float, assessment_year: int) -> None:
         """
         Update the property valuation and track history.
@@ -219,6 +294,56 @@ class ReportJob(Base):
     # Additional metadata
     county_id: Mapped[Optional[str]] = mapped_column(String(50))  # County for the report
     correlation_id: Mapped[Optional[str]] = mapped_column(String(100))  # For cross-service tracking
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the model to a dictionary for API responses."""
+        # Helper function to handle date and datetime serialization
+        def serialize_value(value):
+            if isinstance(value, (datetime, date)):
+                return value.isoformat()
+            return value
+            
+        result = {
+            "id": self.id,
+            "job_id": self.job_id,
+            "report_type": self.report_type,
+            "report_name": self.report_name,
+            "description": self.description,
+            
+            "user": {
+                "user_id": self.user_id,
+                "username": self.username
+            },
+            
+            "timestamps": {
+                "created_at": serialize_value(self.created_at),
+                "updated_at": serialize_value(self.updated_at),
+                "processing_started_at": serialize_value(self.processing_started_at),
+                "processing_completed_at": serialize_value(self.processing_completed_at)
+            },
+            
+            "parameters": self.parameters,
+            "format": self.format,
+            
+            "status": {
+                "current": self.status,
+                "progress": self.progress,
+                "error_message": self.error_message,
+                "retry_count": self.retry_count
+            },
+            
+            "result": {
+                "url": self.result_url,
+                "size": self.result_size
+            },
+            
+            "metadata": {
+                "county_id": self.county_id,
+                "correlation_id": self.correlation_id
+            }
+        }
+        
+        return result
     
     async def get_processing_time(self) -> Optional[float]:
         """Calculate the processing time in seconds, if available."""
