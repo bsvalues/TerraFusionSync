@@ -3059,7 +3059,7 @@ def create_audit_log(
         
     # Ensure required fields are never None
     if user_id is None:
-        user_id = "system"
+        user_id = 0  # Use 0 for system user ID (integer type in DB)
         
     if username is None:
         username = "system"
@@ -3209,7 +3209,7 @@ def seed_initial_data():
             sample_audit_entries = [
                 AuditEntry(
                     timestamp=datetime(2023, 1, 1, 8, 0, 0),
-                    user_id="system",
+                    user_id=0,  # 0 for system user
                     username="system",
                     event_type="sync_started",
                     resource_type="sync_operation",
