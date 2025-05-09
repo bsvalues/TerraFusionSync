@@ -7,6 +7,7 @@ It initializes the database and sets up routes for property assessment synchroni
 
 import logging
 import os
+import json
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict, Any, Optional
@@ -412,18 +413,29 @@ async def seed_sample_data(
                 connection_type = connection_types[i % len(connection_types)]
                 
                 # Create the sync source
+                auth_type = "basic" if random.random() > 0.5 else "oauth"
+                connection_config = json.dumps({
+                    "host": f"sample-{system_type}-host.example.com",
+                    "port": random.randint(1000, 9000),
+                    "username": f"demo_user_{system_type}",
+                    "use_ssl": random.choice([True, False])
+                })
+                auth_config = json.dumps({
+                    "type": auth_type,
+                    "credentials": {
+                        "username": f"demo_user_{system_type}",
+                        "api_key": f"sample_key_{uuid.uuid4().hex[:8]}"
+                    }
+                })
+                
                 new_source = SyncSourceSystem(
                     name=f"{county_id} {system_type.capitalize()} System",
                     system_type=system_type,
                     county_id=county_id,
                     connection_type=connection_type,
-                    connection_details={
-                        "host": f"sample-{system_type}-host.example.com",
-                        "port": random.randint(1000, 9000),
-                        "username": f"demo_user_{system_type}",
-                        "auth_type": "basic" if random.random() > 0.5 else "oauth",
-                        "use_ssl": random.choice([True, False])
-                    },
+                    connection_config=connection_config,
+                    auth_type=auth_type,
+                    auth_config=auth_config,
                     is_active=random.random() > 0.3,  # 70% chance of being active
                     last_successful_sync=datetime.utcnow() - timedelta(days=random.randint(1, 30)) if random.random() > 0.2 else None
                 )
