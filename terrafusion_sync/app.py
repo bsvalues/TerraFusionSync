@@ -32,8 +32,17 @@ from terrafusion_sync.core_models import (
     PropertyValuation,
     PropertyImprovement,
     SyncSourceSystem,
-    ImportJob
+    ImportJob,
+    ReportJob
 )
+
+# Import plugins router
+try:
+    from terrafusion_sync.plugins import plugins_router
+    logger.info("Loaded plugins router")
+except ImportError as e:
+    logger.warning(f"Unable to import plugins: {e}. Plugin functionality won't be available.")
+    plugins_router = None
 
 # Import county config manager - this will be used to retrieve county-specific settings
 try:
@@ -59,6 +68,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include plugins router if available
+if plugins_router:
+    app.include_router(plugins_router)
+    logger.info("Registered plugins router with FastAPI application")
 
 # Startup event to initialize database
 @app.on_event("startup")

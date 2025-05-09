@@ -121,13 +121,48 @@ class ReportJobResponse(ReportJobBase):
     """Schema for report job responses."""
     
     class Config:
-        orm_mode = True
+        from_attributes = True
         
-        # Map DB field names to schema field names
-        fields = {
-            "parameters_json": "parameters",
-            "result_metadata_json": "result_metadata"
+        # Map model attribute names to schema field names
+        model_config = {
+            "json_schema_extra": {
+                "example": {
+                    "report_id": "123e4567-e89b-12d3-a456-426614174000",
+                    "report_type": "assessment_roll",
+                    "county_id": "county-123",
+                    "status": "COMPLETED",
+                    "message": "Report generated successfully",
+                    "parameters": {
+                        "year": 2025,
+                        "include_exemptions": True
+                    },
+                    "created_at": "2025-05-09T12:00:00Z",
+                    "updated_at": "2025-05-09T12:30:00Z",
+                    "started_at": "2025-05-09T12:05:00Z",
+                    "completed_at": "2025-05-09T12:30:00Z",
+                    "result_location": "reports/county-123/assessment_roll_2025.pdf",
+                    "result_metadata": {
+                        "file_size_bytes": 2048576,
+                        "page_count": 42
+                    }
+                }
+            }
         }
+        
+    # Map DB field names to schema field names
+    @classmethod
+    def from_orm(cls, obj):
+        # Create a dictionary of the model's attributes
+        obj_dict = {c.name: getattr(obj, c.name) for c in obj.__table__.columns}
+        
+        # Map specific JSON fields
+        if "parameters_json" in obj_dict:
+            obj_dict["parameters"] = obj_dict.pop("parameters_json")
+        if "result_metadata_json" in obj_dict:
+            obj_dict["result_metadata"] = obj_dict.pop("result_metadata_json")
+            
+        # Create instance
+        return cls(**obj_dict)
 
 
 class ReportJobListResponse(BaseModel):
