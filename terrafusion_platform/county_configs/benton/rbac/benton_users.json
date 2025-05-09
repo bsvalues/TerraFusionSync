@@ -1,12 +1,12 @@
 {
-  "county_id": "franklin",
-  "county_name": "Franklin County",
-  "description": "Initial RBAC user definitions for Franklin County. These are examples and should be integrated with a proper identity management system (e.g., LDAP/AD group mappings) for production.",
+  "county_id": "benton",
+  "county_name": "Benton County",
+  "description": "Initial RBAC user definitions for Benton County. These are examples and should be integrated with a proper identity management system (e.g., LDAP/AD group mappings) for production.",
   "users": [
     {
-      "username": "franklin_assessor",
-      "email": "assessor@franklin.county.local",
-      "full_name": "Franklin Lead Assessor",
+      "username": "benton_assessor",
+      "email": "assessor@benton.county.local",
+      "full_name": "Benton Lead Assessor",
       "roles": ["assessor_role", "valuation_user", "reporting_user"],
       "permissions": [
         "execute_valuation", 
@@ -15,12 +15,12 @@
         "generate_report",
         "view_sensitive_reports"
       ],
-      "notes": "Primary assessor for Franklin."
+      "notes": "Primary assessor for Benton."
     },
     {
-      "username": "franklin_staff01",
-      "email": "staff01@franklin.county.local",
-      "full_name": "Valuation Staff Member 1 (Franklin)",
+      "username": "benton_staff01",
+      "email": "staff01@benton.county.local",
+      "full_name": "Valuation Staff Member 1 (Benton)",
       "roles": ["staff_role", "valuation_user"],
       "permissions": [
         "execute_valuation_batch",
@@ -29,9 +29,9 @@
       "notes": "Valuation support staff."
     },
     {
-      "username": "franklin_clerk",
-      "email": "clerk@franklin.county.local",
-      "full_name": "County Clerk (Franklin)",
+      "username": "benton_clerk",
+      "email": "clerk@benton.county.local",
+      "full_name": "County Clerk (Benton)",
       "roles": ["clerk_role", "reporting_user"],
       "permissions": [
         "generate_standard_reports",

@@ -103,16 +103,50 @@ def process_template(template_path: Path, output_path: Path, context: dict):
         with open(template_path, 'r') as f:
             template_content = f.read()
         
-        # Process with and without spaces to cover different template styles
+        # Process all template formats
         for key, value in context.items():
-            # Standard format with spaces: {{ key }}
+            # Format 1: {{ key }} (Jinja2/Liquid style with spaces)
             template_content = template_content.replace(f"{{{{ {key} }}}}", str(value))
-            # Without spaces: {{key}}
+            
+            # Format 2: {{key}} (Jinja2/Liquid style without spaces)
             template_content = template_content.replace(f"{{{{{key}}}}}", str(value))
-            # Also check for direct replacements without braces for flexibility
-            if key in ["county_name_lower", "county_name", "county_name_upper"]:
-                template_content = template_content.replace(f"{{ county_name_lower }}", context["county_name"])
-                template_content = template_content.replace(f"{{county_name_lower}}", context["county_name"])
+            
+            # Format 3: ${key} (Shell/JavaScript style)
+            template_content = template_content.replace(f"${{{key}}}", str(value))
+            
+            # Format 4: $key (Simple shell style)
+            # Being careful here to avoid replacing parts of other words
+            # So we only replace patterns that look like variable references
+            lines = template_content.split('\n')
+            for i, line in enumerate(lines):
+                # Look for $varname pattern at word boundaries
+                parts = []
+                j = 0
+                while j < len(line):
+                    if line[j] == '$' and j + 1 < len(line) and (line[j+1].isalpha() or line[j+1] == '_'):
+                        # Found potential variable
+                        var_start = j + 1
+                        var_end = var_start
+                        while var_end < len(line) and (line[var_end].isalnum() or line[var_end] == '_'):
+                            var_end += 1
+                        
+                        var_name = line[var_start:var_end]
+                        if var_name == key:
+                            parts.append(line[:j])
+                            parts.append(str(value))
+                            line = line[var_end:]
+                            j = 0
+                        else:
+                            parts.append(line[:var_end])
+                            line = line[var_end:]
+                            j = 0
+                    else:
+                        j += 1
+                if parts:
+                    parts.append(line)
+                    lines[i] = ''.join(parts)
+            
+            template_content = '\n'.join(lines)
 
         with open(output_path, 'w') as f:
             f.write(template_content)
