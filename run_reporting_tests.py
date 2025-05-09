@@ -26,9 +26,28 @@ if __name__ == "__main__":
     test_args = [
         "-xvs",  # Exit on first failure, verbose, output to console
         "terrafusion_platform/tests/integration/test_reporting_end_to_end.py",
+        "terrafusion_platform/tests/integration/test_reporting_api_endpoints.py",
     ]
     
-    # Add any command line arguments
+    # Check if we should run a specific test only
+    if len(sys.argv) > 1 and sys.argv[1] == "--end-to-end-only":
+        # Run only the end-to-end test
+        test_args = [
+            "-xvs",
+            "terrafusion_platform/tests/integration/test_reporting_end_to_end.py",
+        ]
+        # Remove this argument to prevent it from being passed to pytest
+        sys.argv.pop(1)
+    elif len(sys.argv) > 1 and sys.argv[1] == "--api-only":
+        # Run only the API endpoint tests
+        test_args = [
+            "-xvs",
+            "terrafusion_platform/tests/integration/test_reporting_api_endpoints.py",
+        ]
+        # Remove this argument to prevent it from being passed to pytest
+        sys.argv.pop(1)
+    
+    # Add any additional command line arguments
     test_args.extend(sys.argv[1:])
     
     # Run the tests
