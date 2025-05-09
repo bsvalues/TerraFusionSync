@@ -1,0 +1,82 @@
+You've got the ReportJob model defined in terrafusion_sync/core_models.py and the initial scaffold for terrafusion_sync/plugins/reporting.py (from terrafusion_reporting_plugin_v1).
+
+Following the excellent plan you laid out, let's proceed with the first two crucial items:
+
+1. Wire Up the Model & Migration (for ReportJob)
+2. Smoke-Test the Reporting Endpoints
+
+Here's how to operationalize this:
+
+Step 1: Run the Alembic Migration for report_jobs
+You've already defined the ReportJob model. Now, let's ensure your database schema reflects this.
+
+Ensure ReportJob is in core_models.py and Base is Correct:
+
+Confirm that the ReportJob class in terrafusion_sync/core_models.py (from terrafusion_reporting_plugin_v1) correctly inherits from the same Base = declarative_base() that your other models (PropertyOperational, ValuationJob) use.
+Make sure your Alembic env.py (in terrafusion_sync/alembic_migrations/) correctly has target_metadata = Base.metadata.
+Generate the Alembic Migration Script:
+
+Navigate to your terrafusion_platform/terrafusion_sync/ directory in your terminal.
+Ensure your .env file (or system environment) has TERRAFUSION_OPERATIONAL_DB_URL correctly set for Alembic to connect to your development/test database.
+Run:
+Bash
+
+alembic revision -m "add_report_jobs_table" --autogenerate
+This will create a new migration file in terrafusion_sync/alembic_migrations/versions/.
+Review the Generated Script:
+
+Open the new migration file.
+down_revision: Verify it points to the revision ID of your previous migration (the one that added valuation_jobs or the initial schema setup).
+upgrade(): Check that it includes op.create_table('report_jobs', ...) with columns matching your ReportJob model (e.g., report_id, report_type, county_id, status, parameters_json, result_location, timestamps, etc.) and necessary indexes (e.g., on status, updated_at).
+downgrade(): Ensure it has op.drop_table('report_jobs') and drops associated indexes.
+Apply the Migration:
+
+Make sure your PostgreSQL database service is running (e.g., via docker-compose up -d terrafusion_db_operational).
+From the terrafusion_platform/terrafusion_sync/ directory, run:
+Bash
+
+alembic upgrade head
+Verify Schema:
+
+Connect to your PostgreSQL database and confirm that the report_jobs table has been created with the correct structure.
+Step 2: Smoke-Test the Reporting Endpoints
+Once the report_jobs table is created, you can perform a quick smoke test of the basic reporting plugin endpoints.
+
+Start Your Services:
+
+Ensure terrafusion_sync (and terrafusion_gateway if you're testing through it) are running.
+Bash
+
+# In terrafusion_platform directory
+docker-compose up --build -d terrafusion_db_operational terrafusion_sync # Add terrafusion_gateway if needed
+Or run uvicorn terrafusion_sync.app:app --host 0.0.0.0 --port 8001 --reload directly if not using Docker for this test.
+POST to /run a new report job:
+
+Use curl or a tool like Postman to send a POST request to the terrafusion_sync service's reporting endpoint. The full path will be http://localhost:8001/plugins/v1/reporting/run (adjust port if necessary).
+Payload example:
+JSON
+
+{
+  "report_type": "sales_ratio_study_q1",
+  "county_id": "TEST_BENTON_SMOKE",
+  "parameters": { "year": 2024, "quarter": 1 }
+}
+Expected Response: HTTP 202 Accepted with a JSON body containing the report_id and status: "PENDING". Note down the report_id.
+GET /status/{report_id}:
+
+Use the report_id from the previous step. Make a GET request to: http://localhost:8001/plugins/v1/reporting/status/<your_report_id>
+Expected Initial Response: Status should be PENDING or RUNNING.
+Wait a few seconds (for the _simulate_report_generation task to "complete").
+Poll again.
+Expected Later Response: Status should be COMPLETED (or FAILED if you test with report_type: "FAILING_REPORT_SIM").
+GET /results/{report_id}:
+
+Once the status is COMPLETED, make a GET request to: http://localhost:8001/plugins/v1/reporting/results/<your_report_id>
+Expected Response: HTTP 200 OK with the job status details and a result object containing the result_location (e.g., the simulated S3 path).
+After these steps:
+
+You'll have confirmed that the database schema for reporting jobs is correctly set up.
+You'll have performed a basic validation that the reporting plugin's core endpoints (/run, /status, /results) are functioning and interacting with the new report_jobs table (even with simulated background processing).
+This will put you in a great position to then move on to writing the full end-to-end integration tests for the Reporting plugin, followed by instrumenting its metrics.
+
+Let me know when you've completed these steps, or if you'd like me to generate an example of what the reviewed Alembic migration script for report_jobs should look like!

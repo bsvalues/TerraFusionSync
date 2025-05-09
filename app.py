@@ -3050,13 +3050,13 @@ def create_audit_log(
         except RuntimeError:
             # Working outside request context, this is okay for background tasks
             if not user_id:
-                user_id = 0  # Use 0 for system user ID (integer type in DB)
+                user_id = None  # Use NULL for system user ID to respect foreign key constraints
             if not username:
                 username = "system"
     elif is_background_task:
         # For background tasks, use system if not provided
         if not user_id:
-            user_id = 0  # Use 0 for system user ID (integer type in DB)
+            user_id = None  # Use NULL for system user ID to respect foreign key constraints
         if not username:
             username = "system"
             
