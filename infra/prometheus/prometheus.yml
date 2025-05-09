@@ -1,0 +1,45 @@
+# infra/prometheus/prometheus.yml
+global:
+  scrape_interval: 15s # How frequently to scrape targets by default.
+  evaluation_interval: 15s # How frequently to evaluate rules.
+
+# Alertmanager configuration (optional, can be added later)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           # - alertmanager:9093
+
+# Load rules once and periodically evaluate them according to the global 'evaluation_interval'.
+# rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+# A scrape configuration containing exactly one endpoint to scrape:
+# Here it's Prometheus itself.
+scrape_configs:
+  # The job name is added as a label `job=<job_name>` to any timeseries scraped from this config.
+  - job_name: "prometheus"
+    # metrics_path defaults to '/metrics'
+    # scheme defaults to 'http'.
+    static_configs:
+      - targets: ["localhost:9090"] # Prometheus scraping itself
+
+  - job_name: "terrafusion_sync_service"
+    metrics_path: /metrics # Path where terrafusion_sync exposes metrics
+    static_configs:
+      # 'terrafusion_sync_core' is the service name in docker-compose.yml
+      # Prometheus will resolve this to the container's IP on the terrafusion_network.
+      - targets: ["terrafusion_sync_core:8001"] # service_name:container_port
+
+  # For the standalone version in Replit, we'll add a direct target to localhost on the syncservice port
+  - job_name: "syncservice_standalone"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["localhost:8080"] # The port where syncservice runs in standalone mode
+
+  # Uncomment and configure if/when terrafusion_api_gateway has a /metrics endpoint
+  # - job_name: "terrafusion_api_gateway"
+  #   metrics_path: /metrics 
+  #   static_configs:
+  #     - targets: ["terrafusion_api_gateway:5000"]
