@@ -8,11 +8,12 @@ status updates, and result retrieval.
 import logging
 import asyncio
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from terrafusion_sync.database import get_db_session
 from terrafusion_sync.core_models import ReportJob
+from terrafusion_sync.metrics import track_api_request
 from .schemas import (
     ReportJobCreate,
     ReportJobResponse,
@@ -83,9 +84,11 @@ async def get_db():
     description="Create a new report generation job with specified parameters. "
                 "Returns the created job details including a unique report_id."
 )
+@track_api_request(endpoint="create_report_job")
 async def create_new_report(
     request: ReportJobCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    req: Request = None
 ) -> ReportJobResponse:
     """Create a new report generation job."""
     try:

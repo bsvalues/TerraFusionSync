@@ -7,12 +7,22 @@ including report job creation, tracking, and generation.
 
 import logging
 import uuid
+import time
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Union
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from terrafusion_sync.core_models import ReportJob
+from terrafusion_sync.metrics import (
+    track_report_job,
+    REPORT_JOBS_SUBMITTED,
+    REPORT_JOBS_COMPLETED,
+    REPORT_JOBS_FAILED,
+    REPORT_PROCESSING_DURATION,
+    REPORT_JOBS_PENDING,
+    REPORT_JOBS_IN_PROGRESS
+)
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -51,6 +61,16 @@ async def create_report_job(
         await db.commit()
         await db.refresh(job)
         logger.info(f"Created report job {job.report_id} of type {report_type} for county {county_id}")
+        
+        # Record job submission metric
+        REPORT_JOBS_SUBMITTED.labels(
+            county_id=county_id,
+            report_type=report_type
+        ).inc()
+        
+        # Increment pending jobs gauge
+        REPORT_JOBS_PENDING.inc()
+        
         return job
     except Exception as e:
         await db.rollback()
@@ -148,6 +168,12 @@ async def update_report_job_status(
         Optional[ReportJob]: The updated job if found, None otherwise
     """
     try:
+        # Get the current job to track metrics properly
+        current_job = await get_report_job(db, report_id)
+        if not current_job:
+            logger.warning(f"Report job {report_id} not found for status update")
+            return None
+            
         # Prepare update values
         values = {
             "status": status,
@@ -158,11 +184,56 @@ async def update_report_job_status(
         if message is not None:
             values["message"] = message
         
+        job_started_time = None
         if status == "RUNNING" and not await _is_job_already_running(db, report_id):
-            values["started_at"] = datetime.utcnow()
+            job_started_time = datetime.utcnow()
+            values["started_at"] = job_started_time
+            
+            # Update metrics when job starts running
+            REPORT_JOBS_PENDING.dec()
+            REPORT_JOBS_IN_PROGRESS.inc()
         
         if status in ("COMPLETED", "FAILED"):
-            values["completed_at"] = datetime.utcnow()
+            job_completed_time = datetime.utcnow()
+            values["completed_at"] = job_completed_time
+            
+            # Update metrics when job completes or fails
+            REPORT_JOBS_IN_PROGRESS.dec()
+            
+            # Record job completion status
+            REPORT_JOBS_COMPLETED.labels(
+                county_id=current_job.county_id,
+                report_type=current_job.report_type,
+                status=status.lower()
+            ).inc()
+            
+            # Record failure metrics if applicable
+            if status == "FAILED":
+                error_type = "unknown"
+                if message and ":" in message:
+                    # Extract error type from message if possible
+                    error_type = message.split(":", 1)[0].strip()
+                
+                REPORT_JOBS_FAILED.labels(
+                    county_id=current_job.county_id,
+                    report_type=current_job.report_type,
+                    error_type=error_type
+                ).inc()
+            
+            # Calculate and record processing duration if possible
+            if hasattr(current_job, 'started_at') and current_job.started_at:
+                try:
+                    start_time = current_job.started_at
+                    processing_duration = (job_completed_time - start_time).total_seconds()
+                    
+                    REPORT_PROCESSING_DURATION.labels(
+                        county_id=current_job.county_id,
+                        report_type=current_job.report_type
+                    ).observe(processing_duration)
+                    
+                    logger.debug(f"Recorded processing duration: {processing_duration}s for job {report_id}")
+                except Exception as duration_error:
+                    logger.error(f"Failed to record processing duration: {duration_error}")
             
         if result_location:
             values["result_location"] = result_location
@@ -187,7 +258,7 @@ async def update_report_job_status(
         if updated_job:
             logger.info(f"Updated report job {report_id} status to {status}")
         else:
-            logger.warning(f"Report job {report_id} not found for status update")
+            logger.warning(f"Report job {report_id} not found after status update")
             
         return updated_job
     except Exception as e:
@@ -209,6 +280,64 @@ async def _is_job_already_running(db: AsyncSession, report_id: str) -> bool:
     """
     job = await get_report_job(db, report_id)
     return job is not None and job.status == "RUNNING" and job.started_at is not None
+
+
+@track_report_job
+async def _process_report_job(
+    db: AsyncSession,
+    report_id: str,
+    county_id: str,
+    report_type: str
+) -> ReportJob:
+    """
+    Process a report job with metrics tracking.
+    This inner function is decorated with track_report_job to collect metrics.
+    
+    Args:
+        db: The database session
+        report_id: ID of the report job
+        county_id: County identifier (for metrics)
+        report_type: Type of report (for metrics)
+        
+    Returns:
+        ReportJob: The updated job object
+    """
+    import asyncio
+    import random
+    
+    # Simulate processing time (1-3 seconds)
+    processing_time = random.uniform(1, 3)
+    logger.info(f"Processing report job {report_id}, type {report_type} for {processing_time:.2f} seconds")
+    await asyncio.sleep(processing_time)
+    
+    # Check if this is a failing report type for testing
+    if report_type == "FAILING_REPORT_SIM":
+        logger.info(f"Simulating failure for report job {report_id}")
+        raise ValueError("Simulated report generation failure")
+    
+    # Prepare result details for successful report
+    result_location = f"s3://terrafusion-reports/{county_id}/{report_type}/{report_id}.pdf"
+    result_metadata = {
+        "file_size_kb": 1024, 
+        "pages": 10,
+        "generation_time_seconds": processing_time,
+        "generated_at": datetime.utcnow().isoformat()
+    }
+    
+    updated_job = await update_report_job_status(
+        db=db,
+        report_id=report_id,
+        status="COMPLETED",
+        message="Report generation completed successfully",
+        result_location=result_location,
+        result_metadata=result_metadata
+    )
+    
+    if not updated_job:
+        raise ValueError(f"Report job {report_id} not found during completion")
+    
+    logger.info(f"Successfully processed report job {report_id}")
+    return updated_job
 
 
 async def simulate_report_generation(db: AsyncSession, report_id: str) -> None:
@@ -277,42 +406,24 @@ async def simulate_report_generation(db: AsyncSession, report_id: str) -> None:
             message="Report generation in progress"
         )
         
-        # Simulate processing time (1-3 seconds)
-        processing_time = random.uniform(1, 3)
-        logger.info(f"Simulating report generation process for {processing_time:.2f} seconds")
-        await asyncio.sleep(processing_time)
-        
-        # Check if this is a failing report type for testing
-        if job.report_type == "FAILING_REPORT_SIM":
-            # Simulate failure with a fresh session
+        # Process the job with metrics tracking
+        try:
+            await with_fresh_session(
+                _process_report_job,  # This uses the decorated function for metrics
+                report_id=report_id,
+                county_id=job.county_id,
+                report_type=job.report_type
+            )
+            logger.info(f"Simulated report generation completed for job {report_id}")
+        except Exception as processing_error:
+            logger.error(f"Error processing report job {report_id}: {processing_error}")
+            # Update status to FAILED with a fresh session
             await with_fresh_session(
                 update_report_job_status,
                 report_id=report_id,
                 status="FAILED",
-                message="Simulated report generation failure"
+                message=f"Report generation failed: {str(processing_error)}"
             )
-            return
-        
-        # Prepare result details
-        result_location = f"s3://terrafusion-reports/{job.county_id}/{job.report_type}/{report_id}.pdf"
-        result_metadata = {
-            "file_size_kb": 1024, 
-            "pages": 10,
-            "generation_time_seconds": processing_time,
-            "generated_at": datetime.utcnow().isoformat()
-        }
-        
-        # Update status to COMPLETED with result information using a fresh session
-        await with_fresh_session(
-            update_report_job_status,
-            report_id=report_id,
-            status="COMPLETED",
-            message="Report generation completed successfully",
-            result_location=result_location,
-            result_metadata=result_metadata
-        )
-        
-        logger.info(f"Simulated report generation completed for job {report_id}")
     except Exception as e:
         logger.error(f"Error in report generation task for job {report_id}: {str(e)}")
         # Try to update the job status to FAILED
