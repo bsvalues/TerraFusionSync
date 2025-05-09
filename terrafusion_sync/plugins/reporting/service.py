@@ -239,10 +239,12 @@ async def update_report_job_status(
                     logger.error(f"Failed to record processing duration: {duration_error}")
             
         if result_location:
-            values["result_location"] = result_location
+            values["result_url"] = result_location
             
-        if result_metadata:
-            values["result_metadata_json"] = result_metadata
+        if result_metadata and "file_size_kb" in result_metadata:
+            # Convert KB to bytes for storage
+            file_size_bytes = result_metadata.get("file_size_kb", 0) * 1024
+            values["result_size"] = int(file_size_bytes)
         
         # Execute update - use job_id field instead of report_id
         stmt = (

@@ -364,7 +364,7 @@ async def get_report_status(
         report_type=job.report_type,
         county_id=job.county_id,
         status=job.status,
-        message=job.message,
+        message=job.error_message,
         created_at=job.created_at,
         updated_at=job.updated_at
     )
@@ -400,15 +400,15 @@ async def get_report_results(
         report_type=job.report_type,
         county_id=job.county_id,
         status=job.status,
-        message=job.message,
+        message=job.error_message,
         result=None  # Default to None
     )
     
     # If the job is completed and has results, include them
-    if job.status == "COMPLETED" and job.result_location:
+    if job.status == "COMPLETED" and job.result_url:
         response.result = ReportJobResultDetail(
-            result_location=job.result_location,
-            result_metadata=job.result_metadata_json or {}
+            result_location=job.result_url,
+            result_metadata={"size_bytes": job.result_size} if job.result_size else {}
         )
     
     return response
