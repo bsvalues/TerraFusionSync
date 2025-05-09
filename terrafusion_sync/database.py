@@ -30,14 +30,18 @@ else:
         logger.warning(f"Database URL doesn't specify an async driver. Attempting to use: {DATABASE_URL}")
         # We'll let the engine creation attempt to handle any errors if the URL is invalid
 
-# Engine configuration with connection pooling settings
+# Engine configuration with connection pooling settings optimized for asyncpg
 engine_kwargs = {
     "echo": os.getenv("SQLALCHEMY_ECHO", "False").lower() == "true",
-    "pool_size": 10,
-    "max_overflow": 20,
+    "pool_size": 5,  # Reduced from 10 to minimize connection pressure
+    "max_overflow": 10,  # Reduced from 20 to avoid too many connections
     "pool_timeout": 30,
-    "pool_recycle": 300,
-    "pool_pre_ping": True
+    "pool_recycle": 60,  # Reduced from 300 to recycle connections more frequently
+    "pool_pre_ping": True,
+    "connect_args": {
+        "timeout": 10,  # Connection timeout in seconds
+        "command_timeout": 10  # Command execution timeout
+    }
 }
 
 # Remove SSL parameters if using asyncpg to avoid unsupported parameter issues
