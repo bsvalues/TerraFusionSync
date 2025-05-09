@@ -16,16 +16,22 @@ import uuid
 
 @pytest.mark.asyncio
 @pytest.mark.integration  # Mark as an integration test
-async def test_reporting_workflow_success(
+async def test_reporting_workflows(
     sync_client: TestClient,  # Injected by conftest.py
     db_session  # Injected by conftest.py (actually an AsyncSession)
 ):
     """
-    Tests the full reporting workflow:
-    1. Call the /reporting/run endpoint on the terrafusion_sync service.
-    2. Poll the /reporting/status/{report_id} endpoint until status is COMPLETED.
-    3. Fetch results from /reporting/results/{report_id} and verify them.
+    Tests the full reporting workflow for both success and failure scenarios:
+    1. Successful report generation workflow
+       - Call the /reporting/run endpoint
+       - Poll until status is COMPLETED
+       - Verify results data
+    2. Failed report generation workflow
+       - Use a report type that simulates failure
+       - Verify proper error handling
     """
+    # ----- Part 1: Successful Report Generation Test -----
+    print("\n===== Testing Successful Report Generation =====")
     test_county_id = f"TEST_COUNTY_{uuid.uuid4().hex[:8]}"
     test_report_type = "assessment_roll"
     test_parameters = {"year": 2025, "quarter": 2, "include_exempt": True}
@@ -103,16 +109,11 @@ async def test_reporting_workflow_success(
 
     print(f"Test Reporting (Success): Job {report_id} successfully completed and results verified.")
 
-
-@pytest.mark.asyncio
-@pytest.mark.integration
-async def test_reporting_workflow_simulated_failure(
-    sync_client: TestClient,
-    db_session
-):
-    """
-    Tests the reporting workflow when the report type is designed to simulate a failure.
-    """
+    # ----- Part 2: Simulated Failure Test -----
+    print("\n===== Testing Simulated Report Failure =====")
+    # Small delay to ensure we don't have issues with transaction management
+    await asyncio.sleep(1)
+    
     test_county_id = f"TEST_COUNTY_{uuid.uuid4().hex[:8]}"
     # This specific report_type will trigger a FAILED status in the simulate_report_generation
     failing_report_type = "FAILING_REPORT_SIM" 

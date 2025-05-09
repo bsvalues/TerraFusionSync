@@ -42,12 +42,8 @@ test_async_session_maker = async_sessionmaker(
     class_=AsyncSession
 )
 
-@pytest.fixture(scope="function")
-def event_loop():
-    """Create an instance of the default event loop for each test case."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+# We use the default event_loop fixture from pytest-asyncio
+# This prevents the "Event loop is closed" error between tests
 
 
 @pytest.fixture(scope="function")
