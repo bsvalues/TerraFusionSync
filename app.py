@@ -454,7 +454,10 @@ def collect_syncservice_metrics():
             logger.error(f"Failed to get metrics from SyncService: HTTP {response.status_code}")
             return None
         
-        metrics_data = response.json()
+        # Parse Prometheus metrics text format
+        metrics_text = response.text
+        # Convert Prometheus format to dictionary for our internal use
+        metrics_data = parse_prometheus_metrics(metrics_text)
         
         # Get timestamp from the metrics or use current time
         timestamp = datetime.fromisoformat(

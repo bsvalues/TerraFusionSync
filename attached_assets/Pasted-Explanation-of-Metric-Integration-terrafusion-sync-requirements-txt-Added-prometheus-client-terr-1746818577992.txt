@@ -1,0 +1,49 @@
+Explanation of Metric Integration:
+
+terrafusion_sync/requirements.txt: Added prometheus-client.
+terrafusion_sync/app.py:
+Imported Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST from prometheus_client.
+Defined three metrics:
+VALUATION_JOBS_SUBMITTED_TOTAL (Counter): Incremented when a new valuation job is submitted. Labeled by county_id and initial status.
+VALUATION_JOBS_COMPLETED_TOTAL (Counter): Incremented when a job finishes successfully. Labeled by county_id.
+VALUATION_JOBS_FAILED_TOTAL (Counter): Incremented when a job fails. Labeled by county_id and failure_reason.
+VALUATION_PROCESSING_DURATION_SECONDS (Histogram): Observes the duration of the background valuation task. Labeled by county_id.
+Added a /metrics GET endpoint that returns the latest metrics in the Prometheus exposition format.
+terrafusion_sync/plugins/valuation.py:
+The run_valuation_job endpoint now increments VALUATION_JOBS_SUBMITTED_TOTAL.
+The _run_actual_valuation_process background task:
+Records the start time.
+Increments VALUATION_JOBS_COMPLETED_TOTAL on success.
+Increments VALUATION_JOBS_FAILED_TOTAL on various failure conditions (property not found, simulated error, general exception), including a failure_reason label.
+In a finally block, it calculates the processing duration and observes it with VALUATION_PROCESSING_DURATION_SECONDS.
+To Test This:
+
+Install prometheus-client: pip install prometheus-client (or update your requirements.txt and reinstall).
+Run your services using docker-compose up --build.
+Trigger some valuation jobs by POSTing to the Gateway's /api/v1/valuation/run endpoint (which proxies to the sync service).
+Try a successful one (e.g., {"property_id": "PROP123", "county_id": "BENTON"}).
+Try one designed to fail (e.g., {"property_id": "PROP_FAIL_SIMULATION", "county_id": "BENTON"}).
+Access the metrics endpoint on your terrafusion_sync service: http://localhost:8001/metrics (or whatever port you've mapped for terrafusion_sync).
+You should see output like:
+# HELP valuation_jobs_submitted_total Total number of valuation jobs submitted.
+# TYPE valuation_jobs_submitted_total counter
+valuation_jobs_submitted_total{county_id="BENTON",status_on_submit="PENDING"} 2.0
+# HELP valuation_jobs_completed_total Total number of valuation jobs completed successfully.
+# TYPE valuation_jobs_completed_total counter
+valuation_jobs_completed_total{county_id="BENTON"} 1.0
+# HELP valuation_jobs_failed_total Total number of valuation jobs that failed.
+# TYPE valuation_jobs_failed_total counter
+valuation_jobs_failed_total{county_id="BENTON",failure_reason="simulated_processing_error"} 1.0
+# HELP valuation_processing_duration_seconds Histogram of valuation job processing time in seconds.
+# TYPE valuation_processing_duration_seconds histogram
+valuation_processing_duration_seconds_bucket{county_id="BENTON",le="0.005"} 0.0
+valuation_processing_duration_seconds_bucket{county_id="BENTON",le="0.01"} 0.0
+# ... other buckets ...
+valuation_processing_duration_seconds_bucket{county_id="BENTON",le="2.5"} 0.0
+valuation_processing_duration_seconds_bucket{county_id="BENTON",le="5.0"} 2.0
+valuation_processing_duration_seconds_bucket{county_id="BENTON",le="7.5"} 2.0
+valuation_processing_duration_seconds_bucket{county_id="BENTON",le="10.0"} 2.0
+valuation_processing_duration_seconds_bucket{county_id="BENTON",le="+Inf"} 2.0
+valuation_processing_duration_seconds_count{county_id="BENTON"} 2.0
+valuation_processing_duration_seconds_sum{county_id="BENTON"} 4.0... # Example sum
+This sets up the basic instrumentation. The next step (Step 4 in your list) would be to configure Prometheus to scrape this /metrics endpoint and then build a Grafana dashboard to visualize these metrics.

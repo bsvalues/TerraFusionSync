@@ -1,0 +1,354 @@
+This document details the integration of Prometheus metrics into the `terrafusion_sync` service.
+
+#### 1. Update `terrafusion_sync/requirements.txt`
+
+Add `prometheus-client` to your requirements:
+
+```txt
+# terrafusion_sync/requirements.txt
+fastapi
+uvicorn[standard]
+sqlalchemy
+asyncpg
+python-dotenv
+pydantic
+alembic
+greenlet # Often needed by Alembic for async
+prometheus-client # Add this line
+# Add other dependencies as needed
+```
+
+#### 2. Modify `terrafusion_sync/app.py`
+
+We'll define the metrics and add the `/metrics` endpoint.
+
+```python
+# terrafusion_sync/app.py
+from fastapi import FastAPI, Response
+import logging
+import os
+import time # For histogram in background tasks
+
+# --- Prometheus Metrics Integration ---
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+
+# Define metrics for the Valuation plugin (can be expanded for others)
+VALUATION_JOBS_SUBMITTED_TOTAL = Counter(
+    'valuation_jobs_submitted_total',
+    'Total number of valuation jobs submitted.',
+    ['county_id', 'status_on_submit'] # Example labels
+)
+VALUATION_JOBS_COMPLETED_TOTAL = Counter(
+    'valuation_jobs_completed_total',
+    'Total number of valuation jobs completed successfully.',
+    ['county_id']
+)
+VALUATION_JOBS_FAILED_TOTAL = Counter(
+    'valuation_jobs_failed_total',
+    'Total number of valuation jobs that failed.',
+    ['county_id', 'failure_reason'] # Example label for failure type
+)
+VALUATION_PROCESSING_DURATION_SECONDS = Histogram(
+    'valuation_processing_duration_seconds',
+    'Histogram of valuation job processing time in seconds.',
+    ['county_id'] # Label to segment by county
+    # Buckets can be customized, e.g., [.1, .5, 1, 2.5, 5, 10, 30, 60]
+)
+# --- End Prometheus Metrics ---
+
+
+# Corrected import path for get_all_plugin_routers_instance
+try:
+    from .plugins import get_all_plugin_routers_instance
+except ImportError as e:
+    print(f"Could not import plugins, ensure plugins/__init__.py is correct: {e}")
+    def get_all_plugin_routers_instance():
+        from fastapi import APIRouter
+        return APIRouter()
+
+# Configure logging
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
+logger = logging.getLogger(__name__)
+
+app = FastAPI(
+    title="TerraFusion Sync Engine & SaaS Plugins",
+    description="Handles core data synchronization and hosts business logic plugins for TerraFusion.",
+    version="0.1.0"
+)
+
+# --- Prometheus /metrics endpoint ---
+@app.get("/metrics", tags=["Monitoring"])
+async def metrics():
+    """
+    Exposes Prometheus metrics.
+    """
+    logger.debug("Prometheus metrics endpoint accessed.")
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+# --- End Prometheus /metrics endpoint ---
+
+@app.get("/sync-health", tags=["Core Sync Service"])
+async def health_check_sync_core():
+    logger.info("TerraFusion Sync Engine health check accessed.")
+    return {"status": "TerraFusion Sync Engine is healthy and running!"}
+
+# Include all plugin routers under a common prefix
+plugin_routers = get_all_plugin_routers_instance()
+app.include_router(plugin_routers, prefix="/plugins/v1")
+
+logger.info("TerraFusion Sync Engine FastAPI application initialized with plugin routers and metrics endpoint.")
+
+# To run this app (from the terrafusion_platform directory):
+# Ensure TERRAFUSION_OPERATIONAL_DB_URL is set in your environment or .env file
+# uvicorn terrafusion_sync.app:app --host 0.0.0.0 --port 8001 --reload
+```
+
+#### 3. Instrument `terrafusion_sync/plugins/valuation.py`
+
+Modify the `run_valuation_job` endpoint and the `_run_actual_valuation_process` background task to update the Prometheus metrics.
+
+```python
+# terrafusion_sync/plugins/valuation.py
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+import logging
+from pydantic import BaseModel, Field as PydanticField
+from typing import Optional, List
+import uuid
+import asyncio
+import time # For Histogram and timing
+import datetime
+
+from ..connectors.postgres import get_db_session 
+from ..core_models import ValuationJob, PropertyOperational
+
+# Import Prometheus metrics defined in app.py
+# This assumes app.py is in the parent directory of plugins. Adjust if needed.
+# One way to access them is to import them directly if they are top-level in app.py
+# However, it's cleaner if metrics are defined in a separate metrics.py and imported by both.
+# For this example, let's assume they are accessible or re-defined/imported.
+# A better pattern would be a shared metrics registry.
+# For simplicity, let's re-reference them or assume they are globally available from app.py context
+# This is a common challenge with circular dependencies if not structured carefully.
+# Let's assume for now that we can import them from where they are defined (e.g. app or a metrics module)
+
+# Assuming metrics are defined in terrafusion_sync.app (this might need refactoring for cleaner access)
+try:
+    from ..app import (
+        VALUATION_JOBS_SUBMITTED_TOTAL,
+        VALUATION_JOBS_COMPLETED_TOTAL,
+        VALUATION_JOBS_FAILED_TOTAL,
+        VALUATION_PROCESSING_DURATION_SECONDS
+    )
+except ImportError:
+    # Fallback if direct import from app isn't ideal or causes issues
+    # In a larger app, these would be in a dedicated metrics module.
+    # For now, this indicates a potential structural improvement needed for metrics.
+    print("Warning: Could not import Prometheus metrics from terrafusion_sync.app. Metrics will not be recorded for valuation.")
+    # Define dummy metrics so the code doesn't break, but logs a warning.
+    class DummyCounter:
+        def inc(self, amount=1): pass
+        def labels(self, *args, **kwargs): return self
+    class DummyHistogram:
+        def observe(self, amount): pass
+        def labels(self, *args, **kwargs): return self
+    VALUATION_JOBS_SUBMITTED_TOTAL = DummyCounter()
+    VALUATION_JOBS_COMPLETED_TOTAL = DummyCounter()
+    VALUATION_JOBS_FAILED_TOTAL = DummyCounter()
+    VALUATION_PROCESSING_DURATION_SECONDS = DummyHistogram()
+
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+# --- Pydantic Models (from previous step, ensure they are here) ---
+class ValuationRunRequest(BaseModel):
+    property_id: str = PydanticField(..., example="PROP12345")
+    county_id: str = PydanticField(..., example="COUNTY01")
+    valuation_method_hint: Optional[str] = PydanticField(None, example="comparable_sales")
+
+class ValuationJobStatusResponse(BaseModel):
+    job_id: uuid.UUID
+    property_id: str
+    county_id: str
+    status: str 
+    message: Optional[str] = None
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+    started_at: Optional[datetime.datetime] = None
+    completed_at: Optional[datetime.datetime] = None
+
+class ValuationResultData(BaseModel):
+    estimated_value: float
+    confidence_score: Optional[float] = None
+    valuation_method_used: str
+    comparables_used: Optional[List[str]] = None
+    valuation_date: datetime.datetime
+
+class ValuationJobResultResponse(ValuationJobStatusResponse):
+    result: Optional[ValuationResultData] = None
+
+
+# --- Background Task with Metrics ---
+async def _run_actual_valuation_process(job_id: uuid.UUID, property_id: str, county_id: str, db_session_factory):
+    start_time = time.monotonic() # For duration histogram
+    job_status_for_metric = "UNKNOWN_FAILURE" # Default status for metrics if early exit
+
+    async with db_session_factory() as db:
+        logger.info(f"Job {job_id}: Background task started for property {property_id}, county {county_id}.")
+        job_query = select(ValuationJob).where(ValuationJob.job_id == job_id)
+        
+        try:
+            result = await db.execute(job_query)
+            job = result.scalars().first()
+            if not job:
+                logger.error(f"Job {job_id}: Not found in DB at start of background task.")
+                VALUATION_JOBS_FAILED_TOTAL.labels(county_id=county_id, failure_reason="job_not_found_in_bg").inc()
+                return
+
+            job.status = "RUNNING"
+            job.started_at = datetime.datetime.utcnow()
+            job.updated_at = datetime.datetime.utcnow()
+            await db.commit()
+            logger.info(f"Job {job_id}: Status updated to RUNNING.")
+
+            prop_query = select(PropertyOperational).where(
+                PropertyOperational.property_id == property_id,
+                PropertyOperational.county_id == county_id
+            )
+            prop_result = await db.execute(prop_query)
+            property_data = prop_result.scalars().first()
+
+            if not property_data:
+                logger.error(f"Job {job_id}: Property {property_id} in county {county_id} not found in DB.")
+                job.status = "FAILED"
+                job.message = f"Property {property_id} not found in county {county_id}."
+                VALUATION_JOBS_FAILED_TOTAL.labels(county_id=county_id, failure_reason="property_not_found").inc()
+            else:
+                logger.info(f"Job {job_id}: Fetched data for property {property_data.property_id}.")
+                await asyncio.sleep(2) # Simulate processing time (reduced for quicker testing)
+
+                if property_id == "PROP_FAIL_SIMULATION":
+                    logger.warning(f"Job {job_id}: Simulated processing failure for property {property_id}.")
+                    job.status = "FAILED"
+                    job.message = "Simulated processing failure."
+                    VALUATION_JOBS_FAILED_TOTAL.labels(county_id=county_id, failure_reason="simulated_processing_error").inc()
+                else:
+                    logger.info(f"Job {job_id}: Simulated valuation successful for property {property_id}.")
+                    simulated_value = float(len(property_id) * 10000 + county_id.count('01') * 5000)
+                    job.status = "COMPLETED"
+                    job.message = "Valuation completed successfully."
+                    job.estimated_value = simulated_value
+                    job.confidence_score = 0.85
+                    job.valuation_method_used = "Simulated Comparable Sales DB"
+                    job.comparables_used_json = ["COMP_DB_001", "COMP_DB_002"]
+                    job.valuation_date = datetime.datetime.utcnow()
+                    VALUATION_JOBS_COMPLETED_TOTAL.labels(county_id=county_id).inc()
+            
+            job_status_for_metric = job.status # Capture final status for duration metric
+            job.completed_at = datetime.datetime.utcnow()
+            job.updated_at = datetime.datetime.utcnow()
+            await db.commit()
+            logger.info(f"Job {job_id}: Final status '{job.status}' committed to DB.")
+
+        except Exception as e:
+            job_status_for_metric = "EXCEPTION_FAILURE"
+            logger.error(f"Job {job_id}: Error during background valuation processing: {e}", exc_info=True)
+            VALUATION_JOBS_FAILED_TOTAL.labels(county_id=county_id, failure_reason="processing_exception").inc()
+            try:
+                async with db_session_factory() as error_db:
+                    error_result = await error_db.execute(job_query)
+                    job_to_fail = error_result.scalars().first()
+                    if job_to_fail:
+                        job_to_fail.status = "FAILED"
+                        job_to_fail.message = f"Processing error: {str(e)[:250]}"
+                        job_to_fail.completed_at = datetime.datetime.utcnow()
+                        job_to_fail.updated_at = datetime.datetime.utcnow()
+                        await error_db.commit()
+                    logger.info(f"Job {job_id}: Marked as FAILED in DB due to processing error.")
+            except Exception as db_error:
+                logger.error(f"Job {job_id}: CRITICAL - Failed to update job status to FAILED in DB after error: {db_error}", exc_info=True)
+        finally:
+            duration = time.monotonic() - start_time
+            VALUATION_PROCESSING_DURATION_SECONDS.labels(county_id=county_id).observe(duration)
+            logger.info(f"Job {job_id}: Background task finished. Duration: {duration:.2f}s. Final reported status for metrics: {job_status_for_metric}")
+
+
+# --- API Endpoints ---
+@router.post("/run", response_model=ValuationJobStatusResponse, status_code=status.HTTP_202_ACCEPTED)
+async def run_valuation_job(
+    request_data: ValuationRunRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db_session)
+):
+    job_id = uuid.uuid4()
+    new_job = ValuationJob(
+        job_id=job_id,
+        property_id=request_data.property_id,
+        county_id=request_data.county_id,
+        status="PENDING",
+        message="Valuation job accepted and queued.",
+        valuation_method_hint=request_data.valuation_method_hint,
+        created_at=datetime.datetime.utcnow(),
+        updated_at=datetime.datetime.utcnow()
+    )
+    
+    try:
+        db.add(new_job)
+        await db.commit()
+        await db.refresh(new_job)
+        logger.info(f"Job {new_job.job_id} created in DB for property {new_job.property_id}. Status: PENDING")
+        # Increment submitted counter
+        VALUATION_JOBS_SUBMITTED_TOTAL.labels(county_id=request_data.county_id, status_on_submit="PENDING").inc()
+    except Exception as e:
+        logger.error(f"Failed to create valuation job in DB for property {request_data.property_id}: {e}", exc_info=True)
+        # Optionally increment a 'submission_failed' counter here if defined
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to initiate valuation job.")
+
+    from sqlalchemy.orm import sessionmaker # Import here or ensure it's available
+    db_session_factory = sessionmaker(bind=db.get_bind(), class_=AsyncSession, expire_on_commit=False)
+    background_tasks.add_task(_run_actual_valuation_process, new_job.job_id, new_job.property_id, new_job.county_id, db_session_factory)
+    
+    return ValuationJobStatusResponse.model_validate(new_job)
+
+@router.get("/status/{job_id_str}", response_model=ValuationJobStatusResponse)
+async def get_valuation_status(job_id_str: str, db: AsyncSession = Depends(get_db_session)):
+    try:
+        job_uuid = uuid.UUID(job_id_str)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid job_id format. Must be a UUID.")
+    logger.info(f"Status request for job_id: {job_uuid}")
+    result = await db.execute(select(ValuationJob).where(ValuationJob.job_id == job_uuid))
+    job = result.scalars().first()
+    if not job:
+        logger.warning(f"Status request for unknown job_id: {job_uuid}")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Valuation job with ID '{job_uuid}' not found.")
+    return ValuationJobStatusResponse.model_validate(job)
+
+@router.get("/results/{job_id_str}", response_model=ValuationJobResultResponse)
+async def get_valuation_results(job_id_str: str, db: AsyncSession = Depends(get_db_session)):
+    try:
+        job_uuid = uuid.UUID(job_id_str)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid job_id format. Must be a UUID.")
+    logger.info(f"Results request for job_id: {job_uuid}")
+    result = await db.execute(select(ValuationJob).where(ValuationJob.job_id == job_uuid))
+    job = result.scalars().first()
+    if not job:
+        logger.warning(f"Results request for unknown job_id: {job_uuid}")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Valuation job with ID '{job_uuid}' not found.")
+
+    if job.status != "COMPLETED":
+        logger.info(f"Results request for job_id: {job_uuid}. Job not yet completed. Status: {job.status}")
+        return ValuationJobResultResponse.model_validate(job)
+
+    result_data = ValuationResultData(
+        estimated_value=job.estimated_value,
+        confidence_score=job.confidence_score,
+        valuation_method_used=job.valuation_method_used,
+        comparables_used=job.comparables_used_json,
+        valuation_date=job.valuation_date
+    )
+    return ValuationJobResultResponse(**ValuationJobStatusResponse.model_validate(job).model_dump(), result=result_data)
+
+```

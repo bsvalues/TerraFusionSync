@@ -91,17 +91,17 @@ def track_api_request(endpoint: str):
             start_time = time.time()
             
             status = 'unknown'
-                try:
-                    result = await func(*args, **kwargs)
-                    status = result.status_code if hasattr(result, 'status_code') else 'success'
-                    return result
-                except Exception as e:
-                    status = 'error'
-                    raise e
-                finally:
-                    duration = time.time() - start_time
-                    API_REQUESTS.labels(endpoint=endpoint, method=method, status=status).inc()
-                    API_REQUEST_DURATION.labels(endpoint=endpoint, method=method).observe(duration)
+            try:
+                result = await func(*args, **kwargs)
+                status = result.status_code if hasattr(result, 'status_code') else 'success'
+                return result
+            except Exception as e:
+                status = 'error'
+                raise e
+            finally:
+                duration = time.time() - start_time
+                API_REQUESTS.labels(endpoint=endpoint, method=method, status=status).inc()
+                API_REQUEST_DURATION.labels(endpoint=endpoint, method=method).observe(duration)
         
         return wrapper
     return decorator

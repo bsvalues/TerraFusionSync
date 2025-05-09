@@ -89,6 +89,14 @@ async def health_check():
 
 
 # Metrics endpoint for monitoring
+# Initialize system metrics gauges (defined at module level to avoid duplication)
+from prometheus_client import Gauge
+
+# System metrics as module-level variables
+SYSTEM_CPU_USAGE = Gauge('terrafusion_system_cpu_percent', 'Current CPU usage percentage')
+SYSTEM_MEMORY_USAGE = Gauge('terrafusion_system_memory_percent', 'Current memory usage percentage')
+SYSTEM_DISK_USAGE = Gauge('terrafusion_system_disk_percent', 'Current disk usage percentage')
+
 @app.get("/metrics", tags=["Monitoring"])
 async def get_metrics():
     """
@@ -102,18 +110,13 @@ async def get_metrics():
         Response: Prometheus formatted metrics
     """
     import psutil
-    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Gauge
+    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
     from fastapi.responses import Response
     
-    # Create dynamic system metrics gauges
-    cpu_usage = Gauge('terrafusion_system_cpu_percent', 'Current CPU usage percentage')
-    memory_usage = Gauge('terrafusion_system_memory_percent', 'Current memory usage percentage')
-    disk_usage = Gauge('terrafusion_system_disk_percent', 'Current disk usage percentage')
-    
-    # Update system metrics
-    cpu_usage.set(psutil.cpu_percent())
-    memory_usage.set(psutil.virtual_memory().percent)
-    disk_usage.set(psutil.disk_usage('/').percent)
+    # Update system metrics using the module-level gauges
+    SYSTEM_CPU_USAGE.set(psutil.cpu_percent())
+    SYSTEM_MEMORY_USAGE.set(psutil.virtual_memory().percent)
+    SYSTEM_DISK_USAGE.set(psutil.disk_usage('/').percent)
     
     # Update database metrics
     try:
