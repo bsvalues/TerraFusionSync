@@ -71,6 +71,87 @@ async def health_check():
     }
 
 
+# Metrics endpoint for monitoring
+@app.get("/metrics", tags=["Monitoring"])
+async def get_metrics():
+    """
+    Get system metrics for monitoring.
+    
+    This endpoint provides resource utilization and application performance metrics.
+    
+    Returns:
+        dict: System metrics
+    """
+    import psutil
+    import time
+    
+    # System metrics
+    cpu_percent = psutil.cpu_percent(interval=0.5)
+    memory = psutil.virtual_memory()
+    disk = psutil.disk_usage('/')
+    
+    # Application metrics
+    start_time = time.time()
+    db_status = await get_db_status()
+    response_time = time.time() - start_time
+    
+    # Count database records
+    property_count = 0
+    sync_source_count = 0
+    import_job_count = 0
+    
+    try:
+        async with get_db_session() as session:
+            # Count PropertyOperational records
+            from sqlalchemy import func, select
+            from terrafusion_sync.core_models import PropertyOperational, SyncSourceSystem, ImportJob
+            
+            # Get counts if tables exist (safely)
+            try:
+                result = await session.execute(select(func.count()).select_from(PropertyOperational))
+                property_count = result.scalar() or 0
+            except Exception as e:
+                logger.warning(f"Could not count PropertyOperational records: {e}")
+            
+            try:
+                result = await session.execute(select(func.count()).select_from(SyncSourceSystem))
+                sync_source_count = result.scalar() or 0
+            except Exception as e:
+                logger.warning(f"Could not count SyncSourceSystem records: {e}")
+                
+            try:
+                result = await session.execute(select(func.count()).select_from(ImportJob))
+                import_job_count = result.scalar() or 0
+            except Exception as e:
+                logger.warning(f"Could not count ImportJob records: {e}")
+    except Exception as e:
+        logger.error(f"Error collecting database metrics: {e}")
+    
+    # Return metrics with string representation for timestamp to ensure JSON serialization 
+    return {
+        "timestamp": str(time.time()),
+        "system": {
+            "cpu_usage": cpu_percent,
+            "memory_usage": memory.percent,
+            "disk_usage": disk.percent,
+            "memory_available_mb": memory.available // (1024 * 1024),
+            "disk_free_gb": disk.free // (1024 * 1024 * 1024)
+        },
+        "database": {
+            "status": db_status["status"],
+            "response_time_ms": round(response_time * 1000, 2),
+            "property_count": property_count,
+            "sync_source_count": sync_source_count,
+            "import_job_count": import_job_count
+        },
+        "application": {
+            "version": "0.1.0",
+            "uptime_seconds": int(time.time() - psutil.boot_time()),
+            "environment": os.getenv("ENV", "development")
+        }
+    }
+
+
 # Property endpoints
 @app.get("/properties", tags=["Properties"], response_model=List[Dict[str, Any]])
 async def get_properties(

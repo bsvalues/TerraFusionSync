@@ -40,6 +40,29 @@ engine_kwargs = {
     "pool_pre_ping": True
 }
 
+# Remove SSL parameters if using asyncpg to avoid unsupported parameter issues
+if DATABASE_URL.startswith('postgresql+asyncpg://'):
+    # Create a modified URL without SSL parameters
+    from urllib.parse import urlparse, parse_qs, urlunparse, urlencode
+    
+    parsed_url = urlparse(DATABASE_URL)
+    query_params = parse_qs(parsed_url.query)
+    
+    # Remove SSL-related parameters that asyncpg doesn't support
+    for param in ['sslmode', 'sslrootcert', 'sslcert', 'sslkey']:
+        if param in query_params:
+            del query_params[param]
+    
+    # Rebuild the URL
+    new_query = urlencode(query_params, doseq=True)
+    parsed_url = parsed_url._replace(query=new_query)
+    DATABASE_URL = urlunparse(parsed_url)
+    
+    logger.info(f"Modified database URL for asyncpg compatibility")
+    
+    # Add custom SSL context configuration if needed
+    # engine_kwargs["ssl"] = create_asyncpg_ssl_context()
+
 # Create the async engine
 engine = create_async_engine(DATABASE_URL, **engine_kwargs)
 
