@@ -66,9 +66,11 @@ async def pg_engine(alembic_cfg_obj):
     from alembic.script import ScriptDirectory
     from alembic.runtime.migration import MigrationContext
 
-    test_db_url = os.getenv("TEST_DATABASE_URL")
+    # Use the regular database URL for testing if no test URL is provided
+    # In a production environment, you would use a separate test database
+    test_db_url = os.getenv("DATABASE_URL", os.getenv("TEST_DATABASE_URL"))
     if not test_db_url:
-        pytest.fail("TEST_DATABASE_URL environment variable is not set.")
+        pytest.fail("Neither DATABASE_URL nor TEST_DATABASE_URL environment variable is set.")
 
     # Check if we need to convert non-async URL to async
     if "postgresql://" in test_db_url and "asyncpg" not in test_db_url:
@@ -82,11 +84,27 @@ async def pg_engine(alembic_cfg_obj):
         test_db_url = test_db_url.replace("?sslmode=require", "").replace("&sslmode=require", "")
         connect_args["ssl"] = True
     
-    # Create the engine with proper connect args
+    # Create the engine with optimized connect args for test reliability
     engine = create_async_engine(
         test_db_url, 
-        connect_args=connect_args,
+        connect_args={
+            **connect_args,
+            "timeout": 10,  # Connection timeout in seconds
+            "command_timeout": 10  # Command execution timeout
+        },
+        pool_size=5,  # Smaller pool size for tests
+        max_overflow=10,
+        pool_timeout=30,
+        pool_recycle=60,  # More frequent connection recycling
+        pool_pre_ping=True,  # Check connection validity
         echo=os.getenv("SQLALCHEMY_TEST_ECHO", "False").lower() == "true"
+    )
+    
+    # Configure engine with execution options to help with transaction handling
+    engine = engine.execution_options(
+        isolation_level="READ COMMITTED",  # Less strict isolation level
+        postgresql_readonly=False,
+        postgresql_deferrable=False  # Non-deferrable transactions
     )
     
     # Apply migrations manually using the async engine
