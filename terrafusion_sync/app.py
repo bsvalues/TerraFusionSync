@@ -468,11 +468,6 @@ async def seed_sample_data(
                         successful_records = processed_records - random.randint(0, 50) if status == "completed" else processed_records - random.randint(50, 200) if status == "failed" else 0
                         failed_records = processed_records - successful_records
                         
-                        # Calculate metrics
-                        progress = processed_records / total_records * 100 if total_records > 0 else 0
-                        success_rate = successful_records / processed_records * 100 if processed_records > 0 else 0
-                        duration = (end_time - start_time).total_seconds() if end_time else None
-                        
                         # Create the import job
                         new_job = ImportJob(
                             source_system_id=source_id,
@@ -484,10 +479,7 @@ async def seed_sample_data(
                             failed_records=failed_records,
                             start_time=start_time,
                             end_time=end_time,
-                            created_by="seed_utility",
-                            progress_percentage=round(progress, 2),
-                            success_rate=round(success_rate, 2),
-                            duration_seconds=duration
+                            created_by="seed_utility"
                         )
                         
                         # Add the import job to the session

@@ -1,0 +1,288 @@
+#### `terrafusion_platform/sdk/templates/county.env.template`
+```ini
+# {{ county_name }}.env - Environment specific variables for {{ county_name_title_case }} County
+
+# --- Legacy CAMA System Connection (Example for PACS SQL Server) ---
+# Replace with actual connection details for {{ county_name_title_case }}'s legacy system
+PACS_DB_HOST_{{ county_name_upper }}_SOURCE="your_legacy_db_host.{{ county_name }}.gov"
+PACS_DB_PORT_{{ county_name_upper }}_SOURCE="1433"
+PACS_DB_NAME_{{ county_name_upper }}_SOURCE="legacy_pacs_db_for_{{ county_name }}"
+PACS_DB_USER_{{ county_name_upper }}_SOURCE="readonly_user"
+PACS_DB_PASSWORD_{{ county_name_upper }}_SOURCE="secure_password"
+LEGACY_SYSTEM_TYPE_{{ county_name_upper }}="PACS" # e.g., PACS, TYLER, PATRIOT
+
+# --- TerraFusion Sync Configuration for {{ county_name_title_case }} ---
+COUNTY_ID="{{ county_name }}" # Internal ID used in TerraFusion
+COUNTY_FRIENDLY_NAME="{{ county_name_title_case }} County"
+# Specific sync schedule or parameters for this county, if needed
+# SYNC_SCHEDULE_{{ county_name_upper }}="0 2 * * *" # e.g., Daily at 2 AM
+
+# --- Plugin Specific Configurations for {{ county_name_title_case }} (if any) ---
+# VALUATION_MODEL_TYPE_{{ county_name_upper }}="standard_comparable_sales"
+# REPORTING_TEMPLATE_SET_{{ county_name_upper }}="default_state_mandated"
+
+# Add other county-specific configurations as your platform evolves.
+```
+
+#### `terrafusion_platform/sdk/templates/mappings.yaml.template`
+```yaml
+# {{ county_name }}_mappings.yaml
+# Data mapping configuration for {{ county_name_title_case }} County
+# Source: {{ legacy_system_type_placeholder }} -> Target: TerraFusion Operational DB
+
+# This file defines how fields from the legacy CAMA system
+# for {{ county_name_title_case }} County map to the TerraFusion canonical schema.
+
+# Refer to the main TerraFusion data dictionary for target field names and types.
+# The 'source_table' and 'source_field' should match the legacy system's schema.
+# The 'target_field' should match the fields in your TerraFusion 'PropertyOperational' model (and others).
+# Add 'transformations' for data cleaning, type conversion, or complex mapping logic.
+
+# Example for a core property table (adjust based on actual legacy schema)
+PropertyMaster:
+  source_table: LegacyPropertyTable # Replace with actual legacy table name for {{ county_name }}
+  target_table: properties_operational # Matches your SQLAlchemy model __tablename__
+  fields:
+    - source_field: PARID # Example legacy field for Parcel ID
+      target_field: property_id
+      # transformation: "strip_whitespace | to_upper"
+    - source_field: CNTYID
+      target_field: county_id
+      default_value: "{{ county_name }}" # Automatically set based on this config
+    - source_field: LEGALDESC
+      target_field: legal_description
+    - source_field: SITUSADDR
+      target_field: situs_address_full
+    - source_field: SITUSCITY
+      target_field: situs_city
+    - source_field: SITUSZIP
+      target_field: situs_zip_code
+    - source_field: ASSDVALUE
+      target_field: current_assessed_value_total
+      transformation: "to_float"
+    - source_field: SALEDATE
+      target_field: last_sale_date
+      transformation: "to_datetime:%Y%m%d" # Example date format
+    - source_field: SALEPRICE
+      target_field: last_sale_price
+      transformation: "to_float"
+    - source_field: YRBUILT
+      target_field: year_built
+      transformation: "to_integer"
+    # Add all other relevant property master fields for {{ county_name_title_case }}
+
+# Add other table mappings as needed (e.g., for Improvements, Land Segments, Owners, Tax Bills)
+# Imprv_detail:
+#   source_table: LegacyImprovementTable
+#   target_table: improvement_details_operational
+#   fields:
+#     - source_field: IMPRVID
+#       target_field: improvement_id
+#     - source_field: PARID # Foreign key to PropertyMaster
+#       target_field: property_id_fk # Relates to PropertyOperational.property_id
+#     # ... other improvement fields
+
+# Land_detail:
+#   source_table: LegacyLandTable
+#   target_table: land_segments_operational
+#   fields:
+#     # ... land segment fields
+```
+
+#### `terrafusion_platform/sdk/templates/users.json.template`
+```json
+{
+  "county_id": "{{ county_name }}",
+  "county_name": "{{ county_name_title_case }} County",
+  "description": "Initial RBAC user definitions for {{ county_name_title_case }} County. These are examples and should be integrated with a proper identity management system (e.g., LDAP/AD group mappings) for production.",
+  "users": [
+    {
+      "username": "{{ county_name_lower }}_assessor",
+      "email": "assessor@{{ county_name_lower }}.county.local",
+      "full_name": "{{ county_name_title_case }} Lead Assessor",
+      "roles": ["assessor_role", "valuation_user", "reporting_user"],
+      "permissions": [
+        "execute_valuation", 
+        "review_valuation", 
+        "approve_valuation_roll",
+        "generate_report",
+        "view_sensitive_reports"
+      ],
+      "notes": "Primary assessor for {{ county_name_title_case }}."
+    },
+    {
+      "username": "{{ county_name_lower }}_staff01",
+      "email": "staff01@{{ county_name_lower }}.county.local",
+      "full_name": "Valuation Staff Member 1 ({{ county_name_title_case }})",
+      "roles": ["staff_role", "valuation_user"],
+      "permissions": [
+        "execute_valuation_batch",
+        "view_valuation_results"
+      ],
+      "notes": "Valuation support staff."
+    },
+    {
+      "username": "{{ county_name_lower }}_clerk",
+      "email": "clerk@{{ county_name_lower }}.county.local",
+      "full_name": "County Clerk ({{ county_name_title_case }})",
+      "roles": ["clerk_role", "reporting_user"],
+      "permissions": [
+        "generate_standard_reports",
+        "view_public_reports"
+      ],
+      "notes": "Handles standard reporting and public data requests."
+    }
+  ],
+  "role_definitions": {
+    "assessor_role": {
+      "description": "Full access to assessment and valuation workflows.",
+      "inherits_permissions_from": ["valuation_user", "reporting_user"]
+    },
+    "staff_role": {
+      "description": "Operational staff for data entry and preliminary reviews.",
+      "inherits_permissions_from": []
+    },
+    "clerk_role": {
+      "description": "Access to generate and view standard reports.",
+      "inherits_permissions_from": []
+    },
+    "valuation_user": {
+        "description": "Can perform valuation related tasks."
+    },
+    "reporting_user": {
+        "description": "Can perform reporting related tasks."
+    }
+  }
+}
+```
+
+#### `terrafusion_platform/sdk/new_county_setup.py`
+```python
+#!/usr/bin/env python3
+import os
+import argparse
+import shutil
+from pathlib import Path
+
+# Define the root of the SDK, assuming this script is in terrafusion_platform/sdk/
+SDK_ROOT = Path(__file__).parent.resolve()
+TEMPLATES_DIR = SDK_ROOT / "templates"
+# Define where county configurations will be stored, relative to project root
+# Assuming project root is one level up from SDK_ROOT
+PROJECT_ROOT = SDK_ROOT.parent 
+COUNTY_CONFIGS_BASE_DIR = PROJECT_ROOT / "county_configs"
+
+def main():
+    parser = argparse.ArgumentParser(description="TerraFusion New County Setup CLI")
+    parser.add_argument(
+        "county_name", 
+        type=str, 
+        help="The name of the county (e.g., 'benton', 'franklin'). Used for directory and file naming."
+    )
+    parser.add_argument(
+        "--legacy-system",
+        type=str,
+        default="PACS",
+        help="Type of the legacy CAMA system for the county (e.g., PACS, TYLER, PATRIOT). Default: PACS"
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing county configuration directory if it exists."
+    )
+
+    args = parser.parse_args()
+
+    county_name_lower = args.county_name.lower().replace(" ", "_").replace("-", "_")
+    county_name_title_case = args.county_name.replace("_", " ").replace("-", " ").title()
+    county_name_upper = county_name_lower.upper()
+
+    county_dir = COUNTY_CONFIGS_BASE_DIR / county_name_lower
+
+    if county_dir.exists():
+        if args.force:
+            print(f"Warning: Directory {county_dir} already exists. Overwriting due to --force flag.")
+            shutil.rmtree(county_dir)
+        else:
+            print(f"Error: Directory {county_dir} already exists. Use --force to overwrite.")
+            return
+
+    try:
+        # Create directory structure
+        mappings_dir = county_dir / "mappings"
+        rbac_dir = county_dir / "rbac"
+        mappings_dir.mkdir(parents=True, exist_ok=True)
+        rbac_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Created directory structure at: {county_dir}")
+
+        # Template context
+        context = {
+            "county_name": county_name_lower,
+            "county_name_title_case": county_name_title_case,
+            "county_name_upper": county_name_upper,
+            "legacy_system_type_placeholder": args.legacy_system.upper()
+        }
+
+        # Process .env template
+        process_template(
+            TEMPLATES_DIR / "county.env.template",
+            county_dir / f"{county_name_lower}.env",
+            context
+        )
+
+        # Process mappings.yaml template
+        process_template(
+            TEMPLATES_DIR / "mappings.yaml.template",
+            mappings_dir / f"{county_name_lower}_mappings.yaml",
+            context
+        )
+
+        # Process users.json template
+        process_template(
+            TEMPLATES_DIR / "users.json.template",
+            rbac_dir / f"{county_name_lower}_users.json",
+            context
+        )
+
+        print(f"\nSuccessfully scaffolded configuration for {county_name_title_case} County.")
+        print(f"  Environment file: {county_dir / f'{county_name_lower}.env'}")
+        print(f"  Mappings file:    {mappings_dir / f'{county_name_lower}_mappings.yaml'}")
+        print(f"  RBAC users file:  {rbac_dir / f'{county_name_lower}_users.json'}")
+        print("\nPlease review and customize these files with actual data for the county.")
+
+    except Exception as e:
+        print(f"An error occurred during scaffolding: {e}")
+        # Clean up partially created directory if error occurs
+        if county_dir.exists():
+            # shutil.rmtree(county_dir) # Be cautious with auto-cleanup
+            print(f"Partial setup at {county_dir} might exist due to error.")
+
+def process_template(template_path: Path, output_path: Path, context: dict):
+    """Reads a template file, replaces placeholders, and writes to output path."""
+    try:
+        with open(template_path, 'r') as f:
+            template_content = f.read()
+        
+        for key, value in context.items():
+            template_content = template_content.replace(f"{{{{ {key} }}}}", str(value))
+            # Also handle potential case where spaces might be inconsistent
+            template_content = template_content.replace(f"{{{{{key}}}}}", str(value))
+
+
+        with open(output_path, 'w') as f:
+            f.write(template_content)
+        print(f"  Created: {output_path}")
+    except FileNotFoundError:
+        print(f"Error: Template file not found at {template_path}")
+        raise
+    except Exception as e:
+        print(f"Error processing template {template_path} to {output_path}: {e}")
+        raise
+
+if __name__ == "__main__":
+    # Create the base directory for county configs if it doesn't exist
+    if not COUNTY_CONFIGS_BASE_DIR.exists():
+        COUNTY_CONFIGS_BASE_DIR.mkdir(parents=True, exist_ok=True)
+        print(f"Created base county configurations directory: {COUNTY_CONFIGS_BASE_DIR}")
+    main()
+```

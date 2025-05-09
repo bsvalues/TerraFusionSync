@@ -1,0 +1,47 @@
+How to Use This SDK Scaffolding:
+
+Save the files:
+
+Create the directory terrafusion_platform/sdk/templates/.
+Save county.env.template, mappings.yaml.template, and users.json.template into the templates directory.
+Save new_county_setup.py into the terrafusion_platform/sdk/ directory.
+Make new_county_setup.py executable: chmod +x terrafusion_platform/sdk/new_county_setup.py
+Run the CLI:
+From the terrafusion_platform directory, you can run:
+
+Bash
+
+python sdk/new_county_setup.py benton_county --legacy-system PACS
+# or
+./sdk/new_county_setup.py "Franklin County" --legacy-system TYLER --force
+This will generate:
+
+terrafusion_platform/
+├── county_configs/
+│   ├── benton_county/
+│   │   ├── benton_county.env
+│   │   ├── mappings/
+│   │   │   └── benton_county_mappings.yaml
+│   │   └── rbac/
+│   │       └── benton_county_users.json
+│   └── franklin_county/
+│       ├── franklin_county.env
+│       ├── mappings/
+│       │   └── franklin_county_mappings.yaml
+│       └── rbac/
+│           └── franklin_county_users.json
+└── sdk/
+    ├── templates/
+    │   ├── county.env.template
+    │   ├── mappings.yaml.template
+    │   └── users.json.template
+    └── new_county_setup.py
+Next Steps after this SDK scaffolding:
+
+With the infrastructure from docker-compose.yml and this SDK scaffolding in place, the Replit AI Agent (or you) can now:
+
+Run docker-compose up -d to start the local environment (Postgres, Gateway, Sync Service).
+Run python infra/db_init/initialize_schema.py to create the database tables based on terrafusion_sync/core_models.py.
+Use python sdk/new_county_setup.py <your_county> to generate initial config files.
+Start fleshing out the Valuation Plugin MVP (terrafusion_sync/plugins/valuation.py and the corresponding terrafusion_gateway/routes/valuation_routes.py) to perform a simple valuation, perhaps by reading data that you'd manually insert into the properties_operational table for testing, or by adapting the plugin to read from the generated mappings.yaml and connect to a test legacy DB (if you set one up).
+This provides a very solid, repeatable foundation for developing and configuring the system for different countie
