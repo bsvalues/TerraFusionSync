@@ -163,6 +163,32 @@ class ReportJobResponse(ReportJobBase):
             
         # Create instance
         return cls(**obj_dict)
+        
+    @classmethod
+    def model_validate(cls, obj):
+        """
+        Convert SQLAlchemy model to Pydantic model with proper field mapping.
+        
+        This replaces the from_orm method in Pydantic V2.
+        """
+        # Convert model to dict with the right field names
+        data = {
+            "report_id": obj.report_id,
+            "report_type": obj.report_type,
+            "county_id": obj.county_id,
+            "status": obj.status,
+            "message": obj.message,
+            "parameters": obj.parameters_json,  # Map from parameters_json to parameters
+            "created_at": obj.created_at,
+            "updated_at": obj.updated_at,
+            "started_at": obj.started_at,
+            "completed_at": obj.completed_at,
+            "result_location": obj.result_location,
+            "result_metadata": obj.result_metadata_json  # Map from result_metadata_json to result_metadata
+        }
+        
+        # Use parent class model_validate with our mapped data
+        return super().model_validate(data)
 
 
 class ReportJobListResponse(BaseModel):
