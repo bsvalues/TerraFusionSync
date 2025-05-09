@@ -7,6 +7,7 @@ These models are designed to be compatible with an async setup.
 
 from datetime import datetime
 from typing import Optional, List, Dict, Any
+import uuid  # For generating UUIDs
 from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Float, JSON, Table
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import DeclarativeBase, relationship, Mapped, mapped_column
@@ -306,3 +307,64 @@ class ImportJob(Base):
         if not self.end_time or not self.start_time:
             return None
         return int((self.end_time - self.start_time).total_seconds())
+
+
+class ReportJob(Base):
+    """
+    Represents a reporting job, its status, parameters, and results location.
+    
+    This model is used to track the lifecycle of report generation jobs, including
+    their configuration, status, and where to find the generated reports.
+    """
+    __tablename__ = 'report_jobs'
+
+    # Primary identification fields
+    report_id = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    report_type = mapped_column(String(50), index=True, nullable=False, comment="Type of report being generated (e.g., sales_ratio_study, assessment_roll)")
+    county_id = mapped_column(String(20), index=True, nullable=False, comment="County ID for which the report is generated")
+    
+    # Status tracking
+    status = mapped_column(String(30), index=True, nullable=False, default="PENDING", 
+                          comment="Report job status: PENDING, RUNNING, COMPLETED, FAILED")
+    message = mapped_column(Text, nullable=True, comment="Status message or error details")
+    
+    # Configuration
+    parameters_json = mapped_column(JSON, nullable=True, 
+                                  comment="JSON object storing the parameters used for report generation")
+    
+    # Timestamps
+    created_at = mapped_column(DateTime, default=datetime.utcnow, 
+                             comment="Timestamp when the job was created")
+    updated_at = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, 
+                             comment="Timestamp of the last status update")
+    started_at = mapped_column(DateTime, nullable=True, 
+                             comment="Timestamp when report generation started")
+    completed_at = mapped_column(DateTime, nullable=True, 
+                               comment="Timestamp when report generation completed or failed")
+
+    # Result Information
+    result_location = mapped_column(String(255), nullable=True, 
+                                  comment="Location/identifier of the generated report (e.g., S3 path, URL)")
+    result_metadata_json = mapped_column(JSON, nullable=True, 
+                                       comment="Optional metadata about the report result (e.g., file size, page count)")
+
+    def __repr__(self):
+        return f"<ReportJob report_id='{self.report_id}' report_type='{self.report_type}' county_id='{self.county_id}' status='{self.status}'>"
+        
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert model to dictionary representation."""
+        result = {
+            "report_id": self.report_id,
+            "report_type": self.report_type,
+            "county_id": self.county_id,
+            "status": self.status,
+            "message": self.message,
+            "parameters": self.parameters_json,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "result_location": self.result_location,
+            "result_metadata": self.result_metadata_json
+        }
+        return result
