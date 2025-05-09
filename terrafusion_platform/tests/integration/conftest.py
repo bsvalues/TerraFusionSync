@@ -54,9 +54,24 @@ else:
 @pytest.fixture(scope="session")
 def alembic_config_path():
     """Returns the path to alembic.ini, assuming it's in terrafusion_sync/"""
+    # Try the standard path first
     path = os.path.join(TERRAFUSION_SYNC_ROOT, "alembic.ini")
+    
+    # If not found, look for it in the project root 
     if not os.path.exists(path):
-        pytest.fail(f"Alembic config file not found at {path}. "
+        alt_path = os.path.join(PROJECT_ROOT_FOR_TESTS, "terrafusion_sync", "alembic.ini")
+        if os.path.exists(alt_path):
+            return alt_path
+        # If still not found, try the direct path from the project root
+        direct_path = os.path.join(PROJECT_ROOT_FOR_TESTS, "terrafusion_sync/alembic.ini")
+        if os.path.exists(direct_path):
+            return direct_path
+        # One more attempt from the file system root
+        root_path = "/home/runner/workspace/terrafusion_sync/alembic.ini"
+        if os.path.exists(root_path):
+            return root_path
+            
+        pytest.fail(f"Alembic config file not found at {path} or alternative paths. "
                     "Ensure alembic init was run in terrafusion_sync/ and env.py is configured.")
     return path
 
