@@ -21,6 +21,14 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     logger.warning("DATABASE_URL environment variable not set. Using SQLite in-memory database for development.")
     DATABASE_URL = "sqlite+aiosqlite:///terrafusion.db"
+else:
+    # Convert standard PostgreSQL URL to async version if needed
+    if DATABASE_URL.startswith('postgresql://'):
+        DATABASE_URL = DATABASE_URL.replace('postgresql://', 'postgresql+asyncpg://', 1)
+        logger.info(f"Using async PostgreSQL connection: {DATABASE_URL.split('@')[0]}@...")
+    elif not (DATABASE_URL.startswith('postgresql+asyncpg://') or DATABASE_URL.startswith('sqlite+aiosqlite://')):
+        logger.warning(f"Database URL doesn't specify an async driver. Attempting to use: {DATABASE_URL}")
+        # We'll let the engine creation attempt to handle any errors if the URL is invalid
 
 # Engine configuration with connection pooling settings
 engine_kwargs = {
@@ -96,7 +104,7 @@ async def initialize_db():
     
     This function should be called during application startup.
     """
-    from .core_models import Base
+    from terrafusion_sync.core_models import Base
     
     logger.info("Initializing database and creating tables...")
     try:
@@ -119,20 +127,21 @@ async def get_db_status():
     try:
         session = await get_session()
         try:
-            # Simple query to test connection
-            result = await session.execute("SELECT 1")
-            await result.scalar()
+            # Simple query to test connection using text object
+            from sqlalchemy import text
+            result = await session.execute(text("SELECT 1"))
+            # Get scalar result without awaiting it (as it's not awaitable)
+            scalar_result = result.scalar_one()
             
-            # Get connection pool stats
-            pool_size = engine.pool.size()
-            checkedin = engine.pool.checkedin()
-            checkedout = engine.pool.checkedout()
+            # Get basic connection info
+            pool_stats = {
+                "pool_type": str(type(engine.pool)).split("'")[1],  # Extract just the class name
+                "database_type": DATABASE_URL.split(":")[0] if ":" in DATABASE_URL else "unknown"
+            }
             
             return {
                 "status": "connected",
-                "pool_size": pool_size,
-                "connections_checked_in": checkedin,
-                "connections_checked_out": checkedout,
+                **pool_stats,
                 "database_url": DATABASE_URL.split("@")[-1] if "@" in DATABASE_URL else "sqlite",
                 "message": "Database connection successful"
             }

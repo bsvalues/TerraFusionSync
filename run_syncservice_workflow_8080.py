@@ -1,65 +1,46 @@
 """
-Workflow runner for SyncService on port 8080.
+TerraFusion SyncService - FastAPI Application Launcher
 
-This script is used by the Replit workflow to start the SyncService on port 8080
-to avoid conflicts with the main application on port 5000.
+This script runs the TerraFusion SyncService FastAPI application on port 8080.
+It is designed to be used with the Replit workflow system.
 """
-import sys
-import json
-import logging
-import subprocess
-import socket
-import time
-import signal
-import os
-import os
+
 import sys
 import logging
+import uvicorn
+import os
 import signal
-import subprocess
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
 logger = logging.getLogger(__name__)
 
-def signal_handler(sig, frame):
-    """Handle signals gracefully."""
-    logger.info(f"Received signal {sig}, shutting down...")
+def handle_sigterm(sig, frame):
+    """Handle SIGTERM signal gracefully."""
+    logger.info("Received SIGTERM. Shutting down gracefully...")
     sys.exit(0)
 
 def main():
     """
-    Run the SyncService on port 8080 for the workflow.
+    Run the TerraFusion SyncService on port 8080.
     """
-    # Register signal handlers
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+    logger.info("Starting SyncService on port 8080...")
     
-    try:
-        # Set environment variable to run in development mode with no auth
-        os.environ["SYNCSERVICE_DEV_MODE"] = "1"
-        
-        # Use the local standalone syncservice.py implementation
-        # This has the updated health check endpoints
-        cmd = [
-            sys.executable, "-m", "uvicorn",
-            "syncservice:app",
-            "--host", "0.0.0.0",
-            "--port", "8080",
-            "--reload"
-        ]
-        
-        logger.info(f"Starting SyncService on port 8080...")
-        logger.info(f"Command: {' '.join(cmd)}")
-        
-        # Execute the command and wait for it to complete
-        process = subprocess.run(cmd)
-        
-        return process.returncode == 0
-        
-    except Exception as e:
-        logger.error(f"Error starting SyncService: {str(e)}")
-        return False
+    # Register signal handler
+    signal.signal(signal.SIGTERM, handle_sigterm)
+    
+    # Build the command for uvicorn
+    command = f"{sys.executable} -m uvicorn terrafusion_sync.app:app --host 0.0.0.0 --port 8080 --reload"
+    
+    logger.info(f"Command: {command}")
+    
+    # Start uvicorn server
+    uvicorn.run(
+        "terrafusion_sync.app:app",
+        host="0.0.0.0",
+        port=8080,
+        reload=True
+    )
 
 if __name__ == "__main__":
     main()

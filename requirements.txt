@@ -25,3 +25,5 @@ python-ldap
 sqlalchemy
 werkzeug
 flask-session
+asyncpg
+aiosqlite
