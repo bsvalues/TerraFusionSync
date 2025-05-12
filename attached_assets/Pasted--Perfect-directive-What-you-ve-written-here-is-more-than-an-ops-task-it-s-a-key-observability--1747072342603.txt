@@ -1,0 +1,121 @@
+**Perfect directive.** What you’ve written here is more than an ops task—it’s a key **observability milestone**. Here’s a clean, bulletproof version of your instructions, formatted for handoff to another dev, AI agent, or yourself at 3am.
+
+---
+
+## ✅ **Add Reporting Plugin Panels to Grafana**
+
+### 🔗 Access Grafana
+
+* Open: [`http://localhost:3000`](http://localhost:3000)
+* Log in (default: `admin` / `admin`, change if needed)
+
+---
+
+### 📊 Open or Create Dashboard
+
+* Open existing dashboard: **"TerraFusion Sync Service Overview"**
+* Or create a new one for plugin-level observability: **"Plugin Metrics: Reporting & Valuation"**
+
+---
+
+### 📝 Follow Internal Doc
+
+* Open: `docs/grafana/terrafusion_grafana_reporting_panels_v1.md`
+  *(If this doc doesn't exist yet, create it now for reuse!)*
+
+---
+
+### ➕ Add Panels (Suggested Setup)
+
+#### 1. **Reporting Job Submission Rate**
+
+* Type: **Stat** or **Time Series**
+* Query:
+
+  ```promql
+  reports_created_total
+  ```
+* Labels: `county_id`, `report_type`
+
+#### 2. **Average Reporting Job Processing Duration**
+
+* Type: **Heatmap** or **Histogram**
+* Query:
+
+  ```promql
+  histogram_quantile(0.95, rate(report_duration_seconds_bucket[5m]))
+  ```
+
+#### 3. **Reporting Job Failure Rate**
+
+* Type: **Time Series**
+* Query:
+
+  ```promql
+  sync_jobs_total{status="failed", plugin="reporting"}
+  ```
+
+#### 4. **Total Report Jobs by Status**
+
+* Type: **Bar Chart / Pie Chart**
+* Query:
+
+  ```promql
+  sum by (status) (sync_jobs_total{plugin="reporting"})
+  ```
+
+---
+
+### 🧩 Arrange Your Panels
+
+* Group new Reporting panels beside your Valuation plugin block
+* Title clearly: **“Reporting Plugin: Job Metrics”**
+* Add colors for success/fail (green/red) to make job health pop
+
+---
+
+## ✅ **Verify Metrics Are Flowing**
+
+### Trigger Activity via REST:
+
+**From Postman or Curl:**
+
+```bash
+curl -X POST http://localhost:8080/v1/reporting/run \
+  -H "Content-Type: application/json" \
+  -d '{"county_id": "TRV", "report_type": "parcel_summary"}'
+```
+
+Trigger multiple types:
+
+```bash
+curl -X POST http://localhost:8080/v1/reporting/run \
+  -d '{"county_id": "TRV", "report_type": "FAILING_REPORT_SIM"}'
+```
+
+Make sure to trigger:
+
+* ✅ Successful jobs
+* ❌ Failures
+* 📊 At least 3 different `report_type` values
+
+---
+
+### Confirm in Grafana:
+
+* `reports_created_total` should spike
+* Histogram and job duration charts should fill
+* `sync_jobs_total{status="failed"}` should increment
+
+---
+
+## 📍 Result
+
+You’ll now have **real-time reporting job metrics** piped from your FastAPI plugin → Prometheus → Grafana panels.
+
+This completes full **observability integration** for your async pipeline plugins:
+**Valuation ✅ | Reporting ✅ | GIS & Exports 🔜**
+
+---
+
+Would you like me to generate the `terrafusion_grafana_reporting_panels_v1.md` doc next, or prep a `grafana-dashboard.json` seed config you can import directly?

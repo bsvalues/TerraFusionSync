@@ -8,8 +8,8 @@ including report job creation, tracking, and generation.
 import logging
 import uuid
 import time
-from datetime import datetime
-from typing import Dict, List, Any, Optional, Union
+from datetime import datetime, timedelta
+from typing import Dict, List, Any, Optional, Union, Tuple
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -443,3 +443,84 @@ async def simulate_report_generation(db: AsyncSession, report_id: str) -> None:
             await session.rollback()
         finally:
             await session.close()
+
+
+async def expire_stale_reports(db: AsyncSession, timeout_minutes: int = 30) -> Tuple[int, List[str]]:
+    """
+    Detect and mark report jobs as "failed" if they've been in-progress for too long.
+    
+    This function:
+    1. Queries reports with status = 'RUNNING'
+    2. Checks if created_at is older than timeout_minutes
+    3. Sets status to 'FAILED' and writes result_metadata_json.reason = 'timeout'
+    
+    Args:
+        db: The database session
+        timeout_minutes: Time in minutes after which a running job is considered stale
+    
+    Returns:
+        Tuple containing count of expired jobs and list of their report_ids
+    """
+    try:
+        # Calculate the cutoff time
+        cutoff_time = datetime.utcnow() - timedelta(minutes=timeout_minutes)
+        
+        # Find all running jobs that started before the cutoff time
+        query = select(ReportJob).where(
+            (ReportJob.status == "RUNNING") &
+            (ReportJob.started_at < cutoff_time)
+        )
+        
+        result = await db.execute(query)
+        stale_jobs = result.scalars().all()
+        
+        if not stale_jobs:
+            logger.debug(f"No stale report jobs found (timeout: {timeout_minutes} minutes)")
+            return 0, []
+        
+        expired_job_ids = []
+        
+        # Update each stale job
+        for job in stale_jobs:
+            # Calculate how long the job was running
+            running_time_minutes = (datetime.utcnow() - job.started_at).total_seconds() / 60
+            
+            # Prepare timeout message and metadata
+            timeout_message = f"Report generation timed out after {running_time_minutes:.1f} minutes"
+            
+            # Get existing metadata or create new dict
+            result_metadata = job.result_metadata_json or {}
+            result_metadata["reason"] = "timeout"
+            result_metadata["timeout_minutes"] = timeout_minutes
+            result_metadata["running_time_minutes"] = running_time_minutes
+            
+            # Update the job status
+            try:
+                await update_report_job_status(
+                    db=db,
+                    report_id=job.report_id,
+                    status="FAILED",
+                    message=timeout_message,
+                    result_metadata=result_metadata
+                )
+                
+                expired_job_ids.append(job.report_id)
+                logger.info(f"Expired stale report job {job.report_id} after {running_time_minutes:.1f} minutes")
+                
+                # Note: metrics are updated in update_report_job_status
+                
+            except Exception as job_update_error:
+                logger.error(f"Failed to expire stale job {job.report_id}: {str(job_update_error)}")
+        
+        # Commit all changes
+        await db.commit()
+        
+        if expired_job_ids:
+            logger.info(f"Expired {len(expired_job_ids)} stale report jobs")
+        
+        return len(expired_job_ids), expired_job_ids
+        
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error while expiring stale reports: {str(e)}")
+        return 0, []
