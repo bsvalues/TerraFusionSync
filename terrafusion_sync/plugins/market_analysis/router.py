@@ -77,7 +77,12 @@ async def _process_market_analysis_job(
             MARKET_ANALYSIS_JOBS_IN_PROGRESS.inc()
 
             # Simulate processing time - to be replaced with actual analysis logic
-            await asyncio.sleep(3)  
+            await asyncio.sleep(3)
+            
+            # Special case for testing - simulate failure for a specific analysis type
+            if analysis_type.upper() == "FAILING_ANALYSIS_SIM":
+                logger.warning(f"MarketAnalysisJob {job_id}: Simulating market analysis failure for testing purposes")
+                raise ValueError("Simulated market analysis failure for testing purposes")
 
             # Based on analysis type, perform different calculations
             result_summary = {}

@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 # Import the FastAPI app, models and database config from the terrafusion_sync package
 from terrafusion_sync.app import app
 from terrafusion_sync.database import get_session, DATABASE_URL
-from terrafusion_sync.core_models import Base, PropertyOperational, ReportJob
+from terrafusion_sync.core_models import Base, PropertyOperational, ReportJob, MarketAnalysisJob
 
 # Get database URL from environment or fallback to default
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL") or DATABASE_URL
@@ -206,3 +206,56 @@ async def create_report_job(db_session: AsyncSession) -> Callable:
         return report_job
         
     return _create_report_job
+
+
+@pytest.fixture(scope="function")
+async def create_market_analysis_job(db_session: AsyncSession) -> Callable:
+    """
+    Fixture to create a MarketAnalysisJob object in the database.
+    
+    Returns a callable that can be used to create a MarketAnalysisJob
+    object with custom attributes.
+    """
+    async def _create_market_analysis_job(
+        job_id: str = None,
+        analysis_type: str = "price_trend_by_zip",
+        county_id: str = "test_county",
+        status: str = "PENDING",
+        message: Optional[str] = None,
+        parameters_json: Optional[Dict[str, Any]] = None,
+        result_summary_json: Optional[Dict[str, Any]] = None,
+        result_data_location: Optional[str] = None,
+        custom_fields: Optional[Dict[str, Any]] = None
+    ):
+        """Create a MarketAnalysisJob record."""
+        # Generate a job ID if none is provided
+        if job_id is None:
+            job_id = str(uuid.uuid4())
+            
+        # Create timestamps
+        now = datetime.utcnow()
+        
+        # Create market analysis job instance
+        market_analysis_job = MarketAnalysisJob(
+            job_id=job_id,
+            analysis_type=analysis_type,
+            county_id=county_id,
+            status=status,
+            message=message,
+            parameters_json=parameters_json or {},
+            result_summary_json=result_summary_json,
+            result_data_location=result_data_location,
+            created_at=now,
+            updated_at=now
+        )
+        
+        # Add to database and commit
+        db_session.add(market_analysis_job)
+        await db_session.commit()
+        
+        # Refresh to get any database-generated values
+        await db_session.refresh(market_analysis_job)
+        
+        return market_analysis_job
+        
+    return _create_market_analysis_job
