@@ -22,6 +22,15 @@ from datetime import datetime as dt
 from terrafusion_sync.database import get_db_session
 from terrafusion_sync.core_models import MarketAnalysisJob
 
+# Import service and tasks functionality
+from .service import (
+    create_analysis_job,
+    get_analysis_job,
+    list_analysis_jobs,
+    update_job_status
+)
+from .tasks import run_analysis_job
+
 # Import metrics
 from terrafusion_sync.metrics import (
     MARKET_ANALYSIS_JOBS_SUBMITTED,
@@ -327,31 +336,19 @@ async def _list_market_analysis_jobs_impl(
     # Convert each job to response model with proper type handling
     job_responses = []
     for job in jobs:
-        # Convert to proper types
-        job_id = str(job.job_id) if job.job_id else None
-        analysis_type = str(job.analysis_type) if job.analysis_type else None
-        county_id = str(job.county_id) if job.county_id else None
-        job_status = str(job.status) if job.status else None
-        message = str(job.message) if job.message else None
-        parameters = job.parameters_json if hasattr(job, 'parameters_json') and job.parameters_json is not None else None
-        created_at = job.created_at
-        updated_at = job.updated_at
-        started_at = job.started_at if hasattr(job, 'started_at') else None
-        completed_at = job.completed_at if hasattr(job, 'completed_at') else None
-        
-        # Create and add response
+        # Create response for each job
         job_responses.append(
             MarketAnalysisJobStatusResponse(
-                job_id=job_id,
-                analysis_type=analysis_type,
-                county_id=county_id,
-                status=job_status,
-                message=message,
-                parameters=parameters,
-                created_at=created_at,
-                updated_at=updated_at,
-                started_at=started_at,
-                completed_at=completed_at
+                job_id=str(job.job_id),
+                analysis_type=str(job.analysis_type),
+                county_id=str(job.county_id),
+                status=str(job.status),
+                message=str(job.message) if job.message else None,
+                parameters=job.parameters_json,
+                created_at=job.created_at,
+                updated_at=job.updated_at,
+                started_at=job.started_at,
+                completed_at=job.completed_at
             )
         )
     

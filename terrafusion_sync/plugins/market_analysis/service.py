@@ -7,19 +7,13 @@ handling job lifecycle operations, state transitions, and business logic.
 
 import logging
 import uuid
-from datetime import datetime, timedelta
-from typing import Dict, Any, List, Tuple, Optional, Set
-
+from typing import Dict, Any, List, Optional, Tuple, Set
+from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import update, delete, func, desc, text
+from sqlalchemy import update, and_, or_, func, desc
 
 from terrafusion_sync.core_models import MarketAnalysisJob
-from terrafusion_sync.metrics import (
-    MARKET_ANALYSIS_JOBS_FAILED,
-    MARKET_ANALYSIS_JOBS_PENDING,
-    MARKET_ANALYSIS_JOBS_IN_PROGRESS
-)
 
 logger = logging.getLogger(__name__)
 
@@ -42,28 +36,26 @@ async def create_analysis_job(
         Created MarketAnalysisJob instance
     """
     job_id = str(uuid.uuid4())
-    now = datetime.utcnow()
     
-    job = MarketAnalysisJob(
+    # Create new job record
+    new_job = MarketAnalysisJob(
         job_id=job_id,
-        county_id=county_id,
         analysis_type=analysis_type,
+        county_id=county_id,
         status="PENDING",
-        message="Market analysis job created and queued",
+        message="Market analysis job accepted and queued",
         parameters_json=parameters,
-        created_at=now,
-        updated_at=now
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow()
     )
     
-    db.add(job)
+    db.add(new_job)
     await db.commit()
-    await db.refresh(job)
+    await db.refresh(new_job)
     
-    # Update metrics
-    MARKET_ANALYSIS_JOBS_PENDING.inc()
+    logger.info(f"MarketAnalysisJob {job_id}: Created for analysis type '{analysis_type}', county '{county_id}'")
     
-    logger.info(f"Created market analysis job {job_id} for {county_id}, type: {analysis_type}")
-    return job
+    return new_job
 
 async def get_analysis_job(db: AsyncSession, job_id: str) -> Optional[MarketAnalysisJob]:
     """
@@ -103,9 +95,9 @@ async def list_analysis_jobs(
     Returns:
         List of MarketAnalysisJob instances
     """
-    query = select(MarketAnalysisJob).order_by(desc(MarketAnalysisJob.created_at))
+    query = select(MarketAnalysisJob).order_by(MarketAnalysisJob.created_at.desc()).limit(limit).offset(offset)
     
-    # Apply filters
+    # Apply filters if provided
     if county_id:
         query = query.where(MarketAnalysisJob.county_id == county_id)
     if analysis_type:
@@ -113,12 +105,8 @@ async def list_analysis_jobs(
     if status:
         query = query.where(MarketAnalysisJob.status == status)
     
-    # Apply pagination
-    query = query.limit(limit).offset(offset)
-    
-    # Execute query
     result = await db.execute(query)
-    return result.scalars().all()
+    return list(result.scalars().all())
 
 async def update_job_status(
     db: AsyncSession,
@@ -142,68 +130,37 @@ async def update_job_status(
     Returns:
         Updated MarketAnalysisJob instance or None if not found
     """
-    # Get the current job state to track metrics changes
-    current_job = await get_analysis_job(db, job_id)
-    if not current_job:
-        logger.warning(f"Cannot update status for job {job_id}: job not found")
-        return None
-    
     # Prepare update values
-    update_values = {
+    values = {
         "status": status,
-        "updated_at": datetime.utcnow()
+        "updated_at": datetime.utcnow(),
     }
     
-    if message:
-        update_values["message"] = message
-        
-    # Update timestamps based on status transition
-    if status == "RUNNING" and current_job.status != "RUNNING":
-        update_values["started_at"] = datetime.utcnow()
-        
-        # Update metrics for transition to RUNNING
-        MARKET_ANALYSIS_JOBS_PENDING.dec()
-        MARKET_ANALYSIS_JOBS_IN_PROGRESS.inc()
-        
-    if status in ["COMPLETED", "FAILED"] and current_job.status not in ["COMPLETED", "FAILED"]:
-        update_values["completed_at"] = datetime.utcnow()
-        
-        # Update metrics for job completion or failure
-        if current_job.status == "RUNNING":
-            MARKET_ANALYSIS_JOBS_IN_PROGRESS.dec()
-        elif current_job.status == "PENDING":
-            MARKET_ANALYSIS_JOBS_PENDING.dec()
-            
-        # Track failures with reason
-        if status == "FAILED":
-            failure_reason = "unknown"
-            if message:
-                # Extract a short failure reason from message
-                failure_reason = message.split(":")[0] if ":" in message else message
-                failure_reason = failure_reason[:50]  # Truncate if too long
-                
-            MARKET_ANALYSIS_JOBS_FAILED.labels(
-                county_id=current_job.county_id,
-                analysis_type=current_job.analysis_type,
-                failure_reason=failure_reason
-            ).inc()
+    # Add optional fields if provided
+    if message is not None:
+        values["message"] = message
     
-    # Add result data if provided
     if result_summary is not None:
-        update_values["result_summary_json"] = result_summary
+        values["result_summary_json"] = result_summary
     
     if result_data_location is not None:
-        update_values["result_data_location"] = result_data_location
+        values["result_data_location"] = result_data_location
+    
+    # Add timestamps for specific status transitions
+    if status == "RUNNING":
+        values["started_at"] = datetime.utcnow()
+    elif status in ["COMPLETED", "FAILED"]:
+        values["completed_at"] = datetime.utcnow()
     
     # Execute update
     await db.execute(
         update(MarketAnalysisJob)
         .where(MarketAnalysisJob.job_id == job_id)
-        .values(**update_values)
+        .values(**values)
     )
     await db.commit()
     
-    # Return the updated job
+    # Return updated job
     return await get_analysis_job(db, job_id)
 
 async def expire_stale_jobs(
@@ -220,53 +177,37 @@ async def expire_stale_jobs(
     Returns:
         Tuple of (count of expired jobs, set of expired job IDs)
     """
-    # Calculate cutoff time
-    cutoff_time = datetime.utcnow() - timedelta(minutes=timeout_minutes)
+    # Find jobs that have been running for too long
+    timeout_threshold = datetime.utcnow() - datetime.timedelta(minutes=timeout_minutes)
     
-    # Find stale jobs
-    query = select(MarketAnalysisJob).where(
-        (MarketAnalysisJob.status == "RUNNING") &
-        (MarketAnalysisJob.started_at < cutoff_time)
+    query = (
+        select(MarketAnalysisJob)
+        .where(
+            and_(
+                MarketAnalysisJob.status == "RUNNING",
+                MarketAnalysisJob.started_at < timeout_threshold,
+                MarketAnalysisJob.completed_at.is_(None)
+            )
+        )
     )
     
     result = await db.execute(query)
     stale_jobs = result.scalars().all()
-    
-    expired_ids = set()
-    expire_count = 0
+    expired_job_ids = set()
     
     # Update each stale job
     for job in stale_jobs:
         job_id = job.job_id
-        logger.warning(f"Expiring stale market analysis job {job_id} started at {job.started_at}")
-        
-        timeout_message = f"Job timed out after running for {timeout_minutes} minutes"
-        result_summary = {
-            "reason": "timeout",
-            "message": timeout_message,
-            "started_at": job.started_at.isoformat() if job.started_at else None,
-            "expired_at": datetime.utcnow().isoformat()
-        }
-        
         await update_job_status(
             db=db,
             job_id=job_id,
             status="FAILED",
-            message=timeout_message,
-            result_summary=result_summary
+            message=f"Job timed out after {timeout_minutes} minutes"
         )
-        
-        expire_count += 1
-        expired_ids.add(job_id)
-        
-        # Track failure with reason 'timeout'
-        MARKET_ANALYSIS_JOBS_FAILED.labels(
-            county_id=job.county_id,
-            analysis_type=job.analysis_type,
-            failure_reason="timeout"
-        ).inc()
+        expired_job_ids.add(job_id)
+        logger.warning(f"MarketAnalysisJob {job_id}: Expired after {timeout_minutes} minutes")
     
-    return expire_count, expired_ids
+    return len(expired_job_ids), expired_job_ids
 
 async def get_metrics_data(db: AsyncSession) -> Dict[str, Any]:
     """
@@ -278,53 +219,40 @@ async def get_metrics_data(db: AsyncSession) -> Dict[str, Any]:
     Returns:
         Dictionary with metrics data
     """
-    # Get counts by status
-    result = await db.execute(
-        select(
-            MarketAnalysisJob.status,
-            func.count().label("count")
-        ).group_by(MarketAnalysisJob.status)
-    )
-    status_counts = {row[0]: row[1] for row in result.all()}
-    
-    # Get counts by analysis type
-    result = await db.execute(
-        select(
-            MarketAnalysisJob.analysis_type,
-            func.count().label("count")
-        ).group_by(MarketAnalysisJob.analysis_type)
-    )
-    type_counts = {row[0]: row[1] for row in result.all()}
-    
-    # Get counts by county
-    result = await db.execute(
-        select(
-            MarketAnalysisJob.county_id,
-            func.count().label("count")
-        ).group_by(MarketAnalysisJob.county_id)
-    )
-    county_counts = {row[0]: row[1] for row in result.all()}
-    
-    # Calculate average processing time for completed jobs
-    result = await db.execute(
-        select(
-            func.avg(
-                func.extract('epoch', MarketAnalysisJob.completed_at) - 
-                func.extract('epoch', MarketAnalysisJob.started_at)
-            ).label("avg_processing_time")
-        ).where(
-            (MarketAnalysisJob.status == "COMPLETED") &
-            (MarketAnalysisJob.started_at.isnot(None)) &
-            (MarketAnalysisJob.completed_at.isnot(None))
+    # Count jobs by status
+    status_counts = {}
+    for status in ["PENDING", "RUNNING", "COMPLETED", "FAILED"]:
+        result = await db.execute(
+            select(func.count())
+            .where(MarketAnalysisJob.status == status)
         )
+        status_counts[status] = result.scalar() or 0
+    
+    # Count jobs by analysis type
+    analysis_type_counts = {}
+    result = await db.execute(
+        select(MarketAnalysisJob.analysis_type, func.count())
+        .group_by(MarketAnalysisJob.analysis_type)
     )
-    avg_time = result.scalar() or 0
+    
+    for row in result:
+        analysis_type, count = row
+        analysis_type_counts[analysis_type] = count
+    
+    # Count jobs by county
+    county_counts = {}
+    result = await db.execute(
+        select(MarketAnalysisJob.county_id, func.count())
+        .group_by(MarketAnalysisJob.county_id)
+    )
+    
+    for row in result:
+        county_id, count = row
+        county_counts[county_id] = count
     
     return {
         "status_counts": status_counts,
-        "type_counts": type_counts,
+        "analysis_type_counts": analysis_type_counts,
         "county_counts": county_counts,
-        "avg_processing_time_seconds": float(avg_time),
-        "total_jobs": sum(status_counts.values()),
-        "timestamp": datetime.utcnow().isoformat()
+        "total_jobs": sum(status_counts.values())
     }
