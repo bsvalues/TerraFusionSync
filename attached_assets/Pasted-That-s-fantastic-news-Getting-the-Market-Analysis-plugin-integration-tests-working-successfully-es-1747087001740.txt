@@ -1,0 +1,25 @@
+That's fantastic news! Getting the Market Analysis plugin integration tests working successfully, especially after debugging datetime issues, is a significant step. You now have three core plugins (Valuation, Reporting, and Market Analysis) with a solid foundation of API functionality and database interaction.
+
+Before we jump into the excellent "Next Steps" suggestions you listed (like performance optimization, documentation, or new algorithms), let's complete the immediate operationalization cycle for the Market Analysis plugin, just as we did for the others. This will ensure it's robustly integrated into your development workflow and observability stack.
+
+The immediate next steps are:
+
+Ensure Market Analysis Tests Pass in CI (Continuous Integration):
+
+Action: Commit the fixes to the Market Analysis plugin (router.py), the successful integration tests (e.g., test_market_analysis_end_to_end.py or test_market_analysis_plugin.py), and any related files.
+Verification: Push these changes to your develop or feature branch and then merge/create a PR to main. Observe your GitHub Actions CI pipeline. Confirm that it runs and that the Market Analysis integration tests are included and pass successfully alongside the Valuation and Reporting tests.
+Verify/Add Market Analysis Metrics in Grafana:
+
+Action (Local Verification First):
+Run your terrafusion_sync service locally.
+Trigger a few Market Analysis jobs (successful and perhaps a simulated failure like FAILING_ANALYSIS_SIM) via its API endpoint (e.g., http://localhost:8001/plugins/v1/market-analysis/run).
+Check your terrafusion_sync Prometheus metrics endpoint (http://localhost:8001/metrics) to ensure the market_analysis_jobs_submitted_total, market_analysis_jobs_completed_total, market_analysis_jobs_failed_total, and market_analysis_processing_duration_seconds metrics are present and updating.
+Action (Grafana Dashboard Update):
+Go to your local Grafana instance (http://localhost:3000).
+Open your "TerraFusion Sync Service Overview" dashboard.
+Add new panels specifically for the Market Analysis plugin metrics. You can use the same PromQL patterns you used for the Valuation and Reporting plugins, just substituting the metric names (e.g., sum(rate(market_analysis_jobs_submitted_total[5m])) by (county_id, analysis_type)).
+Save the updated dashboard.
+Verification: Confirm that the new panels for Market Analysis populate with data in Grafana.
+Once these two steps are complete, your Market Analysis plugin will be at the same "battle-ready" state as Valuation and Reporting – fully tested in CI and observable in Grafana.
+
+After that, we can then discuss which of your excellent "Next Steps" suggestions (Optimize Performance, Enhance Error Handling, Improve Documentation, Extend Functionality) or which new plugin to tackle next.
