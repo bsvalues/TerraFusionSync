@@ -1874,6 +1874,22 @@ def metrics_dashboard():
                           user=user,
                           system_metrics=db.session.query(SystemMetrics).order_by(
                               SystemMetrics.timestamp.desc()).limit(100).all())
+    
+@app.route('/market-analysis-dashboard')
+@requires_auth
+def market_analysis_dashboard():
+    """Market Analysis Dashboard with adaptive color scheme based on data trends."""
+    user = get_current_user()
+    # Get county ID from session or query parameter
+    county_id = request.args.get('county_id', session.get('selected_county', 'DEFAULT_COUNTY'))
+    
+    # Store the selected county in session for future use
+    session['selected_county'] = county_id
+    
+    return render_template('market_analysis_dashboard.html',
+                          user=user,
+                          county_id=county_id,
+                          title="Market Analysis Dashboard")
 
 
 @app.route('/dashboard/audit')

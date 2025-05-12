@@ -1,0 +1,212 @@
+This document details adding Prometheus metrics instrumentation to the `terrafusion_gateway` Flask application.
+
+#### 1. Update `terrafusion_gateway/requirements.txt`
+
+Ensure `prometheus-client` is listed.
+
+```txt
+# terrafusion_gateway/requirements.txt
+flask
+requests
+python-dotenv
+prometheus-client # Add this line if not already present
+# Flask-Session, Flask-Login, PyJWT for auth later
+# Add other dependencies as needed
+```
+
+#### 2. Modify `terrafusion_gateway/main.py`
+
+We will add metric definitions, a `/gateway-metrics` endpoint, and Flask hooks to record metrics for each request.
+
+```python
+# terrafusion_gateway/main.py
+from flask import Flask, jsonify, request, g # g for storing request start time
+import logging
+import os
+import time # For latency metrics
+from dotenv import load_dotenv
+
+# --- Prometheus Metrics Integration ---
+from prometheus_client import Counter, Histogram, generate_latest, CollectorRegistry, CONTENT_TYPE_LATEST
+
+# Create a dedicated registry for gateway metrics to avoid conflicts if other parts use the default
+GATEWAY_REGISTRY = CollectorRegistry()
+
+HTTP_REQUESTS_TOTAL = Counter(
+    "gateway_http_requests_total", # Metric name
+    "Total count of HTTP requests processed by the Gateway.", # Description
+    ["method", "endpoint", "http_status"], # Labels
+    registry=GATEWAY_REGISTRY
+)
+
+HTTP_REQUEST_DURATION_SECONDS = Histogram(
+    "gateway_http_request_duration_seconds", # Metric name
+    "Histogram of HTTP request latency in seconds for the Gateway.", # Description
+    ["method", "endpoint"], # Labels
+    registry=GATEWAY_REGISTRY,
+    # Define buckets appropriate for expected latencies (in seconds)
+    buckets=[0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0, float('inf')]
+)
+# --- End Prometheus Metrics ---
+
+
+# Load environment variables from .env file if it exists at the project root
+# Assumes this script is run from a context where '../.env' or '.env' is accessible
+# For Docker, environment variables are typically passed in via the Docker run/compose file.
+dotenv_path = os.path.join(os.path.dirname(__file__), '..', '.env') # If main.py is in terrafusion_gateway/
+if os.path.exists(dotenv_path):
+    load_dotenv(dotenv_path=dotenv_path)
+else:
+    load_dotenv() # Load .env from current working directory if not found one level up
+
+# Import blueprints (ensure these paths are correct for your structure)
+# These imports should be relative to the 'terrafusion_gateway' package if main.py is the entry point.
+try:
+    from .routes.valuation_routes import valuation_bp
+    from .routes.reporting_routes import reporting_bp
+    # from .routes.auth_routes import auth_bp # Placeholder for your authentication routes
+    # from .middleware.auth import init_auth # Placeholder for initializing auth mechanisms
+    blueprints_loaded_successfully = True
+except ImportError as e:
+    # This allows the app to start even if blueprints are not yet fully defined,
+    # useful during scaffolding. In production, you'd want these to resolve.
+    print(f"Warning: Could not import all blueprints for Gateway: {e}")
+    print("Ensure routes like valuation_routes.py, reporting_routes.py exist in terrafusion_gateway/routes/")
+    valuation_bp = None
+    reporting_bp = None
+    blueprints_loaded_successfully = False
+    # auth_bp = None
+
+
+def create_app():
+    """
+    Application factory for the Flask Gateway.
+    """
+    app = Flask(__name__)
+
+    # --- Configuration ---
+    # Load secret key from environment variable; essential for sessions and security.
+    # Provide a default for development, but ensure it's overridden in production.
+    app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "a_very_secret_and_random_key_for_dev_gateway")
+    app.config["TERRAFUSION_SYNC_SERVICE_URL"] = os.getenv("TERRAFUSION_SYNC_SERVICE_URL")
+    app.config["GATEWAY_TO_SYNC_SERVICE_TOKEN"] = os.getenv("GATEWAY_TO_SYNC_SERVICE_TOKEN")
+    # Add other configurations as needed, e.g., from a config.py file or more env vars
+    # app.config.from_object('terrafusion_gateway.config.DevelopmentConfig') # Example
+    
+    # --- Logging Setup ---
+    log_level_str = os.getenv("LOG_LEVEL_GATEWAY", os.getenv("LOG_LEVEL", "INFO")).upper()
+    # Ensure log_level_str is a valid level name
+    numeric_level = getattr(logging, log_level_str, logging.INFO)
+    
+    # Configure Flask's built-in logger
+    # Avoid adding handlers if they already exist (e.g., if run via Gunicorn which sets up logging)
+    if not app.logger.handlers:
+        # For direct Flask run, set up a basic handler
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        app.logger.addHandler(handler)
+    
+    app.logger.setLevel(numeric_level)
+    
+    # Quieter Werkzeug logs in debug, or set its level explicitly
+    if app.debug: # or os.getenv("FLASK_DEBUG") == "True":
+        logging.getLogger('werkzeug').setLevel(logging.INFO)
+    
+    app.logger.info(f"TerraFusion Gateway starting up with log level {log_level_str}...")
+    if not app.config["TERRAFUSION_SYNC_SERVICE_URL"]:
+        app.logger.warning("TERRAFUSION_SYNC_SERVICE_URL is not set. Gateway cannot proxy to Sync service.")
+    else:
+        app.logger.info(f"Sync Service URL configured for Gateway: {app.config['TERRAFUSION_SYNC_SERVICE_URL']}")
+
+
+    # --- Prometheus Metrics Hooks ---
+    @app.before_request
+    def before_request_metrics_hook():
+        # Store start time in Flask's 'g' object, which is request-specific
+        g.start_time = time.monotonic()
+        # Note: request.endpoint might be None if the URL doesn't match any route.
+        # We'll handle this in after_request.
+
+    @app.after_request
+    def after_request_metrics_hook(response):
+        # Ensure start_time was set (it might not be for certain errors before 'before_request' runs)
+        if hasattr(g, 'start_time'): 
+            latency = time.monotonic() - g.start_time
+            
+            # Determine the endpoint label:
+            # request.url_rule.rule provides the matched route pattern (e.g., '/api/v1/valuation/run')
+            # request.path is the actual path requested (e.g., '/api/v1/valuation/run' or '/nonexistentpath')
+            # For 404s or unrouted requests, request.url_rule might be None.
+            endpoint_label = "unmatched_route" # Default for unrouted requests
+            if request.url_rule and hasattr(request.url_rule, 'rule'):
+                endpoint_label = request.url_rule.rule
+            elif request.endpoint: # Fallback to endpoint name if rule is not available but endpoint is
+                endpoint_label = request.endpoint
+            elif response.status_code == 404 and request.path: # Specifically for 404s
+                 endpoint_label = "404_not_found" # Or group all 404s under this label
+
+            HTTP_REQUEST_DURATION_SECONDS.labels(
+                method=request.method, 
+                endpoint=endpoint_label
+            ).observe(latency)
+            
+            HTTP_REQUESTS_TOTAL.labels(
+                method=request.method, 
+                endpoint=endpoint_label, 
+                http_status=response.status_code # Use actual response status code
+            ).inc()
+            app.logger.debug(f"Gateway Metrics: {request.method} {endpoint_label} -> {response.status_code} in {latency:.4f}s")
+        return response
+    # --- End Prometheus Metrics Hooks ---
+
+    # --- Prometheus /gateway-metrics endpoint ---
+    @app.route('/gateway-metrics', methods=['GET'])
+    def gateway_metrics_endpoint_route(): # Renamed function to avoid conflict
+        app.logger.debug("Gateway Prometheus metrics endpoint (/gateway-metrics) accessed.")
+        # Use the dedicated GATEWAY_REGISTRY
+        return Response(generate_latest(GATEWAY_REGISTRY), mimetype=CONTENT_TYPE_LATEST)
+    # --- End Prometheus /gateway-metrics endpoint ---
+
+    # Register blueprints
+    if blueprints_loaded_successfully:
+        if valuation_bp:
+            app.register_blueprint(valuation_bp)
+            app.logger.info("Valuation blueprint registered to Gateway.")
+        if reporting_bp:
+            app.register_blueprint(reporting_bp)
+            app.logger.info("Reporting blueprint registered to Gateway.")
+        # if auth_bp:
+        #     app.register_blueprint(auth_bp, url_prefix='/auth') # Example prefix
+        #     app.logger.info("Auth blueprint registered to Gateway.")
+    else:
+        app.logger.warning("Blueprints were not loaded successfully; some routes may be missing.")
+
+
+    @app.route('/gateway-health', methods=['GET'])
+    def health_check_route(): # Renamed function
+        app.logger.info("Gateway health check (/gateway-health) accessed.")
+        return jsonify({"status": "TerraFusion Gateway is healthy and running!"}), 200
+
+    app.logger.info("TerraFusion Gateway application initialization complete.")
+    return app
+
+# This allows running with `flask run` or `python -m flask run`
+# Ensure FLASK_APP is set, e.g., FLASK_APP=terrafusion_gateway.main:create_app
+# The command in docker-compose.yml handles this.
+# If running directly: python terrafusion_gateway/main.py
+if __name__ == '__main__':
+    # This block is for direct execution (python main.py)
+    # For development, `flask run` or gunicorn/uvicorn is preferred.
+    # Ensure .env is loaded if running this way.
+    # load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env')) # If .env is one level up
+    
+    app = create_app()
+    # Get host and port from environment or use defaults
+    host = os.getenv("FLASK_RUN_HOST", "0.0.0.0")
+    port = int(os.getenv("FLASK_RUN_PORT", "5000"))
+    debug_mode = os.getenv("FLASK_DEBUG", "True").lower() in ['true', '1', 't']
+    
+    app.logger.info(f"Starting Flask development server on {host}:{port} with debug={debug_mode}")
+    app.run(host=host, port=port, debug=debug_mode)
+
+```

@@ -1,0 +1,61 @@
+Okay, "let's do it!"
+
+We'll proceed with instrumenting the terrafusion_gateway with its own Prometheus metrics. This will give us observability into the requests hitting the gateway, error rates, and latencies before requests are proxied to the terrafusion_sync service.
+
+I'll provide the updated code, primarily for terrafusion_gateway/main.py and ensuring prometheus-client is in its requirements.txt. This is based on the plan from the immersive document with ID terrafusion_gateway_metrics_v1.
+
+Key Changes and Explanations:
+
+terrafusion_gateway/requirements.txt:
+
+Added prometheus-client.
+terrafusion_gateway/main.py:
+
+Dedicated Registry (GATEWAY_REGISTRY): A new CollectorRegistry is created for gateway-specific metrics. This is good practice to avoid metric name collisions if you were to run multiple instrumented components within the same Python process (less common for separate services like Gateway and Sync, but good hygiene).
+Metric Definitions (HTTP_REQUESTS_TOTAL, HTTP_REQUEST_DURATION_SECONDS):
+Defined using the GATEWAY_REGISTRY.
+Labels include method, endpoint, and http_status for the counter, and method, endpoint for the histogram.
+Custom buckets are provided for the histogram to better suit typical web request latencies.
+before_request_metrics_hook(): Records the start time of each request using g.start_time.
+after_request_metrics_hook():
+Calculates request latency.
+Determines a more robust endpoint_label using request.url_rule.rule (the matched Flask route pattern) or falls back. This provides more consistent labeling than just request.path for dynamic routes. A specific label "404_not_found" or "unmatched_route" is used for unhandled paths.
+Observes latency in the histogram and increments the request counter.
+/gateway-metrics Endpoint:
+Changed the route to /gateway-metrics to clearly distinguish it from the sync service's /metrics endpoint, especially if they were ever scraped by the same Prometheus job (though we'll have separate jobs).
+Uses generate_latest(GATEWAY_REGISTRY) to serve metrics from the dedicated registry.
+Logging: Enhanced logging for startup and metric recording.
+Environment Variable Loading: Added load_dotenv() at the top to ensure .env variables are loaded when the module is imported or the app is created.
+Blueprint Import: Made blueprint imports more resilient to allow the app to start for basic checks even if some routes are not fully defined during scaffolding.
+if __name__ == '__main__': block: Added for direct execution (python terrafusion_gateway/main.py), loading host/port/debug from environment variables.
+Next Steps for You:
+
+Update Files:
+
+Add prometheus-client to terrafusion_gateway/requirements.txt.
+Replace the content of terrafusion_gateway/main.py with the code provided above.
+Install/Update Dependencies for Gateway:
+
+If managing environments separately:
+Bash
+
+# In your gateway's virtual environment or when building its Docker image
+pip install -r terrafusion_gateway/requirements.txt
+Restart terrafusion_gateway Service:
+
+Using Docker Compose (from terrafusion_platform/):
+Bash
+
+docker-compose up --build -d terrafusion_gateway
+# Or restart all: docker-compose up --build -d
+Or if running Flask directly (from terrafusion_platform/):
+Bash
+
+# Ensure FLASK_APP=terrafusion_gateway.main:create_app is set in your .env or shell
+flask run --host=0.0.0.0 --port=5000 --debug 
+Verify Gateway Metrics:
+
+Make a few requests to your Gateway's API endpoints (e.g., /gateway-health, or proxy calls to /api/v1/valuation/run).
+Access the new metrics endpoint on your Gateway: http://localhost:5000/gateway-metrics.
+You should see output like gateway_http_requests_total and gateway_http_request_duration_seconds with appropriate labels.
+Once this is verified, both your core backend services will be instrumented! The next step after that will be to update your prometheus.yml to scrape this new /gateway-metrics endpoint and then add these gateway metrics to your Grafana dashboard.
