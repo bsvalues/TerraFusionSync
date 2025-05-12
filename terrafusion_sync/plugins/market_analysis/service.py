@@ -20,7 +20,8 @@ from terrafusion_sync.plugins.market_analysis.models import MarketAnalysisJob
 from terrafusion_sync.plugins.market_analysis.metrics import (
     update_running_jobs,
     record_job_completion,
-    record_job_failure
+    record_job_failure,
+    record_job_creation
 )
 
 # Configure logger

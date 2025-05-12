@@ -16,6 +16,7 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from terrafusion_sync.plugins.market_analysis import plugin_router as market_analysis_router
 # Configure logging
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
 logger = logging.getLogger(__name__)
@@ -69,6 +70,10 @@ app.add_middleware(
 if plugins_router:
     app.include_router(plugins_router)
     logger.info("Registered plugins router with FastAPI application")
+
+# Include market analysis plugin router
+app.include_router(market_analysis_router, tags=["Market Analysis"])
+logger.info("Registered market analysis plugin router with FastAPI application")
 
 # Startup event to initialize database
 @app.on_event("startup")
