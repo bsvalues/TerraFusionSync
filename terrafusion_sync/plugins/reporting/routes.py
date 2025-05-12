@@ -7,6 +7,7 @@ status updates, and result retrieval.
 
 import logging
 import asyncio
+from datetime import datetime
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -141,13 +142,14 @@ async def get_report_details(
         500: {"model": ErrorResponse}
     },
     summary="List report jobs",
-    description="Retrieve a list of report jobs with optional filtering by county, type, and status."
+    description="Retrieve a list of report jobs with optional filtering by county, type, status, and creation date."
 )
 @track_api_request(endpoint="list_reports")
 async def list_reports(
     county_id: Optional[str] = Query(None, description="Filter by county ID"),
     report_type: Optional[str] = Query(None, description="Filter by report type"),
     status: Optional[str] = Query(None, description="Filter by status"),
+    created_after: Optional[datetime] = Query(None, description="Filter jobs created after this datetime (ISO format)"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of results"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
     db: AsyncSession = Depends(get_db),
@@ -160,6 +162,7 @@ async def list_reports(
             county_id=county_id,
             report_type=report_type,
             status=status,
+            created_after=created_after,
             limit=limit,
             offset=offset
         )

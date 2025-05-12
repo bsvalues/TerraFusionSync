@@ -106,6 +106,7 @@ async def list_report_jobs(
     county_id: Optional[str] = None,
     report_type: Optional[str] = None,
     status: Optional[str] = None,
+    created_after: Optional[datetime] = None,
     limit: int = 100,
     offset: int = 0
 ) -> List[ReportJob]:
@@ -117,6 +118,7 @@ async def list_report_jobs(
         county_id: Optional county ID to filter by
         report_type: Optional report type to filter by
         status: Optional status to filter by
+        created_after: Optional datetime to filter jobs created after this time
         limit: Maximum number of results to return
         offset: Offset for pagination
     
@@ -134,6 +136,8 @@ async def list_report_jobs(
             query = query.where(ReportJob.report_type == report_type)
         if status:
             query = query.where(ReportJob.status == status)
+        if created_after:
+            query = query.where(ReportJob.created_at >= created_after)
         
         # Add ordering and pagination
         query = query.order_by(ReportJob.created_at.desc()).limit(limit).offset(offset)
