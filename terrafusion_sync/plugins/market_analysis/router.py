@@ -55,6 +55,7 @@ async def _process_market_analysis_job(
     start_process_time = time.monotonic()
     job_final_status = "UNKNOWN"
 
+    # Get a session using the context manager
     async with db_session_factory() as db:
         try:
             logger.info(f"MarketAnalysisJob {job_id}: Starting background processing for '{analysis_type}', county '{county_id}'")
@@ -264,15 +265,9 @@ async def _run_market_analysis_impl(
         # Increment pending jobs counter
         MARKET_ANALYSIS_JOBS_PENDING.inc()
         
-        # Add background task to process the job
-        from sqlalchemy.ext.asyncio import AsyncSession
-        from sqlalchemy.ext.asyncio import create_async_engine
-        from sqlalchemy.orm import sessionmaker
-        
-        engine = db.get_bind()
-        async_session_factory = sessionmaker(
-            engine, class_=AsyncSession, expire_on_commit=False
-        )
+        # Add background task to process the job using the provided get_db_session function
+        # which already handles the AsyncSession creation properly
+        from terrafusion_sync.database import get_db_session
         
         background_tasks.add_task(
             _process_market_analysis_job,
@@ -280,7 +275,7 @@ async def _run_market_analysis_impl(
             request.analysis_type,
             request.county_id,
             request.parameters,
-            async_session_factory
+            get_db_session
         )
         
         return MarketAnalysisJobStatusResponse(
