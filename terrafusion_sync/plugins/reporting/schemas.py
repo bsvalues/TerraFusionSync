@@ -173,18 +173,18 @@ class ReportJobResponse(ReportJobBase):
         """
         # Convert model to dict with the right field names
         data = {
-            "report_id": obj.job_id,  # Map from job_id to report_id for API compatibility
+            "report_id": obj.report_id,  # Use report_id directly now that fields match
             "report_type": obj.report_type,
             "county_id": obj.county_id,
             "status": obj.status,
             "message": obj.message,
-            "parameters": obj.parameters,  # Parameters field from model
+            "parameters": obj.parameters_json,  # Use parameters_json as renamed in model
             "created_at": obj.created_at,
             "updated_at": obj.updated_at,
-            "started_at": obj.processing_started_at,  # Map from processing_started_at to started_at
-            "completed_at": obj.processing_completed_at,  # Map from processing_completed_at to completed_at
-            "result_location": obj.result_url,  # Map from result_url to result_location
-            "result_metadata": obj.parameters  # Use parameters for result_metadata if available
+            "started_at": obj.started_at,  # Direct field reference
+            "completed_at": obj.completed_at,  # Direct field reference
+            "result_location": obj.result_location,  # Direct field reference
+            "result_metadata": obj.result_metadata_json  # Use result_metadata_json as renamed in model
         }
         
         # Use parent class model_validate with our mapped data
