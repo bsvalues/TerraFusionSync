@@ -52,8 +52,7 @@ async def create_report_job(
         report_type=report_type,
         county_id=county_id,
         status="PENDING",
-        parameters=parameters,
-        report_name=f"{report_type} Report for {county_id}",
+        parameters_json=parameters,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
     )
@@ -239,12 +238,10 @@ async def update_report_job_status(
                     logger.error(f"Failed to record processing duration: {duration_error}")
             
         if result_location:
-            values["result_url"] = result_location
+            values["result_location"] = result_location
             
-        if result_metadata and "file_size_kb" in result_metadata:
-            # Convert KB to bytes for storage
-            file_size_bytes = result_metadata.get("file_size_kb", 0) * 1024
-            values["result_size"] = int(file_size_bytes)
+        if result_metadata:
+            values["result_metadata_json"] = result_metadata
         
         # Execute update with report_id field
         stmt = (
