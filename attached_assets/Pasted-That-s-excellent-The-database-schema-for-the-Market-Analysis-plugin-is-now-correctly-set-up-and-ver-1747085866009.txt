@@ -1,0 +1,29 @@
+That's excellent! The database schema for the Market Analysis plugin is now correctly set up and verified, thanks to your work with Alembic. This is a critical step.
+
+With the market_analysis_jobs table in place, the next logical step is to:
+
+Run and Finalize the Market Analysis Plugin Integration Tests Locally.
+You've already done some work on the test scripts (test_market_analysis_plugin.py or the scaffold tests/integration/test_market_analysis_end_to_end.py). Now is the time to ensure these tests run against the actual market_analysis_jobs table and verify the full asynchronous workflow:
+* POSTing to /plugins/v1/market-analysis/run.
+* Polling /plugins/v1/market-analysis/status/{job_id}.
+* GETting /plugins/v1/market-analysis/results/{job_id}.
+* Covering both successful job completion and simulated failures.
+
+Action for you (or the Replit AI Agent):
+
+Locate your primary integration test file for the Market Analysis plugin (e.g., tests/integration/test_market_analysis_end_to_end.py as scaffolded in terrafusion_market_analysis_plugin_scaffold_v1).
+Ensure your test environment is set up:
+.env file in terrafusion_platform/ has TEST_TERRAFUSION_OPERATIONAL_DB_URL pointing to your active test PostgreSQL database.
+Your test PostgreSQL database server is running (the pg_engine fixture in conftest.py will use Alembic to ensure the market_analysis_jobs table is present).
+All test dependencies are installed.
+From your terrafusion_platform/ root directory, execute the integration tests for the Market Analysis plugin:
+Bash
+
+pytest tests/integration/test_market_analysis_end_to_end.py -v -s
+(Adjust the filename if yours is different, e.g., test_market_analysis_plugin.py).
+Review the test output. Debug any failures in the test logic or the plugin code (terrafusion_sync/plugins/market_analysis/router.py) until all tests pass. The agent previously noted some async test issues it was working through; this is the time to ensure those are resolved.
+Once these integration tests are passing locally, the subsequent steps will be:
+
+Ensuring these tests are included and pass in your CI pipeline.
+Adding panels to your Grafana dashboard for the Market Analysis plugin's metrics.
+Let me know how the local run of the Market Analysis integration tests goes!
