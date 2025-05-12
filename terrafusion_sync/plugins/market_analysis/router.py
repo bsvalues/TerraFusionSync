@@ -224,10 +224,8 @@ async def get_market_analysis_results(job_id: str, db: AsyncSession = Depends(ge
 
 async def _get_market_analysis_results_impl(job_id: str, db: AsyncSession) -> MarketAnalysisJobResultResponse:
     """Implementation of job results retrieval logic."""
-    result = await db.execute(
-        select(MarketAnalysisJob).where(MarketAnalysisJob.job_id == job_id)
-    )
-    job = result.scalars().first()
+    # Use service function to get the job
+    job = await get_analysis_job(db, job_id)
     
     if not job:
         raise HTTPException(
@@ -241,60 +239,47 @@ async def _get_market_analysis_results_impl(job_id: str, db: AsyncSession) -> Ma
             detail=f"Market analysis job is not completed (current status: {job.status})"
         )
     
-    # Convert SQLAlchemy model directly to response model
-    job_id = str(job.job_id) if job.job_id else None
-    analysis_type = str(job.analysis_type) if job.analysis_type else None
-    county_id = str(job.county_id) if job.county_id else None
-    job_status = str(job.status) if job.status else None
-    message = str(job.message) if job.message else None
-    parameters = job.parameters_json if hasattr(job, 'parameters_json') and job.parameters_json is not None else None
-    created_at = job.created_at
-    updated_at = job.updated_at
-    started_at = job.started_at if hasattr(job, 'started_at') else None
-    completed_at = job.completed_at if hasattr(job, 'completed_at') else None
+    # Create base job status response
+    job_status_response = MarketAnalysisJobStatusResponse(
+        job_id=str(job.job_id),
+        analysis_type=str(job.analysis_type),
+        county_id=str(job.county_id),
+        status=str(job.status),
+        message=str(job.message) if job.message else None,
+        parameters=job.parameters_json,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+        started_at=job.started_at,
+        completed_at=job.completed_at
+    )
 
-    # Prepare trend data if available
+    # Prepare result data
     trends = None
     result_summary = None
     result_data_location = None
     
-    # In a production environment, this would load data from result_data_location
-    if hasattr(job, 'analysis_type') and job.analysis_type and hasattr(job, 'result_summary_json') and job.result_summary_json:
-        analysis_type_str = str(job.analysis_type).lower()
+    # Extract result data from job
+    if job.result_summary_json and isinstance(job.result_summary_json, dict):
+        result_summary = job.result_summary_json
         
-        # Get result summary if available
-        if hasattr(job, 'result_summary_json') and job.result_summary_json and isinstance(job.result_summary_json, dict):
-            result_summary = job.result_summary_json
-            
-        # Get result location if available
-        if hasattr(job, 'result_data_location') and job.result_data_location:
-            result_data_location = str(job.result_data_location)
-            
-        # Get trend data if available
-        if analysis_type_str == "price_trend_by_zip" and hasattr(job, 'result_summary_json') and job.result_summary_json:
-            stored_trends = job.result_summary_json.get('trends')
-            if stored_trends and isinstance(stored_trends, list):
-                trends = stored_trends
+        # Extract trends if available
+        if 'trends' in result_summary and isinstance(result_summary['trends'], list):
+            trends = result_summary.pop('trends')
+    
+    # Get result location if available
+    if job.result_data_location:
+        result_data_location = str(job.result_data_location)
     
     # Create the result data model
     result_data = MarketAnalysisResultData(
         result_summary=result_summary,
-        trends=trends,
-        result_data_location=result_data_location
+        result_data_location=result_data_location,
+        trends=trends
     )
     
-    # Create the response model with properly converted values
+    # Return the full response with job status and results
     return MarketAnalysisJobResultResponse(
-        job_id=job_id,
-        analysis_type=analysis_type,
-        county_id=county_id,
-        status=job_status,
-        message=message,
-        parameters=parameters,
-        created_at=created_at,
-        updated_at=updated_at,
-        started_at=started_at,
-        completed_at=completed_at,
+        **job_status_response.model_dump(),  # Use all fields from status response
         result=result_data
     )
 
@@ -330,18 +315,14 @@ async def _list_market_analysis_jobs_impl(
     limit: int
 ) -> List[MarketAnalysisJobStatusResponse]:
     """Implementation of job listing logic."""
-    query = select(MarketAnalysisJob).order_by(MarketAnalysisJob.created_at.desc()).limit(limit)
-    
-    # Apply filters if provided
-    if county_id:
-        query = query.where(MarketAnalysisJob.county_id == county_id)
-    if analysis_type:
-        query = query.where(MarketAnalysisJob.analysis_type == analysis_type)
-    if status:
-        query = query.where(MarketAnalysisJob.status == status)
-    
-    result = await db.execute(query)
-    jobs = result.scalars().all()
+    # Use service function to list jobs with filters
+    jobs = await list_analysis_jobs(
+        db=db,
+        county_id=county_id,
+        analysis_type=analysis_type,
+        status=status,
+        limit=limit
+    )
     
     # Convert each job to response model with proper type handling
     job_responses = []
