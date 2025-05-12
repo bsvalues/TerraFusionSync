@@ -15,6 +15,7 @@ import uuid
 import asyncio
 import time
 import datetime
+from datetime import datetime as dt
 
 # Database connector
 from terrafusion_sync.database import get_db_session
@@ -68,7 +69,7 @@ async def _process_market_analysis_job(
                 # Update job to failed status
                 job.status = "FAILED"
                 job.message = "Simulated market analysis failure for testing purposes"
-                job.completed_at = datetime.now()
+                job.completed_at = dt.utcnow()
                 await db.commit()
                 
         return
@@ -85,8 +86,8 @@ async def _process_market_analysis_job(
                 .where(MarketAnalysisJob.job_id == job_id)
                 .values(
                     status="RUNNING",
-                    started_at=datetime.datetime.utcnow(),
-                    updated_at=datetime.datetime.utcnow(),
+                    started_at=dt.utcnow(),
+                    updated_at=dt.utcnow(),
                     message="Analysis in progress"
                 )
             )
@@ -146,8 +147,8 @@ async def _process_market_analysis_job(
                 .where(MarketAnalysisJob.job_id == job_id)
                 .values(
                     status="COMPLETED",
-                    completed_at=datetime.datetime.utcnow(),
-                    updated_at=datetime.datetime.utcnow(),
+                    completed_at=dt.utcnow(),
+                    updated_at=dt.utcnow(),
                     message="Analysis completed successfully",
                     result_summary_json=result_summary,
                     result_data_location=result_data_location
@@ -176,8 +177,8 @@ async def _process_market_analysis_job(
                     .where(MarketAnalysisJob.job_id == job_id)
                     .values(
                         status="FAILED",
-                        completed_at=datetime.datetime.utcnow(),
-                        updated_at=datetime.datetime.utcnow(),
+                        completed_at=dt.utcnow(),
+                        updated_at=dt.utcnow(),
                         message=error_message
                     )
                 )
@@ -220,7 +221,7 @@ def _convert_model_to_schema_dict(model):
         # Ensure value is a Python native type
         if value is not None:
             # Handle specific type conversions if needed
-            if isinstance(value, datetime.datetime):
+            if isinstance(value, dt):
                 # Datetime objects are already compatible
                 result[name] = value
             elif hasattr(value, '_sa_instance_state'):
@@ -276,8 +277,8 @@ async def _run_market_analysis_impl(
             status="PENDING",
             message="Market analysis job accepted and queued",
             parameters_json=request.parameters,
-            created_at=datetime.datetime.utcnow(),
-            updated_at=datetime.datetime.utcnow()
+            created_at=dt.utcnow(),
+            updated_at=dt.utcnow()
         )
         
         db.add(new_job)
