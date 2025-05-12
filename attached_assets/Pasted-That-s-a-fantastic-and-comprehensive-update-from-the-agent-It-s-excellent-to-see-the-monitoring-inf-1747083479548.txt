@@ -1,0 +1,40 @@
+That's a fantastic and comprehensive update from the agent! It's excellent to see the monitoring infrastructure (Prometheus, Grafana, dashboards, helper scripts, documentation) for both the Gateway and SyncService come together so well. This level of observability is crucial.
+
+The agent's progress report is very clear:
+
+Gateway monitoring dashboard is complete and detailed.
+MONITORING.md is updated.
+start_monitoring.sh script is ready.
+Metrics endpoints and Prometheus scraping for both services are verified.
+Given this, and that the Market Analysis plugin was previously scaffolded (including its model, initial plugin code, metrics definitions, and test stubs as per terrafusion_market_analysis_plugin_scaffold_v1), the next logical step is to fully integrate and test the Market Analysis plugin.
+
+This involves:
+
+Ensuring the Alembic Migration for market_analysis_jobs is Applied:
+
+If not already done after defining the MarketAnalysisJob model, generate and apply the Alembic migration to create the market_analysis_jobs table in your database.
+From terrafusion_platform/terrafusion_sync/:
+Bash
+
+alembic revision -m "add_market_analysis_jobs_table" --autogenerate
+# Review the script
+alembic upgrade head
+Running and Finalizing Market Analysis Plugin Integration Tests:
+
+The agent mentioned fixing background task session handling for this plugin. Now, the integration tests (scaffolded in tests/integration/test_market_analysis_end_to_end.py) need to be run thoroughly.
+From terrafusion_platform/:
+Bash
+
+pytest tests/integration/test_market_analysis_end_to_end.py -v -s
+Ensure these tests pass, covering the /run, /status, and /results workflow, including success and simulated failure cases.
+Verifying Market Analysis Metrics in Grafana:
+
+After running some test market analysis jobs (either manually via API calls or through the integration tests), check your Grafana dashboard.
+Add new panels specifically for the Market Analysis plugin metrics (e.g., market_analysis_jobs_submitted_total, market_analysis_processing_duration_seconds, etc.) similar to how you did for Valuation and Reporting.
+Confirm these panels populate correctly.
+Ensuring Market Analysis Tests are in CI:
+
+Confirm that your GitHub Actions CI workflow (.github/workflows/ci.yml) will pick up and run test_market_analysis_end_to_end.py (it should if it's in the tests/integration/ directory and your CI pytest command targets this directory).
+Completing these steps will bring the Market Analysis plugin to the same "battle-ready" state as your Valuation and Reporting plugins.
+
+How does focusing on these steps to fully integrate and verify the Market Analysis plugin sound?

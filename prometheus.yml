@@ -1,20 +1,40 @@
 # prometheus.yml
 global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
+  scrape_interval: 15s # How frequently to scrape targets by default.
+  evaluation_interval: 15s # How frequently to evaluate rules.
+
+# Alertmanager configuration (optional, can be added later)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           # - alertmanager:9093
 
 scrape_configs:
+  # Scrape Prometheus itself
   - job_name: "prometheus"
     static_configs:
       - targets: ["localhost:9090"]
 
-  - job_name: "syncservice_standalone"
+  # Development/standalone environment configuration
+  - job_name: "terrafusion_sync_service"
     metrics_path: /metrics
     static_configs:
-      - targets: ["localhost:8080"]  # Sync service port in Replit
+      - targets: ["localhost:8080"]  # Sync service port in Replit standalone mode
       
-  # Gateway specific metrics
+  # Gateway specific metrics - standalone mode
   - job_name: "terrafusion_gateway_standalone"
-    metrics_path: /gateway-metrics  # Our new gateway metrics endpoint
+    metrics_path: /gateway-metrics
     static_configs:
-      - targets: ["localhost:5000"]  # API Gateway port in Replit
+      - targets: ["localhost:5000"]  # API Gateway port in Replit standalone mode
+
+  # Docker environment configuration (commented out in development, uncomment in production)
+  # - job_name: "terrafusion_sync_service_docker"
+  #   metrics_path: /metrics
+  #   static_configs:
+  #     - targets: ["terrafusion_sync_core:8001"]  # Docker service_name:container_port
+  #
+  # - job_name: "terrafusion_api_gateway_docker"
+  #   metrics_path: /gateway-metrics
+  #   static_configs:
+  #     - targets: ["terrafusion_api_gateway:5000"]  # Docker service_name:container_port

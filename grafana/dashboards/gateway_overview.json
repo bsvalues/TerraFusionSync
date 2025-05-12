@@ -107,7 +107,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "up{job=\"terrafusion_gateway_standalone\"}",
+          "expr": "up{job=~\"terrafusion_gateway_standalone|terrafusion_api_gateway\"}",
           "legendFormat": "Gateway Service",
           "range": true,
           "refId": "A"
