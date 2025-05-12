@@ -1,0 +1,14 @@
+{
+  "name": "terrafusion-frontend",
+  "version": "1.0.0",
+  "description": "TerraFusion Platform Frontend",
+  "scripts": {
+    "build": "node build.js"
+  },
+  "dependencies": {
+    "chart.js": "^4.3.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "framer-motion": "^10.14.0"
+  }
+}
