@@ -10,6 +10,7 @@ import logging
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.exc import SQLAlchemyError
 from contextlib import asynccontextmanager
+from urllib.parse import urlparse, parse_qs, urlunparse, urlencode
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -189,6 +190,59 @@ async def initialize_db():
     except Exception as e:
         logger.error(f"Error initializing database: {e}", exc_info=True)
         raise
+
+
+def get_database_url(use_async=True):
+    """
+    Get the database URL with the appropriate driver based on the use_async flag.
+    
+    This function is used by both the application and Alembic migrations.
+    
+    Args:
+        use_async (bool): Whether to use an async database driver
+        
+    Returns:
+        str: Database URL with appropriate driver
+    """
+    db_url = os.getenv("DATABASE_URL")
+    
+    if not db_url:
+        if use_async:
+            return "sqlite+aiosqlite:///terrafusion.db"
+        else:
+            return "sqlite:///terrafusion.db"
+    
+    # Handle PostgreSQL URLs
+    if db_url.startswith('postgresql://'):
+        if use_async:
+            # Use asyncpg for async connections
+            modified_url = db_url.replace('postgresql://', 'postgresql+asyncpg://', 1)
+        else:
+            # Use psycopg2 for sync connections (used by Alembic)
+            modified_url = db_url  # Already in the right format for sync connections
+    elif db_url.startswith('postgresql+asyncpg://') and not use_async:
+        # Convert asyncpg URL to standard PostgreSQL URL for sync operations
+        modified_url = db_url.replace('postgresql+asyncpg://', 'postgresql://', 1)
+    else:
+        # No modification needed
+        modified_url = db_url
+        
+    # Remove SSL parameters if using asyncpg (for both async and sync connections)
+    if 'postgresql' in modified_url:
+        parsed_url = urlparse(modified_url)
+        query_params = parse_qs(parsed_url.query)
+        
+        # Remove SSL-related parameters that might cause issues
+        for param in ['sslmode', 'sslrootcert', 'sslcert', 'sslkey']:
+            if param in query_params:
+                del query_params[param]
+        
+        # Rebuild the URL
+        new_query = urlencode(query_params, doseq=True)
+        parsed_url = parsed_url._replace(query=new_query)
+        modified_url = urlunparse(parsed_url)
+    
+    return modified_url
 
 
 async def get_db_status():
