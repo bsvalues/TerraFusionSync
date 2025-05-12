@@ -18,7 +18,7 @@ from urllib.parse import urljoin
 from functools import wraps
 
 from flask import Flask, jsonify, request, render_template, redirect, url_for, Response, session, flash, g
-from prometheus_client import Counter, Histogram, generate_latest, CollectorRegistry, CONTENT_TYPE_LATEST
+from prometheus_client import Counter, Histogram, generate_latest, CollectorRegistry, CONTENT_TYPE_LATEST, REGISTRY
 
 # Configure logging first to avoid "logger not defined" errors
 logging.basicConfig(level=logging.DEBUG)
@@ -2158,6 +2158,57 @@ def liveness_check():
         "service": "TerraFusion API Gateway",
         "timestamp": datetime.utcnow().isoformat()
     })
+
+# Request hooks for Prometheus metrics collection
+@app.before_request
+def before_request_metrics_hook():
+    """Store start time in Flask's 'g' object for metrics calculation."""
+    g.start_time = time.monotonic()
+
+@app.after_request
+def after_request_metrics_hook(response):
+    """Record request metrics after each request."""
+    # Ensure start_time was set
+    if hasattr(g, 'start_time'):
+        latency = time.monotonic() - g.start_time
+        
+        # Determine the endpoint label
+        endpoint_label = "unmatched_route"  # Default for unrouted requests
+        if request.url_rule and hasattr(request.url_rule, 'rule'):
+            endpoint_label = request.url_rule.rule
+        elif request.endpoint:  # Fallback to endpoint name
+            endpoint_label = request.endpoint
+        elif response.status_code == 404 and request.path:  # For 404s
+            endpoint_label = "404_not_found"
+
+        # Record request duration
+        HTTP_REQUEST_DURATION_SECONDS.labels(
+            method=request.method,
+            endpoint=endpoint_label
+        ).observe(latency)
+        
+        # Record request count
+        HTTP_REQUESTS_TOTAL.labels(
+            method=request.method,
+            endpoint=endpoint_label,
+            http_status=response.status_code
+        ).inc()
+        
+        # Log metrics for debugging
+        logger.debug(f"Gateway Metrics: {request.method} {endpoint_label} -> {response.status_code} in {latency:.4f}s")
+    
+    return response
+
+# Gateway metrics endpoint
+@app.route('/gateway-metrics')
+def gateway_metrics():
+    """
+    Gateway-specific Prometheus metrics endpoint.
+    
+    This endpoint exposes metrics specifically for the API Gateway component
+    in Prometheus format.
+    """
+    return Response(generate_latest(GATEWAY_REGISTRY), mimetype=CONTENT_TYPE_LATEST)
 
 @app.route('/metrics')
 def get_metrics():
