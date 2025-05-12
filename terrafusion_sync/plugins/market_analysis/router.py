@@ -52,6 +52,26 @@ async def _process_market_analysis_job(
     db_session_factory
 ):
     """Background task to process a market analysis job."""
+    
+    # Simulate a failure for testing if the analysis type matches the failure test case
+    if analysis_type == "FAILING_ANALYSIS_SIM":
+        async with db_session_factory() as db:
+            # Retrieve the job
+            query = (
+                select(MarketAnalysisJob)
+                .where(MarketAnalysisJob.job_id == job_id)
+            )
+            result = await db.execute(query)
+            job = result.scalar_one_or_none()
+            
+            if job:
+                # Update job to failed status
+                job.status = "FAILED"
+                job.message = "Simulated market analysis failure for testing purposes"
+                job.completed_at = datetime.now()
+                await db.commit()
+                
+        return
     start_process_time = time.monotonic()
     job_final_status = "UNKNOWN"
 

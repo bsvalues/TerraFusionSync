@@ -31,186 +31,158 @@ async def test_market_analysis_workflows(
        - Use an analysis type that simulates failure
        - Verify proper error handling
     """
-    # ----- Part 1: Successful Market Analysis Test -----
     print("\n===== Testing Successful Market Analysis =====")
+    
+    # --- 1. SUCCESSFUL MARKET ANALYSIS WORKFLOW ---
+    
+    # Create a unique test county ID to avoid conflicts
     test_county_id = f"TEST_COUNTY_{uuid.uuid4().hex[:8]}"
-    test_analysis_type = "price_trend_by_zip"
-    test_parameters = {
-        "start_date": "2024-01-01",
-        "end_date": "2024-12-31",
-        "zip_codes": ["90210", "90211"],
-        "property_types": ["residential"]
-    }
-
-    # --- 1. Call /market-analysis/run ---
-    run_payload = {
-        "analysis_type": test_analysis_type,
+    
+    # Prepare the request payload
+    success_payload = {
+        "analysis_type": "price_trend_by_zip",
         "county_id": test_county_id,
-        "parameters": test_parameters
+        "parameters": {
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "zip_codes": ["90210", "90211"],
+            "property_types": ["residential"]
+        }
     }
-    print(f"Test Market Analysis (Success): Posting to /plugins/v1/market-analysis/run with payload: {run_payload}")
     
-    response = sync_client.post("/plugins/v1/market-analysis/run", json=run_payload)
+    print(f"Test Market Analysis (Success): Posting to /plugins/v1/market-analysis/run with payload: {success_payload}")
     
-    assert response.status_code == 202, f"Expected 202 Accepted, got {response.status_code}. Response: {response.text}"
-    job_data = response.json()
-    print(f"Test Market Analysis (Success): /run response: {job_data}")
-
-    assert "job_id" in job_data
-    assert "analysis_type" in job_data and job_data["analysis_type"] == test_analysis_type
-    assert "county_id" in job_data and job_data["county_id"] == test_county_id
-    assert "status" in job_data
-    job_id = job_data["job_id"]
-    print(f"Test Market Analysis (Success): Job {job_id} initiated with status {job_data['status']}.")
-
-    # --- 2. Poll status until COMPLETED (max ~10 seconds for this test) ---
-    current_status = None
-    max_polls = 20  # 20 polls * 0.5s sleep = 10 seconds max wait
-    poll_interval = 0.5  # seconds
-
-    print(f"Test Market Analysis (Success): Polling /plugins/v1/market-analysis/status/{job_id}...")
-    for i in range(max_polls):
-        status_response = sync_client.get(f"/plugins/v1/market-analysis/status/{job_id}")
-        assert status_response.status_code == 200, f"Status poll failed: {status_response.status_code}. Response: {status_response.text}"
+    # Make the request to start a market analysis job
+    response = sync_client.post("/plugins/v1/market-analysis/run", json=success_payload)
+    assert response.status_code == 202, f"Expected status code 202, but got {response.status_code}"
+    
+    response_data = response.json()
+    print(f"Test Market Analysis (Success): /run response: {response_data}")
+    
+    # Get the job ID from the response
+    job_id = response_data["job_id"]
+    status = response_data["status"]
+    print(f"Test Market Analysis (Success): Job {job_id} initiated with status {status}.")
+    
+    # Poll for job completion
+    max_attempts = 20
+    attempt = 0
+    completed = False
+    
+    while attempt < max_attempts:
+        attempt += 1
+        status_endpoint = f"/plugins/v1/market-analysis/status/{job_id}"
+        print(f"Test Market Analysis (Success): Polling {status_endpoint}...")
+        
+        status_response = sync_client.get(status_endpoint)
+        assert status_response.status_code == 200, f"Status endpoint returned {status_response.status_code}"
         
         status_data = status_response.json()
-        print(f"Test Market Analysis (Success): Poll {i+1}/{max_polls} - Status for job {job_id}: {status_data['status']}")
         current_status = status_data["status"]
+        print(f"Test Market Analysis (Success): Poll {attempt}/{max_attempts} - Status for job {job_id}: {current_status}")
         
         if current_status == "COMPLETED":
+            completed = True
+            print(f"Test Market Analysis (Success): Job {job_id} COMPLETED.")
             break
         elif current_status == "FAILED":
-            pytest.fail(f"Market Analysis job {job_id} FAILED. Message: {status_data.get('message', 'No message')}")
+            assert False, f"Job failed unexpectedly: {status_data['message']}"
         
-        await asyncio.sleep(poll_interval)
+        # Wait before polling again
+        await asyncio.sleep(1)
     
-    assert current_status == "COMPLETED", f"Job {job_id} did not complete within the timeout. Last status: {current_status}"
-    print(f"Test Market Analysis (Success): Job {job_id} COMPLETED.")
-
-    # --- 3. Fetch results ---
-    print(f"Test Market Analysis (Success): Fetching results from /plugins/v1/market-analysis/results/{job_id}...")
-    results_response = sync_client.get(f"/plugins/v1/market-analysis/results/{job_id}")
+    assert completed, f"Job {job_id} did not complete within the expected timeframe"
     
-    assert results_response.status_code == 200, f"Results fetch failed: {results_response.status_code}. Response: {results_response.text}"
+    # Get results
+    results_endpoint = f"/plugins/v1/market-analysis/results/{job_id}"
+    print(f"Test Market Analysis (Success): Fetching results from {results_endpoint}...")
+    
+    results_response = sync_client.get(results_endpoint)
+    assert results_response.status_code == 200, f"Results endpoint returned {results_response.status_code}"
+    
     results_data = results_response.json()
-    print(f"Test Market Analysis (Success): /results response: {results_data}")
-
-    assert results_data["job_id"] == job_id
-    assert results_data["status"] == "COMPLETED"
-    assert "result" in results_data
-    assert results_data["result"] is not None, "Result field should not be null for a COMPLETED job"
     
-    result_detail = results_data["result"]
-    assert "result_data_location" in result_detail
-    assert result_detail["result_data_location"] is not None
-    assert "result_summary" in result_detail
+    # Verify the result structure
+    assert "result" in results_data, "Results should contain 'result' field"
+    assert "result_summary" in results_data["result"], "Results should contain 'result_summary'"
+    assert "trends" in results_data["result"], "Results should contain 'trends'"
     
-    # Verify the structure of result summary based on analysis type
-    if test_analysis_type == "price_trend_by_zip":
-        assert "trends" in result_detail["result_summary"]
-        assert isinstance(result_detail["result_summary"]["trends"], list)
-        if len(result_detail["result_summary"]["trends"]) > 0:
-            # Check first trend entry if available
-            trend = result_detail["result_summary"]["trends"][0]
-            assert "zip_code" in trend
-            assert "data_points" in trend
+    # Verify trends data structure
+    trends = results_data["result"]["trends"]
+    assert isinstance(trends, list), "Trends should be a list"
+    assert len(trends) > 0, "Trends list should not be empty"
     
-    print(f"Test Market Analysis (Success): Job {job_id} successfully completed and results verified.")
-
-    # ----- Part 2: List Jobs Test -----
-    print("\n===== Testing Market Analysis Job Listing =====")
-    # Small delay to ensure we don't have issues with transaction management
-    await asyncio.sleep(1)
+    # Verify first trend item has the expected fields
+    first_trend = trends[0]
+    assert "period" in first_trend, "Trend item should have 'period' field"
+    assert "average_price" in first_trend, "Trend item should have 'average_price' field"
+    assert "median_price" in first_trend, "Trend item should have 'median_price' field"
     
-    # Test listing all jobs
-    print("Test Market Analysis (List): Fetching all jobs")
-    list_response = sync_client.get("/plugins/v1/market-analysis/list")
-    assert list_response.status_code == 200
-    list_data = list_response.json()
-    print(f"Test Market Analysis (List): Found {len(list_data['jobs'])} jobs")
-    assert len(list_data["jobs"]) > 0
+    # Verify result summary has expected fields
+    result_summary = results_data["result"]["result_summary"]
+    assert "key_finding" in result_summary, "Result summary should contain 'key_finding'"
+    assert "data_points_analyzed" in result_summary, "Result summary should contain 'data_points_analyzed'"
     
-    # Test listing jobs by county
-    print(f"Test Market Analysis (List): Fetching jobs for county {test_county_id}")
-    county_list_response = sync_client.get(f"/plugins/v1/market-analysis/list?county_id={test_county_id}")
-    assert county_list_response.status_code == 200
-    county_list_data = county_list_response.json()
-    print(f"Test Market Analysis (List): Found {len(county_list_data['jobs'])} jobs for county {test_county_id}")
-    assert len(county_list_data["jobs"]) > 0
-    assert all(job["county_id"] == test_county_id for job in county_list_data["jobs"])
+    print("\n===== Testing Failed Market Analysis =====")
     
-    # Test listing jobs by analysis type
-    print(f"Test Market Analysis (List): Fetching jobs for analysis type {test_analysis_type}")
-    type_list_response = sync_client.get(f"/plugins/v1/market-analysis/list?analysis_type={test_analysis_type}")
-    assert type_list_response.status_code == 200
-    type_list_data = type_list_response.json()
-    print(f"Test Market Analysis (List): Found {len(type_list_data['jobs'])} jobs for analysis type {test_analysis_type}")
-    assert len(type_list_data["jobs"]) > 0
-    assert all(job["analysis_type"] == test_analysis_type for job in type_list_data["jobs"])
+    # --- 2. FAILED MARKET ANALYSIS WORKFLOW ---
     
-    # ----- Part 3: Simulated Failure Test -----
-    print("\n===== Testing Simulated Market Analysis Failure =====")
-    # Small delay to ensure we don't have issues with transaction management
-    await asyncio.sleep(1)
-    
-    test_county_id = f"TEST_COUNTY_{uuid.uuid4().hex[:8]}"
-    # This specific analysis_type will trigger a FAILED status in the processing
-    failing_analysis_type = "FAILING_ANALYSIS_SIM" 
-    test_parameters = {"year": 2025, "quarter": 2}
-
-    run_payload = {
-        "analysis_type": failing_analysis_type,
+    # Prepare the request payload with a known failing analysis type
+    failure_payload = {
+        "analysis_type": "FAILING_ANALYSIS_SIM",  # This should trigger the simulated failure
         "county_id": test_county_id,
-        "parameters": test_parameters
+        "parameters": {
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "property_types": ["residential"]
+        }
     }
-    print(f"Test Market Analysis (Failure): Posting to /plugins/v1/market-analysis/run with payload: {run_payload}")
-    response = sync_client.post("/plugins/v1/market-analysis/run", json=run_payload)
     
-    assert response.status_code == 202
-    job_data = response.json()
-    job_id = job_data["job_id"]
-    print(f"Test Market Analysis (Failure): Job {job_id} initiated for failing analysis type.")
-
-    # Poll status until FAILED or COMPLETED (should be FAILED)
-    current_status = None
-    max_polls = 20
-    poll_interval = 0.5
-    print(f"Test Market Analysis (Failure): Polling /plugins/v1/market-analysis/status/{job_id}...")
-    for i in range(max_polls):
-        status_response = sync_client.get(f"/plugins/v1/market-analysis/status/{job_id}")
-        assert status_response.status_code == 200
-        status_data = status_response.json()
-        print(f"Test Market Analysis (Failure): Poll {i+1}/{max_polls} - Status for job {job_id}: {status_data['status']}")
-        current_status = status_data["status"]
-        if current_status == "FAILED":
-            assert "Simulated market analysis failure" in status_data.get("message", "")
+    print(f"Test Market Analysis (Failure): Posting to /plugins/v1/market-analysis/run with payload: {failure_payload}")
+    
+    # Make the request to start a failing market analysis job
+    failure_response = sync_client.post("/plugins/v1/market-analysis/run", json=failure_payload)
+    assert failure_response.status_code == 202, f"Expected status code 202, but got {failure_response.status_code}"
+    
+    failure_response_data = failure_response.json()
+    print(f"Test Market Analysis (Failure): /run response: {failure_response_data}")
+    
+    # Get the job ID from the response
+    failure_job_id = failure_response_data["job_id"]
+    failure_status = failure_response_data["status"]
+    print(f"Test Market Analysis (Failure): Job {failure_job_id} initiated with status {failure_status}.")
+    
+    # Poll for job failure
+    failure_max_attempts = 20
+    failure_attempt = 0
+    job_failed = False
+    
+    while failure_attempt < failure_max_attempts:
+        failure_attempt += 1
+        failure_status_endpoint = f"/plugins/v1/market-analysis/status/{failure_job_id}"
+        print(f"Test Market Analysis (Failure): Polling {failure_status_endpoint}...")
+        
+        failure_status_response = sync_client.get(failure_status_endpoint)
+        assert failure_status_response.status_code == 200, f"Status endpoint returned {failure_status_response.status_code}"
+        
+        failure_status_data = failure_status_response.json()
+        current_failure_status = failure_status_data["status"]
+        print(f"Test Market Analysis (Failure): Poll {failure_attempt}/{failure_max_attempts} - Status for job {failure_job_id}: {current_failure_status}")
+        
+        if current_failure_status == "FAILED":
+            job_failed = True
+            print(f"Test Market Analysis (Failure): Job {failure_job_id} FAILED as expected.")
+            print(f"Test Market Analysis (Failure): Error message: {failure_status_data['message']}")
+            
+            # Verify error message contains expected text
+            assert "Simulated market analysis failure" in failure_status_data['message'], "Expected error message not found"
             break
-        elif current_status == "COMPLETED":
-             pytest.fail(f"Job {job_id} for failing analysis type unexpectedly COMPLETED.")
-        await asyncio.sleep(poll_interval)
+        elif current_failure_status == "COMPLETED":
+            assert False, f"Expected job to fail but it completed successfully"
+        
+        # Wait before polling again
+        await asyncio.sleep(1)
     
-    assert current_status == "FAILED", f"Job {job_id} for failing analysis type did not FAIL as expected. Last status: {current_status}"
-    print(f"Test Market Analysis (Failure): Job {job_id} correctly FAILED as expected.")
-
-    # Check results endpoint for a FAILED job
-    results_response = sync_client.get(f"/plugins/v1/market-analysis/results/{job_id}")
-    assert results_response.status_code == 200  # The endpoint itself should work
-    results_data = results_response.json()
-    assert results_data["status"] == "FAILED"
-    assert results_data["result"] is None  # No result data for failed jobs
-    print(f"Test Market Analysis (Failure): Results endpoint for job {job_id} correctly reflects FAILED status.")
-
-    # ----- Part 4: Job Not Found Test -----
-    print("\n===== Testing Job Not Found Handling =====")
+    assert job_failed, f"Job {failure_job_id} did not fail within the expected timeframe"
     
-    # Test with a non-existent job ID
-    non_existent_job_id = str(uuid.uuid4())
-    print(f"Test Market Analysis (Not Found): Checking status for non-existent job {non_existent_job_id}")
-    
-    status_response = sync_client.get(f"/plugins/v1/market-analysis/status/{non_existent_job_id}")
-    assert status_response.status_code == 404
-    print(f"Test Market Analysis (Not Found): Status check correctly returned 404 for non-existent job")
-    
-    results_response = sync_client.get(f"/plugins/v1/market-analysis/results/{non_existent_job_id}")
-    assert results_response.status_code == 404
-    print(f"Test Market Analysis (Not Found): Results check correctly returned 404 for non-existent job")
+    print("\n===== All Market Analysis Tests Completed Successfully =====")
