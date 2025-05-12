@@ -47,6 +47,21 @@ class MarketAnalysisJobStatusResponse(BaseModel):
     updated_at: datetime.datetime = Field(description="When the job was last updated.")
     started_at: Optional[datetime.datetime] = Field(default=None, description="When the job started processing.")
     completed_at: Optional[datetime.datetime] = Field(default=None, description="When the job completed processing.")
+    
+    # Make the model handle None values for required fields during validation
+    @classmethod
+    def model_validate(cls, obj, *args, **kwargs):
+        if obj is None:
+            return None
+        
+        # Ensure job_id, analysis_type, county_id, and status are at least empty strings if None
+        required_fields = ['job_id', 'analysis_type', 'county_id', 'status']
+        if isinstance(obj, dict):
+            for field in required_fields:
+                if field in obj and obj[field] is None:
+                    obj[field] = ""
+        
+        return super().model_validate(obj, *args, **kwargs)
 
     @field_validator('status')
     @classmethod
@@ -93,6 +108,13 @@ class MarketAnalysisResultData(BaseModel):
         description="Location of the detailed result data (e.g., S3 path)."
     )
     
+    # Handle None values for validation
+    @classmethod
+    def model_validate(cls, obj, *args, **kwargs):
+        if obj is None:
+            return None
+        return super().model_validate(obj, *args, **kwargs)
+    
     model_config = {
         "json_schema_extra": {
             "examples": [
@@ -114,3 +136,23 @@ class MarketAnalysisJobResultResponse(MarketAnalysisJobStatusResponse):
         default=None,
         description="The analysis results, if job is completed."
     )
+    
+    # Override model_validate to handle None values
+    @classmethod
+    def model_validate(cls, obj, *args, **kwargs):
+        if obj is None:
+            return None
+            
+        # First let the parent class handle the base fields
+        instance = super().model_validate(obj, *args, **kwargs)
+        
+        # Then handle the result field
+        if hasattr(instance, 'result') and instance.result is None and hasattr(obj, 'result_summary_json'):
+            # If we have result data in the object but it wasn't mapped properly
+            result_data = MarketAnalysisResultData(
+                result_summary=obj.result_summary_json,
+                result_data_location=getattr(obj, 'result_data_location', None)
+            )
+            instance.result = result_data
+            
+        return instance
