@@ -218,6 +218,21 @@ async def run_market_analysis(
     
     This endpoint accepts a market analysis request and queues it for background processing.
     """
+    # Ensure we're using the db session correctly (not as a context manager)
+    if hasattr(db, '__aenter__') and not hasattr(db, 'execute'):
+        # We have a session factory or context manager, not a session
+        async with db as session:
+            return await _run_market_analysis_impl(request, background_tasks, session)
+    else:
+        # We already have a session
+        return await _run_market_analysis_impl(request, background_tasks, db)
+
+async def _run_market_analysis_impl(
+    request: MarketAnalysisRunRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession
+) -> MarketAnalysisJobStatusResponse:
+    """Implementation of job run logic."""
     # Generate a new UUID for the job
     job_id = str(uuid.uuid4())
     
@@ -293,6 +308,17 @@ async def get_market_analysis_status(job_id: str, db: AsyncSession = Depends(get
     """
     Get the status of a market analysis job.
     """
+    # Ensure we're using the db session correctly (not as a context manager)
+    if hasattr(db, '__aenter__') and not hasattr(db, 'execute'):
+        # We have a session factory or context manager, not a session
+        async with db as session:
+            return await _get_market_analysis_status_impl(job_id, session)
+    else:
+        # We already have a session
+        return await _get_market_analysis_status_impl(job_id, db)
+
+async def _get_market_analysis_status_impl(job_id: str, db: AsyncSession) -> MarketAnalysisJobStatusResponse:
+    """Implementation of job status retrieval logic."""
     result = await db.execute(
         select(MarketAnalysisJob).where(MarketAnalysisJob.job_id == job_id)
     )
@@ -334,6 +360,17 @@ async def get_market_analysis_results(job_id: str, db: AsyncSession = Depends(ge
     """
     Get the results of a completed market analysis job.
     """
+    # Ensure we're using the db session correctly (not as a context manager)
+    if hasattr(db, '__aenter__') and not hasattr(db, 'execute'):
+        # We have a session factory or context manager, not a session
+        async with db as session:
+            return await _get_market_analysis_results_impl(job_id, session)
+    else:
+        # We already have a session
+        return await _get_market_analysis_results_impl(job_id, db)
+
+async def _get_market_analysis_results_impl(job_id: str, db: AsyncSession) -> MarketAnalysisJobResultResponse:
+    """Implementation of job results retrieval logic."""
     result = await db.execute(
         select(MarketAnalysisJob).where(MarketAnalysisJob.job_id == job_id)
     )
@@ -419,6 +456,27 @@ async def list_market_analysis_jobs(
     """
     List market analysis jobs with optional filtering.
     """
+    # Ensure we're using the db session correctly (not as a context manager)
+    if hasattr(db, '__aenter__') and not hasattr(db, 'execute'):
+        # We have a session factory or context manager, not a session
+        async with db as session:
+            return await _list_market_analysis_jobs_impl(
+                session, county_id, analysis_type, status, limit
+            )
+    else:
+        # We already have a session
+        return await _list_market_analysis_jobs_impl(
+            db, county_id, analysis_type, status, limit
+        )
+
+async def _list_market_analysis_jobs_impl(
+    db: AsyncSession,
+    county_id: Optional[str],
+    analysis_type: Optional[str],
+    status: Optional[str],
+    limit: int
+) -> List[MarketAnalysisJobStatusResponse]:
+    """Implementation of job listing logic."""
     query = select(MarketAnalysisJob).order_by(MarketAnalysisJob.created_at.desc()).limit(limit)
     
     # Apply filters if provided
