@@ -7,13 +7,12 @@ enabling trend analysis, comparable market area evaluation, and other real estat
 
 from fastapi import APIRouter
 
-from . import router as market_analysis_router
-
 # Create the plugin router
 plugin_name = "market_analysis"
 plugin_router = APIRouter()
 
-# Include the market analysis routes
-plugin_router.include_router(market_analysis_router.router, prefix="")
+# Import and include the market analysis routes
+from . import router
+plugin_router.include_router(router.router, prefix="")
 
 __all__ = ["plugin_name", "plugin_router"]

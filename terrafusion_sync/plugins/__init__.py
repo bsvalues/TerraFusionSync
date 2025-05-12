@@ -22,5 +22,13 @@ try:
 except ImportError as e:
     logger.warning(f"Could not register reporting plugin: {e}")
 
+# Import and register Market Analysis plugin
+try:
+    from .market_analysis import plugin_router as market_analysis_router
+    plugins_router.include_router(market_analysis_router, prefix="/market-analysis", tags=["market-analysis"])
+    logger.info("Registered market analysis plugin")
+except ImportError as e:
+    logger.warning(f"Could not register market analysis plugin: {e}")
+
 # Export the main plugins router
 __all__ = ["plugins_router"]
