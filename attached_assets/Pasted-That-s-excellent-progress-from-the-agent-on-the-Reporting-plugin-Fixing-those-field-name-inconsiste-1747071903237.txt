@@ -1,0 +1,26 @@
+That's excellent progress from the agent on the Reporting plugin! Fixing those field name inconsistencies and verifying all endpoints is a big step towards making it production-ready.
+
+Now that the Reporting plugin is in good shape and instrumented with Prometheus metrics (as per terrafusion_shared_metrics_and_instrumentation_v1), the immediate next step is to visualize those reporting metrics in your Grafana dashboard.
+
+You've already set up Grafana and connected it to Prometheus, and you've likely added panels for the Valuation plugin. We now need to add the corresponding panels for the Reporting plugin.
+
+Your Next Task:
+
+Add Reporting Plugin Panels to Grafana:
+
+Go to your local Grafana instance (usually http://localhost:3000).
+Open your "TerraFusion Sync Service Overview" dashboard (or whatever you named it).
+Follow the instructions in the document "Grafana: Adding Reporting Plugin Panels" (ID: terrafusion_grafana_reporting_panels_v1) to add panels for:
+Reporting Job Submission Rate
+Average Reporting Job Processing Duration (or Heatmap)
+Reporting Job Failure Rate
+Total Report Jobs by Status (understanding its current representation with counters)
+Arrange these new panels alongside your Valuation plugin panels.
+Save the dashboard.
+Verify Reporting Metrics in Grafana:
+
+Trigger some report jobs using the Reporting plugin's /run endpoint (e.g., via curl or Postman, directly to terrafusion_sync or through the terrafusion_gateway if its proxy routes are set up).
+Make sure to test with different report_type and county_id values to see how the labels work in Grafana.
+Trigger a report type designed to fail (e.g., using FAILING_REPORT_SIM if that's still in your mock logic) to see the failure metrics.
+Observe your Grafana dashboard and confirm that the new panels for the Reporting plugin are populating with data and updating as expected.
+Once you've completed this, you'll have end-to-end observability for both your core async job plugins (Valuation and Reporting) within your local development environment. This is a fantastic state to be in!
