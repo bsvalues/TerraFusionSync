@@ -1,0 +1,156 @@
+🧠 **Confirmed. Executing full buildout package for the `market_analysis` plugin module.**
+
+You are now scaling the TerraFusion Platform with your third modular plugin, completing the pattern that will drive every plugin thereafter.
+
+---
+
+# 📄 Product Requirements Document (PRD)
+
+`docs/plugins/market_analysis_prd.md`
+
+```markdown
+# Market Analysis Plugin – PRD
+
+## 📌 Purpose
+Enable county assessors and internal analysts to perform data-driven market comparison, detect equity gaps, and forecast valuation trends. This plugin allows for statistical rollups over comparable parcels—delivered as structured datasets or visual overlays.
+
+## 🎯 Goals
+- Run async “market analysis jobs” against parcel data
+- Expose results via REST endpoint
+- Allow filtering by geography, sale date, property type
+- Emit Prometheus metrics for job flow
+- Plug directly into syncservice + gateway infrastructure
+
+## 👥 Stakeholders
+- Assessor staff
+- GIS analysts
+- TerraFusion AI Agents (optional)
+- External auditors (long term)
+
+## 🧩 Functionality
+- `POST /market-analysis/run`: Launch job (include filters)
+- `GET /market-analysis/status/{id}`: Poll job
+- `GET /market-analysis/results/{id}`: Return clusters, stats
+- `GET /market-analysis/list`: List all jobs by county/date
+
+## 🧪 Success Criteria
+- Job lifecycle (created → completed/failed)
+- Result structure: JSON w/ median, mode, heatmap values
+- Metrics: total jobs, duration histogram, failures
+- Test coverage via pytest
+```
+
+---
+
+# 📁 File/Folder Bootstrap
+
+`terrafusion_sync/plugins/market_analysis/`
+
+```plaintext
+market_analysis/
+├── __init__.py
+├── routes.py          # FastAPI router w/ endpoints
+├── service.py         # Main job lifecycle logic
+├── tasks.py           # Async background runner (processes job queue)
+├── schemas.py         # Pydantic I/O models
+├── models.py          # SQLAlchemy model for job table
+├── metrics.py         # Prometheus Counter + Histogram
+```
+
+---
+
+# 📘 README for Plugin
+
+`terrafusion_sync/plugins/market_analysis/README.md`
+
+````markdown
+# Market Analysis Plugin
+
+A plugin module for the TerraFusion Platform that performs property market comparison analysis.
+
+## Endpoints
+
+- `POST /v1/market-analysis/run`
+- `GET /v1/market-analysis/status/{job_id}`
+- `GET /v1/market-analysis/results/{job_id}`
+- `GET /v1/market-analysis/list`
+
+## Install
+
+```bash
+pip install -r ../../requirements.txt
+````
+
+## Example Usage
+
+```bash
+curl -X POST http://localhost:8080/v1/market-analysis/run \
+  -H "Content-Type: application/json" \
+  -d '{"county_id": "TRV", "property_type": "residential", "start_year": 2018}'
+```
+
+## Test
+
+```bash
+pytest tests/plugins/test_market_analysis.py -v -s -m "integration"
+```
+
+## Metrics Exposed
+
+* `market_analysis_jobs_total`
+* `market_analysis_failures_total`
+* `market_analysis_duration_seconds`
+
+````
+
+---
+
+# 🤖 Replit AI Agent Prompt
+**Paste this into Replit or VS Code Copilot chat:**
+
+```text
+You are building a FastAPI plugin called `market_analysis` for the TerraFusion Platform.
+
+Objective:
+- Implement async job orchestration for property market analysis.
+- Accept input filters (e.g., property_type, sale_date range, geography).
+- Save job to Postgres.
+- Run background job that computes summary statistics.
+- Emit Prometheus metrics.
+- Expose endpoints: /run, /status/{id}, /results/{id}, /list
+
+Files to create:
+- `terrafusion_sync/plugins/market_analysis/routes.py`: FastAPI router
+- `service.py`: job lifecycle (create, update, lookup)
+- `schemas.py`: Pydantic models
+- `tasks.py`: job runner (async def run_analysis_job())
+- `metrics.py`: Prometheus Counter + Histogram
+- `models.py`: SQLAlchemy model for job table
+
+Output:
+- All job lifecycle endpoints should return correct status
+- Add test file: `tests/plugins/test_market_analysis.py`
+- Add metrics to `/metrics` endpoint
+
+Reference patterns from: `plugins/reporting/`, `plugins/valuation/`
+
+Start by creating `routes.py` with stub endpoints and wiring it into main app.
+````
+
+---
+
+# ⚙️ GitHub Actions CI Block
+
+```yaml
+- name: Run Market Analysis Plugin Tests
+  run: |
+    echo "Running Market Analysis integration tests..."
+    pytest tests/plugins/test_market_analysis.py -v -s -m "integration"
+  env:
+    TEST_TERRAFUSION_OPERATIONAL_DB_URL: ${{ secrets.TEST_TERRAFUSION_OPERATIONAL_DB_URL }}
+```
+
+---
+
+You're ready to hand this to an AI agent or dev to execute.
+Would you like the scaffolded Python files (`routes.py`, `schemas.py`, etc.) generated now, or do you want the agent to create them from the prompt?
