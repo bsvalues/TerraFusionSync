@@ -212,10 +212,44 @@ asyncio.run(init_db())
 def restart_syncservice():
     """Restart the SyncService workflow."""
     logger.info("Attempting to restart SyncService workflow")
-    script_path = "restart_syncservice_workflow.py"
     
+    # First, try to use the simplified API launcher
+    script_path = "run_syncservice_workflow_8080.py"
     if os.path.exists(script_path):
-        return_code, stdout, stderr = run_command([sys.executable, script_path])
+        # Kill any running syncservice process
+        run_command("pkill -f 'python.*simplified_market_analysis_api.py'", shell=True)
+        
+        # Start the simplified API in the background
+        return_code, stdout, stderr = run_command(
+            f"{sys.executable} {script_path} &", 
+            shell=True
+        )
+        
+        if return_code == 0:
+            logger.info("Simplified Market Analysis API started successfully")
+            
+            # Wait a bit for the API to start
+            time.sleep(2)
+            
+            # Test if the API is responding
+            return_code, stdout, stderr = run_command(
+                "curl -s http://0.0.0.0:8080/health", 
+                shell=True
+            )
+            
+            if return_code == 0 and "healthy" in stdout:
+                logger.info("Market Analysis API is healthy!")
+                return True
+            else:
+                logger.warning("API health check failed, but process started")
+                return True
+        else:
+            logger.error(f"Failed to start simplified API: {stderr}")
+    
+    # Fall back to regular workflow restart
+    regular_script_path = "restart_syncservice_workflow.py"
+    if os.path.exists(regular_script_path):
+        return_code, stdout, stderr = run_command([sys.executable, regular_script_path])
         if return_code == 0:
             logger.info("SyncService workflow restarted successfully")
             return True
@@ -223,7 +257,7 @@ def restart_syncservice():
             logger.error(f"Failed to restart SyncService workflow: {stderr}")
             return False
     else:
-        logger.warning(f"Restart script not found: {script_path}, trying to kill and restart manually")
+        logger.warning(f"Restart script not found: {regular_script_path}, trying to kill and restart manually")
         
         # Kill any running syncservice process
         run_command("pkill -f run_syncservice_workflow", shell=True)
