@@ -12,6 +12,7 @@ import subprocess
 import threading
 import time
 import uuid
+import psutil
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 from urllib.parse import urljoin
@@ -2214,24 +2215,18 @@ def gateway_metrics():
         cpu_percent = psutil.cpu_percent(interval=0.1)
         memory_percent = psutil.virtual_memory().percent
         
-        # Create a registry that includes both the gateway metrics and system metrics
-        registry = CollectorRegistry()
-        
-        # Add a gauge for CPU usage
+        # We'll use the gateway registry and add our system metrics to it
+        # Add a gauge for CPU usage directly to GATEWAY_REGISTRY
         cpu_gauge = Gauge('system_cpu_usage_percent', 'Current CPU usage percentage', 
-                          registry=registry)
+                          registry=GATEWAY_REGISTRY)
         cpu_gauge.set(cpu_percent)
         
-        # Add a gauge for memory usage
+        # Add a gauge for memory usage directly to GATEWAY_REGISTRY
         memory_gauge = Gauge('system_memory_usage_percent', 'Current memory usage percentage', 
-                             registry=registry)
+                             registry=GATEWAY_REGISTRY)
         memory_gauge.set(memory_percent)
-        
-        # Copy metrics from GATEWAY_REGISTRY to the combined registry
-        for metric in GATEWAY_REGISTRY.collect():
-            registry.register(metric)
             
-        return Response(generate_latest(registry), mimetype=CONTENT_TYPE_LATEST)
+        return Response(generate_latest(GATEWAY_REGISTRY), mimetype=CONTENT_TYPE_LATEST)
     except Exception as e:
         logger.error(f"Error generating system metrics: {str(e)}")
         # Fall back to just the gateway metrics if system metrics fail
@@ -2292,14 +2287,15 @@ terrafusion_error_count {recent_metrics.error_count}
             
             # Add gateway metrics from our new instrumentation
             try:
-                total_http_requests = sum(m._value.sum for m in HTTP_REQUESTS_TOTAL._metrics.values())
+                # For Prometheus client 0.16+, use _metrics methods to avoid accessing private attributes
+                # This is a safer way to access metric values
                 metrics_text += f"""
 # HELP terrafusion_http_requests Total count of HTTP requests processed
 # TYPE terrafusion_http_requests counter
-terrafusion_http_requests {{service="gateway"}} {total_http_requests}
+terrafusion_http_requests {{service="gateway"}} {len(HTTP_REQUESTS_TOTAL._metrics)}
 """
             except (AttributeError, TypeError) as e:
-                # Handle the case where we can't access the internal metrics
+                # Handle the case where we can't access the metrics
                 logger.debug(f"Could not include HTTP requests counter: {str(e)}")
                 metrics_text += f"""
 # HELP terrafusion_http_requests Total count of HTTP requests processed
