@@ -12,6 +12,9 @@ from datetime import datetime, timedelta
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+# Register pytest marks
+pytest.mark.integration = pytest.mark.integration
+
 from terrafusion_sync.app import app
 from terrafusion_sync.database import engine
 from terrafusion_sync.core_models import ReportJob
@@ -67,6 +70,7 @@ async def cleanup_test_reports(db_session):
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_create_report(cleanup_test_reports):
     """Test creating a new report job."""
     # Prepare request data
@@ -96,6 +100,7 @@ async def test_create_report(cleanup_test_reports):
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_get_report_by_id(cleanup_test_reports):
     """Test retrieving a specific report by ID."""
     # First create a report
@@ -115,6 +120,7 @@ async def test_get_report_by_id(cleanup_test_reports):
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_list_reports_with_filters(cleanup_test_reports):
     """Test listing reports with various filters."""
     # First create a test report
@@ -156,6 +162,7 @@ async def test_list_reports_with_filters(cleanup_test_reports):
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_run_report_job(cleanup_test_reports):
     """Test running a report job and checking results."""
     # Prepare request data
@@ -209,6 +216,7 @@ async def test_run_report_job(cleanup_test_reports):
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_expire_stale_reports(db_session, cleanup_test_reports):
     """Test the stale reports expiration functionality."""
     # Create a test report directly in the database

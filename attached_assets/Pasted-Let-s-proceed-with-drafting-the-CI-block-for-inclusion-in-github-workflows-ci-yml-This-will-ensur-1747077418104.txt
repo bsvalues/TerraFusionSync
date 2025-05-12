@@ -1,0 +1,27 @@
+Let's proceed with drafting the CI block for inclusion in .github/workflows/ci.yml.
+
+This will ensure that your Reporting plugin tests are automatically run. I'll provide a snippet that you can integrate into your existing ci.yml file. I'll assume your primary end-to-end test for reporting is, for example, tests/integration/test_reporting_combined.py. If it's named differently or in a different specific path (like tests/plugins/test_reporting.py), you can easily adjust the run command.
+GitHub Actions: CI Block for Reporting Plugin Tests
+May 12, 12:15 PM
+
+Explanation and How to Integrate:
+
+Locate your existing ci.yml: This file is in .github/workflows/ci.yml at the root of your terrafusion-platform repository.
+Find the test job: Inside this job, you'll have a series of steps.
+Placement:
+If you have a general step like - name: Run integration tests run: pytest tests/integration -q, and your reporting tests (e.g., test_reporting_combined.py or test_reporting_end_to_end.py) are inside the tests/integration/ directory and correctly marked (e.g., with @pytest.mark.integration), they might already be covered. Adding a separate step as shown above gives you more explicit control and visibility for the reporting tests.
+If you want it as a distinct step, place the new - name: Run Reporting Plugin Integration Tests block after your unit tests and after any existing integration test steps (or combine them logically).
+Adjust the run command:
+Modify pytest tests/integration/test_reporting_combined.py -v -s -m "integration" to point to the actual path of your main reporting integration test file.
+The -v -s flags are for verbose output and showing print statements, which are useful for debugging CI failures.
+The -m "integration" flag is good practice if you're using pytest markers to distinguish test types.
+Environment Variables (env):
+The snippet inherits TEST_TERRAFUSION_OPERATIONAL_DB_URL from the job-level env block. Ensure this is correctly set up in your CI workflow to point to the PostgreSQL service spun up by GitHub Actions.
+Add any other environment variables that might be specifically required for the reporting tests, though usually, they share the same environment as other integration tests.
+After adding this block:
+
+Commit and push your updated .github/workflows/ci.yml along with your reporting plugin tests and any related code.
+Go to the "Actions" tab in your GitHub repository.
+Observe the workflow run. You should see the new "Run Reporting Plugin Integration Tests" step.
+Verify it passes. If it fails, examine the logs for that step to diagnose the issue. It could be path issues, missing dependencies specific to reporting tests (though unlikely if valuation tests pass), or issues in the test logic itself.
+Once this CI step is green, you've successfully locked in the Reporting plugin with an automated safety net! This is a huge step towards a reliable and scalable platform

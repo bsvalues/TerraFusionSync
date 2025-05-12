@@ -79,6 +79,23 @@ print('Alembic migrations applied successfully')
       run: |
         pytest terrafusion_platform/tests/integration -v
     
+    - name: Run Reporting Plugin Integration Tests
+      run: |
+        echo "Running Reporting Plugin Integration Tests..."
+        # Run the reporting plugin tests with verbose output and showing print statements
+        pytest tests/plugins/test_reporting.py -v -s -m "integration"
+        
+        # Also run the standalone stale reports test
+        python test_stale_reports.py
+        
+        # Verify reporting metrics registration
+        python test_reporting_metrics.py
+      env:
+        # Ensure all necessary environment variables for tests are available
+        TEST_TERRAFUSION_OPERATIONAL_DB_URL: ${{ env.TEST_DATABASE_URL }}
+        DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+        LOG_LEVEL: DEBUG # More verbose logging for CI tests can be helpful
+    
     - name: Generate coverage report
       run: |
         pytest --cov=terrafusion_sync --cov=terrafusion_platform --cov-report=xml terrafusion_platform/tests
