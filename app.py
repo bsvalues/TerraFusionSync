@@ -18,7 +18,7 @@ from urllib.parse import urljoin
 from functools import wraps
 
 from flask import Flask, jsonify, request, render_template, redirect, url_for, Response, session, flash, g
-from prometheus_client import Counter, Histogram, generate_latest, CollectorRegistry, CONTENT_TYPE_LATEST, REGISTRY
+from prometheus_client import Counter, Histogram, Gauge, generate_latest, CollectorRegistry, CONTENT_TYPE_LATEST, REGISTRY
 
 # Configure logging first to avoid "logger not defined" errors
 logging.basicConfig(level=logging.DEBUG)
@@ -2208,7 +2208,34 @@ def gateway_metrics():
     This endpoint exposes metrics specifically for the API Gateway component
     in Prometheus format.
     """
-    return Response(generate_latest(GATEWAY_REGISTRY), mimetype=CONTENT_TYPE_LATEST)
+    # Add system resource metrics if we want to include them
+    try:
+        # Get current CPU and memory usage
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+        memory_percent = psutil.virtual_memory().percent
+        
+        # Create a registry that includes both the gateway metrics and system metrics
+        registry = CollectorRegistry()
+        
+        # Add a gauge for CPU usage
+        cpu_gauge = Gauge('system_cpu_usage_percent', 'Current CPU usage percentage', 
+                          registry=registry)
+        cpu_gauge.set(cpu_percent)
+        
+        # Add a gauge for memory usage
+        memory_gauge = Gauge('system_memory_usage_percent', 'Current memory usage percentage', 
+                             registry=registry)
+        memory_gauge.set(memory_percent)
+        
+        # Copy metrics from GATEWAY_REGISTRY to the combined registry
+        for metric in GATEWAY_REGISTRY.collect():
+            registry.register(metric)
+            
+        return Response(generate_latest(registry), mimetype=CONTENT_TYPE_LATEST)
+    except Exception as e:
+        logger.error(f"Error generating system metrics: {str(e)}")
+        # Fall back to just the gateway metrics if system metrics fail
+        return Response(generate_latest(GATEWAY_REGISTRY), mimetype=CONTENT_TYPE_LATEST)
 
 @app.route('/metrics')
 def get_metrics():
@@ -2227,30 +2254,57 @@ def get_metrics():
             SystemMetrics.timestamp.desc()).limit(1).first()
         
         if recent_metrics:
-            # Format a simple plaintext representation
+            # Format a simple plaintext representation with safe access to attributes
             metrics_text = f"""# HELP terrafusion_system_cpu_usage Current CPU usage percentage
 # TYPE terrafusion_system_cpu_usage gauge
-terrafusion_system_cpu_usage {recent_metrics.cpu_usage}
+terrafusion_system_cpu_usage {recent_metrics.cpu_usage or 0.0}
 
 # HELP terrafusion_system_memory_usage Current memory usage percentage
 # TYPE terrafusion_system_memory_usage gauge
-terrafusion_system_memory_usage {recent_metrics.memory_usage}
+terrafusion_system_memory_usage {recent_metrics.memory_usage or 0.0}
 
 # HELP terrafusion_system_disk_usage Current disk usage percentage
 # TYPE terrafusion_system_disk_usage gauge
-terrafusion_system_disk_usage {recent_metrics.disk_usage}
-
+terrafusion_system_disk_usage {recent_metrics.disk_usage or 0.0}
+"""
+            
+            # Add optional metrics only if they exist in the record
+            if hasattr(recent_metrics, 'active_connections') and recent_metrics.active_connections is not None:
+                metrics_text += f"""
 # HELP terrafusion_active_connections Number of active connections
 # TYPE terrafusion_active_connections gauge
 terrafusion_active_connections {recent_metrics.active_connections}
+"""
 
+            if hasattr(recent_metrics, 'response_time') and recent_metrics.response_time is not None:
+                metrics_text += f"""
 # HELP terrafusion_response_time Average API response time in seconds
 # TYPE terrafusion_response_time gauge
 terrafusion_response_time {recent_metrics.response_time}
+"""
 
+            if hasattr(recent_metrics, 'error_count') and recent_metrics.error_count is not None:
+                metrics_text += f"""
 # HELP terrafusion_error_count Total error count
 # TYPE terrafusion_error_count counter
 terrafusion_error_count {recent_metrics.error_count}
+"""
+            
+            # Add gateway metrics from our new instrumentation
+            try:
+                total_http_requests = sum(m._value.sum for m in HTTP_REQUESTS_TOTAL._metrics.values())
+                metrics_text += f"""
+# HELP terrafusion_http_requests Total count of HTTP requests processed
+# TYPE terrafusion_http_requests counter
+terrafusion_http_requests {{service="gateway"}} {total_http_requests}
+"""
+            except (AttributeError, TypeError) as e:
+                # Handle the case where we can't access the internal metrics
+                logger.debug(f"Could not include HTTP requests counter: {str(e)}")
+                metrics_text += f"""
+# HELP terrafusion_http_requests Total count of HTTP requests processed
+# TYPE terrafusion_http_requests counter
+terrafusion_http_requests {{service="gateway"}} 0
 """
             return Response(metrics_text, content_type="text/plain")
         else:
