@@ -39,9 +39,21 @@ from .service import (
 )
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(prefix="/market-analysis", tags=["Market Analysis"])
 
 print("[✅] market_analysis.router module loaded successfully.")
+
+@router.get("/health", status_code=status.HTTP_200_OK)
+async def health_check():
+    """
+    Health check endpoint for the Market Analysis plugin.
+    """
+    return {
+        "status": "ok",
+        "plugin": "market_analysis",
+        "version": "1.0.0",
+        "timestamp": dt.now().isoformat()
+    }
 
 # --- Utility Functions ---
 
@@ -116,10 +128,13 @@ async def _run_market_analysis_impl(
         )
         
         # Record job submission metric
-        MARKET_ANALYSIS_JOBS_SUBMITTED.labels(
+        core_metrics.MARKET_ANALYSIS_JOBS_SUBMITTED.labels(
             county_id=request.county_id,
             analysis_type=request.analysis_type
         ).inc()
+        
+        # Lazily import tasks module to avoid circular imports
+        from .tasks import run_analysis_job
         
         # Add background task to process the job
         background_tasks.add_task(
