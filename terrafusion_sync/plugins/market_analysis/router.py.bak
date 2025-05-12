@@ -334,7 +334,7 @@ async def _get_market_analysis_status_impl(job_id: str, db: AsyncSession) -> Mar
     job_id = str(job.job_id) if job.job_id else None
     analysis_type = str(job.analysis_type) if job.analysis_type else None
     county_id = str(job.county_id) if job.county_id else None
-    job_status = str(job.status) if job.status else None
+    status = str(job.status) if job.status else None
     message = str(job.message) if job.message else None
     parameters = job.parameters_json if hasattr(job, 'parameters_json') and job.parameters_json is not None else None
     created_at = job.created_at
@@ -346,7 +346,7 @@ async def _get_market_analysis_status_impl(job_id: str, db: AsyncSession) -> Mar
         job_id=job_id,
         analysis_type=analysis_type,
         county_id=county_id,
-        status=job_status,
+        status=status,
         message=message,
         parameters=parameters,
         created_at=created_at,
@@ -392,7 +392,7 @@ async def _get_market_analysis_results_impl(job_id: str, db: AsyncSession) -> Ma
     job_id = str(job.job_id) if job.job_id else None
     analysis_type = str(job.analysis_type) if job.analysis_type else None
     county_id = str(job.county_id) if job.county_id else None
-    job_status = str(job.status) if job.status else None
+    status = str(job.status) if job.status else None
     message = str(job.message) if job.message else None
     parameters = job.parameters_json if hasattr(job, 'parameters_json') and job.parameters_json is not None else None
     created_at = job.created_at
@@ -435,7 +435,7 @@ async def _get_market_analysis_results_impl(job_id: str, db: AsyncSession) -> Ma
         job_id=job_id,
         analysis_type=analysis_type,
         county_id=county_id,
-        status=job_status,
+        status=status,
         message=message,
         parameters=parameters,
         created_at=created_at,
@@ -497,7 +497,7 @@ async def _list_market_analysis_jobs_impl(
         job_id = str(job.job_id) if job.job_id else None
         analysis_type = str(job.analysis_type) if job.analysis_type else None
         county_id = str(job.county_id) if job.county_id else None
-        job_status = str(job.status) if job.status else None
+        status = str(job.status) if job.status else None
         message = str(job.message) if job.message else None
         parameters = job.parameters_json if hasattr(job, 'parameters_json') and job.parameters_json is not None else None
         created_at = job.created_at
@@ -511,7 +511,7 @@ async def _list_market_analysis_jobs_impl(
                 job_id=job_id,
                 analysis_type=analysis_type,
                 county_id=county_id,
-                status=job_status,
+                status=status,
                 message=message,
                 parameters=parameters,
                 created_at=created_at,
