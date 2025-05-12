@@ -38,8 +38,9 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:8080"] # The port where syncservice runs in standalone mode
 
-  # Uncomment and configure if/when terrafusion_api_gateway has a /metrics endpoint
-  # - job_name: "terrafusion_api_gateway"
-  #   metrics_path: /metrics 
-  #   static_configs:
-  #     - targets: ["terrafusion_api_gateway:5000"]
+  # API Gateway metrics endpoint
+  - job_name: "terrafusion_api_gateway"
+    metrics_path: /gateway-metrics  # Path where the gateway exposes its metrics
+    static_configs:
+      # 'terrafusion_api_gateway' is the service name in docker-compose.yml
+      - targets: ["terrafusion_api_gateway:5000"]  # service_name:container_port

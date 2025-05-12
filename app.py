@@ -2215,15 +2215,20 @@ def gateway_metrics():
         cpu_percent = psutil.cpu_percent(interval=0.1)
         memory_percent = psutil.virtual_memory().percent
         
-        # We'll use the gateway registry and add our system metrics to it
-        # Add a gauge for CPU usage directly to GATEWAY_REGISTRY
-        cpu_gauge = Gauge('system_cpu_usage_percent', 'Current CPU usage percentage', 
-                          registry=GATEWAY_REGISTRY)
-        cpu_gauge.set(cpu_percent)
+        # Create temporary gauges to set and get values
+        try:
+            # Try to get existing gauges
+            cpu_gauge = GATEWAY_REGISTRY._names_to_collectors['system_cpu_usage_percent']
+            memory_gauge = GATEWAY_REGISTRY._names_to_collectors['system_memory_usage_percent']
+        except KeyError:
+            # If they don't exist, create them
+            cpu_gauge = Gauge('system_cpu_usage_percent', 'Current CPU usage percentage', 
+                              registry=GATEWAY_REGISTRY)
+            memory_gauge = Gauge('system_memory_usage_percent', 'Current memory usage percentage', 
+                                 registry=GATEWAY_REGISTRY)
         
-        # Add a gauge for memory usage directly to GATEWAY_REGISTRY
-        memory_gauge = Gauge('system_memory_usage_percent', 'Current memory usage percentage', 
-                             registry=GATEWAY_REGISTRY)
+        # Set the current values
+        cpu_gauge.set(cpu_percent)
         memory_gauge.set(memory_percent)
             
         return Response(generate_latest(GATEWAY_REGISTRY), mimetype=CONTENT_TYPE_LATEST)

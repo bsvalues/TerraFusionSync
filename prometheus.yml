@@ -12,3 +12,9 @@ scrape_configs:
     metrics_path: /metrics
     static_configs:
       - targets: ["localhost:8080"]  # Sync service port in Replit
+      
+  # Gateway specific metrics
+  - job_name: "terrafusion_gateway_standalone"
+    metrics_path: /gateway-metrics  # Our new gateway metrics endpoint
+    static_configs:
+      - targets: ["localhost:5000"]  # API Gateway port in Replit

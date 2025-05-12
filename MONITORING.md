@@ -58,6 +58,8 @@ The following metrics are available:
 - `process_cpu_usage`: CPU usage of the SyncService
 - `process_resident_memory_bytes`: Memory usage of the SyncService
 - `up`: Health status of the SyncService (1 = healthy, 0 = down)
+- `system_cpu_usage_percent`: Current CPU usage percentage (Gateway)
+- `system_memory_usage_percent`: Current memory usage percentage (Gateway)
 
 ### Sync Operations
 - `valuation_jobs_submitted_total`: Total number of valuation jobs submitted
@@ -67,9 +69,18 @@ The following metrics are available:
 - `valuation_jobs_running_count`: Current number of running valuation jobs
 - `valuation_jobs_by_status_count`: Count of jobs by status
 
-### API Metrics
-- `http_requests_total`: Total number of HTTP requests
-- `http_request_duration_seconds`: HTTP request duration in seconds
+### API Gateway Metrics
+- `terrafusion_http_requests`: Total count of HTTP requests through the Gateway
+- `gateway_http_requests_total`: Detailed count of HTTP requests by endpoint, method, and status
+- `gateway_http_request_duration_seconds`: Histogram of HTTP request latency in seconds by endpoint and method
+
+### SyncService API Metrics
+- `http_requests_total`: Total number of HTTP requests to the SyncService
+- `http_request_duration_seconds`: HTTP request duration in seconds for the SyncService
+
+### Metric Endpoints
+- `/metrics`: General metrics endpoint (both Gateway and SyncService)
+- `/gateway-metrics`: Gateway-specific metrics with detailed request tracking
 
 ## Adding Custom Metrics
 
@@ -99,6 +110,9 @@ with REQUEST_LATENCY.labels(method='GET', endpoint='/api/data').time():
 
 ## Troubleshooting
 
-- **Prometheus cannot scrape metrics**: Check if the SyncService is running and the `/metrics` endpoint is accessible
+- **Prometheus cannot scrape metrics**: Check if the services are running and the metrics endpoints are accessible
+  - For SyncService: `/metrics` on port 8080
+  - For API Gateway: `/gateway-metrics` on port 5000
 - **Grafana cannot connect to Prometheus**: Check if Prometheus is running and the URL is correct
 - **Metrics not showing in Grafana**: Check if Prometheus is collecting the metrics and the queries in Grafana are correct
+- **Duplicate metrics errors**: Check for duplicate metric registration in the code. For system metrics, ensure metrics are reused instead of recreated on each request
