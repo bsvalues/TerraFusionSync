@@ -10,6 +10,8 @@ import logging
 import uvicorn
 import os
 import signal
+import time
+import traceback
 
 # Configure logging
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
@@ -29,26 +31,46 @@ def main():
     # Register signal handler
     signal.signal(signal.SIGTERM, handle_sigterm)
     
-    # Build the command for uvicorn
-    command = f"{sys.executable} -m uvicorn terrafusion_sync.app:app --host 0.0.0.0 --port 8080 --reload"
+    # Print basic debug info
+    logger.info(f"Python: {sys.executable}")
+    logger.info(f"Working directory: {os.getcwd()}")
     
-    logger.info(f"Command: {command}")
+    # Wait a moment to ensure port 8080 is free
+    time.sleep(2)
     
-    try:
-        # Start uvicorn server
-        uvicorn.run(
-            "terrafusion_sync.app:app",
-            host="0.0.0.0",
-            port=8080,
-            reload=True,
-            log_level="debug"
-        )
-    except Exception as e:
-        logger.error(f"Failed to start SyncService: {str(e)}")
-        # Print exception traceback
-        import traceback
-        logger.error(traceback.format_exc())
-        sys.exit(1)
+    max_retries = 3
+    for attempt in range(1, max_retries + 1):
+        try:
+            logger.info(f"SyncService startup attempt {attempt}/{max_retries}")
+            
+            # Start uvicorn server
+            uvicorn.run(
+                "terrafusion_sync.app:app",
+                host="0.0.0.0",
+                port=8080,
+                reload=True,
+                log_level="info"
+            )
+            
+            # If we reach here, the server exited cleanly
+            logger.info("SyncService exited cleanly")
+            return
+            
+        except KeyboardInterrupt:
+            logger.info("Received KeyboardInterrupt. Exiting...")
+            return
+            
+        except Exception as e:
+            logger.error(f"Failed to start SyncService (attempt {attempt}/{max_retries}): {str(e)}")
+            logger.error(traceback.format_exc())
+            
+            # Try again after a delay if we have more attempts
+            if attempt < max_retries:
+                logger.info(f"Retrying in 3 seconds...")
+                time.sleep(3)
+            else:
+                logger.error("All retry attempts failed")
+                sys.exit(1)
 
 if __name__ == "__main__":
     main()

@@ -11,13 +11,11 @@ from sqlalchemy import inspect
 import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime as dt
+import uuid
 
-# Database connector
+# Import database and model dependencies
 from terrafusion_sync.database import get_db_session
 from terrafusion_sync.core_models import MarketAnalysisJob
-
-# Import core metrics (avoid circular imports)
-import terrafusion_sync.metrics as core_metrics
 
 # Import schemas
 from .schemas import (
@@ -28,7 +26,7 @@ from .schemas import (
     MarketTrendDataPoint
 )
 
-# Import service (avoid importing tasks at the top level)
+# Import service functionality - NOT tasks which causes circular imports
 from .service import (
     create_analysis_job,
     get_analysis_job,
@@ -38,9 +36,13 @@ from .service import (
     get_metrics_data
 )
 
+# Set up logging
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/market-analysis", tags=["Market Analysis"])
 
+# Initialize router with proper prefix
+router = APIRouter(prefix="/plugins/market-analysis", tags=["Market Analysis"])
+
+# Log successful import
 print("[✅] market_analysis.router module loaded successfully.")
 
 @router.get("/health", status_code=status.HTTP_200_OK)
@@ -57,7 +59,6 @@ async def health_check():
 
 # --- Utility Functions ---
 
-# Helper function to convert model objects to schema-compatible types
 def _convert_model_to_schema_dict(model):
     """
     Convert a SQLAlchemy model instance to a dict with compatible Python types for Pydantic schemas.
@@ -65,7 +66,6 @@ def _convert_model_to_schema_dict(model):
     if model is None:
         return None
         
-    # Directly convert to dict for simplicity
     result = {}
     for column in inspect(model).mapper.column_attrs:
         name = column.key
@@ -73,15 +73,14 @@ def _convert_model_to_schema_dict(model):
         
         # Ensure value is a Python native type
         if value is not None:
-            # Handle specific type conversions if needed
+            # Handle specific type conversions
             if isinstance(value, dt):
-                # Datetime objects are already compatible
                 result[name] = value
             elif hasattr(value, '_sa_instance_state'):
-                # Handle nested SQLAlchemy models (recursion)
+                # Handle nested SQLAlchemy models
                 result[name] = _convert_model_to_schema_dict(value)
             else:
-                # For all other values, convert to string if not a basic type
+                # Convert to string if not a basic type
                 if not isinstance(value, (str, int, float, bool, dict, list)):
                     result[name] = str(value)
                 else:
@@ -92,6 +91,7 @@ def _convert_model_to_schema_dict(model):
     return result
 
 # --- API Endpoints ---
+
 @router.post("/run", response_model=MarketAnalysisJobStatusResponse, status_code=status.HTTP_202_ACCEPTED)
 async def run_market_analysis(
     request: MarketAnalysisRunRequest,
@@ -103,7 +103,7 @@ async def run_market_analysis(
     
     This endpoint accepts a market analysis request and queues it for background processing.
     """
-    # Ensure we're using the db session correctly (not as a context manager)
+    # Ensure we're using the db session correctly
     if hasattr(db, '__aenter__') and not hasattr(db, 'execute'):
         # We have a session factory or context manager, not a session
         async with db as session:
@@ -127,32 +127,34 @@ async def _run_market_analysis_impl(
             parameters=request.parameters
         )
         
-        # Record job submission metric
+        # Record job submission metric with core metrics
+        # Uses dynamic import to avoid circular dependencies
+        import terrafusion_sync.metrics as core_metrics
         core_metrics.MARKET_ANALYSIS_JOBS_SUBMITTED.labels(
             county_id=request.county_id,
             analysis_type=request.analysis_type
         ).inc()
         
-        # Lazily import tasks module to avoid circular imports
+        # Lazily import tasks module to avoid circular import
         from .tasks import run_analysis_job
         
         # Add background task to process the job
         background_tasks.add_task(
             run_analysis_job,
             get_db_session,  # Pass the session factory
-            job.job_id,
-            request.analysis_type,
-            request.county_id,
-            request.parameters
+            str(job.job_id),
+            str(job.analysis_type),
+            str(job.county_id),
+            job.parameters_json
         )
         
         # Return the job status response
         return MarketAnalysisJobStatusResponse(
-            job_id=job.job_id,
-            analysis_type=job.analysis_type,
-            county_id=job.county_id,
-            status=job.status,
-            message=job.message,
+            job_id=str(job.job_id),
+            analysis_type=str(job.analysis_type),
+            county_id=str(job.county_id),
+            status=str(job.status),
+            message=str(job.message) if job.message else None,
             parameters=job.parameters_json,
             created_at=job.created_at,
             updated_at=job.updated_at,
@@ -172,7 +174,7 @@ async def get_market_analysis_status(job_id: str, db: AsyncSession = Depends(get
     """
     Get the status of a market analysis job.
     """
-    # Ensure we're using the db session correctly (not as a context manager)
+    # Ensure we're using the db session correctly
     if hasattr(db, '__aenter__') and not hasattr(db, 'execute'):
         # We have a session factory or context manager, not a session
         async with db as session:
@@ -211,7 +213,7 @@ async def get_market_analysis_results(job_id: str, db: AsyncSession = Depends(ge
     """
     Get the results of a completed market analysis job.
     """
-    # Ensure we're using the db session correctly (not as a context manager)
+    # Ensure we're using the db session correctly
     if hasattr(db, '__aenter__') and not hasattr(db, 'execute'):
         # We have a session factory or context manager, not a session
         async with db as session:
@@ -231,7 +233,8 @@ async def _get_market_analysis_results_impl(job_id: str, db: AsyncSession) -> Ma
             detail=f"Market analysis job with ID {job_id} not found"
         )
     
-    if job.status != "COMPLETED":
+    # Check if job is completed
+    if str(job.status) != "COMPLETED":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Market analysis job is not completed (current status: {job.status})"
@@ -257,12 +260,12 @@ async def _get_market_analysis_results_impl(job_id: str, db: AsyncSession) -> Ma
     result_data_location = None
     
     # Extract result data from job
-    if job.result_summary_json and isinstance(job.result_summary_json, dict):
+    if job.result_summary_json:
         result_summary = job.result_summary_json
         
         # Extract trends if available
-        if 'trends' in result_summary and isinstance(result_summary['trends'], list):
-            trends = result_summary.pop('trends')
+        if result_summary and 'trends' in result_summary:
+            trends = result_summary.pop('trends', None)
     
     # Get result location if available
     if job.result_data_location:
@@ -292,7 +295,7 @@ async def list_market_analysis_jobs(
     """
     List market analysis jobs with optional filtering.
     """
-    # Ensure we're using the db session correctly (not as a context manager)
+    # Ensure we're using the db session correctly
     if hasattr(db, '__aenter__') and not hasattr(db, 'execute'):
         # We have a session factory or context manager, not a session
         async with db as session:
