@@ -1,119 +1,117 @@
 #!/usr/bin/env python3
 """
-Script to generate test data for report metrics visualization in Grafana.
-This will trigger report jobs with various statuses to populate the Prometheus metrics.
+Test script for reporting metrics in the TerraFusion SyncService.
+
+This script verifies that Prometheus metrics for the reporting plugin 
+are correctly registered and exposed through the /metrics endpoint.
 """
 
-import argparse
-import random
-import requests
-import time
-import logging
-import json
+import os
 import sys
-from typing import List, Dict, Any, Optional
+import json
+import requests
+import logging
+from urllib.parse import urljoin
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-logger = logging.getLogger("report-test-generator")
+logger = logging.getLogger("reporting_metrics_test")
 
-# Configuration
-SYNCSERVICE_URL = "http://0.0.0.0:8080"
-REPORT_TYPES = ["property_summary", "tax_assessment", "market_valuation", "FAILING_REPORT_SIM"]
-COUNTY_IDS = ["county1", "county2", "demo_county"]
+# SyncService URL - default to standard development URL
+SYNCSERVICE_URL = os.environ.get("SYNCSERVICE_URL", "http://0.0.0.0:8080")
 
+# Expected metrics for the reporting plugin
+EXPECTED_METRICS = [
+    "report_jobs_submitted_total",
+    "report_processing_duration_seconds",
+    "report_jobs_failed_total",
+    "report_jobs_pending",
+    "report_jobs_in_progress"
+]
 
-def submit_report_job(report_type: str, county_id: str, parameters: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """
-    Submit a new report job to the SyncService.
-    
-    Args:
-        report_type: Type of report to generate
-        county_id: County ID for the report
-        parameters: Additional parameters for the report
-        
-    Returns:
-        Response from the API or None if failed
-    """
-    url = f"{SYNCSERVICE_URL}/plugins/v1/reporting/run"
-    
-    payload = {
-        "report_type": report_type,
-        "county_id": county_id,
-        "parameters": parameters
-    }
+def check_metrics_endpoint():
+    """Check if the metrics endpoint is accessible."""
+    metrics_url = urljoin(SYNCSERVICE_URL, "/metrics")
     
     try:
-        logger.info(f"Submitting report job: {payload}")
-        response = requests.post(url, json=payload)
+        logger.info(f"Checking metrics endpoint: {metrics_url}")
+        response = requests.get(metrics_url)
         response.raise_for_status()
-        result = response.json()
-        logger.info(f"Successfully submitted report job: {result.get('report_id')}")
-        return result
-    except Exception as e:
-        logger.error(f"Failed to submit report job: {e}")
+        
+        logger.info(f"Metrics endpoint accessible: {response.status_code}")
+        return response.text
+    except requests.RequestException as e:
+        logger.error(f"Failed to access metrics endpoint: {e}")
         return None
 
+def verify_reporting_metrics(metrics_text):
+    """Verify that the reporting metrics are present in the metrics text."""
+    if not metrics_text:
+        logger.error("No metrics text to verify")
+        return False
+    
+    found_metrics = []
+    missing_metrics = []
+    
+    for metric in EXPECTED_METRICS:
+        if metric in metrics_text:
+            found_metrics.append(metric)
+            logger.info(f"✓ Found metric: {metric}")
+        else:
+            missing_metrics.append(metric)
+            logger.error(f"✗ Missing metric: {metric}")
+    
+    if missing_metrics:
+        logger.error(f"Missing {len(missing_metrics)} expected metrics")
+        return False
+    
+    logger.info(f"Found all {len(EXPECTED_METRICS)} expected metrics")
+    return True
 
-def generate_random_parameters() -> Dict[str, Any]:
-    """
-    Generate random parameters for report jobs.
+def check_health_endpoint():
+    """Check the health endpoint to verify the service is running."""
+    health_url = urljoin(SYNCSERVICE_URL, "/health")
     
-    Returns:
-        Dictionary with random parameters
-    """
-    property_ids = [f"PROP{random.randint(1000, 9999)}" for _ in range(random.randint(1, 5))]
-    
-    return {
-        "property_ids": property_ids,
-        "include_history": random.choice([True, False]),
-        "format": random.choice(["pdf", "csv", "json"]),
-        "max_records": random.randint(10, 100),
-        "start_date": "2025-01-01",
-        "end_date": "2025-05-12"
-    }
-
-
-def generate_test_data(num_jobs: int, interval_sec: float):
-    """
-    Generate test data by submitting report jobs.
-    
-    Args:
-        num_jobs: Number of jobs to submit
-        interval_sec: Interval between job submissions in seconds
-    """
-    submitted_jobs = []
-    
-    # Submit initial batch of jobs
-    for i in range(num_jobs):
-        report_type = random.choice(REPORT_TYPES)
-        county_id = random.choice(COUNTY_IDS)
-        parameters = generate_random_parameters()
+    try:
+        logger.info(f"Checking health endpoint: {health_url}")
+        response = requests.get(health_url)
+        response.raise_for_status()
         
-        result = submit_report_job(report_type, county_id, parameters)
-        if result:
-            submitted_jobs.append(result)
+        health_data = response.json()
+        logger.info(f"Health status: {json.dumps(health_data, indent=2)}")
         
-        # Add some randomness to the interval
-        sleep_time = interval_sec * (0.8 + 0.4 * random.random())
-        time.sleep(sleep_time)
-
+        return health_data.get("status") == "healthy"
+    except requests.RequestException as e:
+        logger.error(f"Failed to access health endpoint: {e}")
+        return False
 
 def main():
-    """Main entry point for the script."""
-    parser = argparse.ArgumentParser(description="Generate test report jobs for metrics visualization")
-    parser.add_argument("--jobs", type=int, default=10, help="Number of jobs to submit")
-    parser.add_argument("--interval", type=float, default=2.0, help="Interval between job submissions in seconds")
+    """Run the reporting metrics test."""
+    logger.info("Starting reporting metrics test")
     
-    args = parser.parse_args()
+    # First, check the health endpoint
+    if not check_health_endpoint():
+        logger.error("SyncService is not healthy. Cannot proceed with tests.")
+        return 1
     
-    logger.info(f"Starting test data generation with {args.jobs} jobs at {args.interval}s intervals")
-    generate_test_data(args.jobs, args.interval)
-    logger.info("Test data generation complete")
-
+    # Get metrics from the endpoint
+    metrics_text = check_metrics_endpoint()
+    
+    # Verify reporting metrics
+    if verify_reporting_metrics(metrics_text):
+        logger.info("✅ Reporting metrics test passed")
+        return 0
+    else:
+        logger.error("❌ Reporting metrics test failed")
+        return 1
 
 if __name__ == "__main__":
-    main()
+    try:
+        exit_code = main()
+        sys.exit(exit_code)
+    except Exception as e:
+        logger.exception("Error running reporting metrics test")
+        sys.exit(1)
