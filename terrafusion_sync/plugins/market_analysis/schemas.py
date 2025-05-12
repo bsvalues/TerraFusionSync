@@ -1,158 +1,203 @@
 """
 TerraFusion SyncService - Market Analysis Plugin - Schemas
 
-This module defines the Pydantic schemas for the Market Analysis plugin.
+This module provides Pydantic schema models for the Market Analysis plugin.
+These schemas define the structure of request and response objects for the API.
 """
 
-from pydantic import BaseModel, Field, field_validator
-from typing import Optional, Dict, Any, List
-import uuid
-import datetime
+from datetime import datetime
+from enum import Enum
+from typing import Dict, List, Any, Optional, Union
+from pydantic import BaseModel, Field, validator
 
-class MarketAnalysisRunRequest(BaseModel):
-    """Request schema for running a market analysis job."""
-    analysis_type: str = Field(description="Type of market analysis to run.")
-    county_id: str = Field(description="County identifier for the analysis.")
-    parameters: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Parameters for the market analysis."
-    )
-    
-    model_config = {
-        "json_schema_extra": {
-            "examples": [
-                {
-                    "analysis_type": "price_trend_by_zip",
-                    "county_id": "COUNTY01",
-                    "parameters": {
-                        "start_date": "2024-01-01", 
-                        "end_date": "2024-12-31", 
-                        "zip_codes": ["90210", "90211"],
-                        "property_types": ["residential"]
-                    }
-                }
-            ]
-        }
-    }
 
-class MarketAnalysisJobStatusResponse(BaseModel):
-    """Response schema for market analysis job status."""
-    job_id: str = Field(description="Unique identifier for the market analysis job.")
-    analysis_type: str = Field(description="Type of market analysis.")
-    county_id: str = Field(description="County identifier.")
-    status: str = Field(description="Current status of the job (PENDING, RUNNING, COMPLETED, FAILED).")
-    message: Optional[str] = Field(default=None, description="Status message or error details.")
-    parameters: Optional[Dict[str, Any]] = Field(default=None, description="Original parameters for the analysis.")
-    created_at: datetime.datetime = Field(description="When the job was created.")
-    updated_at: datetime.datetime = Field(description="When the job was last updated.")
-    started_at: Optional[datetime.datetime] = Field(default=None, description="When the job started processing.")
-    completed_at: Optional[datetime.datetime] = Field(default=None, description="When the job completed processing.")
-    
-    # Make the model handle None values for required fields during validation
-    @classmethod
-    def model_validate(cls, obj, *args, **kwargs):
-        if obj is None:
-            return None
-        
-        # Ensure job_id, analysis_type, county_id, and status are at least empty strings if None
-        required_fields = ['job_id', 'analysis_type', 'county_id', 'status']
-        if isinstance(obj, dict):
-            for field in required_fields:
-                if field in obj and obj[field] is None:
-                    obj[field] = ""
-        
-        return super().model_validate(obj, *args, **kwargs)
+# --- Enums ---
 
-    @field_validator('status')
-    @classmethod
-    def validate_status(cls, v):
-        valid_statuses = ["PENDING", "RUNNING", "COMPLETED", "FAILED"]
-        if v not in valid_statuses:
-            raise ValueError(f"Status must be one of: {', '.join(valid_statuses)}")
-        return v
+class AnalysisType(str, Enum):
+    """Types of market analysis that can be performed."""
+    PRICE_TREND_BY_ZIP = "price_trend_by_zip"
+    COMPARABLE_MARKET_AREA = "comparable_market_area"
+    SALES_VELOCITY = "sales_velocity"
+    MARKET_VALUATION = "market_valuation"
+    PRICE_PER_SQFT = "price_per_sqft"
+
+
+class JobStatus(str, Enum):
+    """Possible statuses for a market analysis job."""
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
+# --- Base Models ---
 
 class MarketTrendDataPoint(BaseModel):
-    """A data point for market trend analysis."""
-    period: str = Field(description="Time period for the data point (e.g., 2024-Q1).")
-    average_price: Optional[float] = Field(default=None, description="Average property price for the period.")
-    median_price: Optional[float] = Field(default=None, description="Median property price for the period.")
-    sales_volume: Optional[int] = Field(default=None, description="Number of sales during the period.")
-    price_per_sqft: Optional[float] = Field(default=None, description="Average price per square foot.")
-    
-    model_config = {
-        "json_schema_extra": {
-            "examples": [
-                {
-                    "period": "2024-Q1",
-                    "average_price": 450000.0,
-                    "median_price": 425000.0,
-                    "sales_volume": 125,
-                    "price_per_sqft": 350.75
-                }
-            ]
-        }
-    }
+    """Data point for market trend data."""
+    date: Optional[str] = None
+    year_month: Optional[str] = None
+    value: float
+
+
+class PricingDataPoint(BaseModel):
+    """Data point for pricing trends."""
+    date: str
+    value: float
+    year_month: Optional[str] = None
+
+
+class SalesVelocityDataPoint(BaseModel):
+    """Data point for sales velocity trends."""
+    year_month: str
+    new_listings: int
+    sales: int
+    avg_days_on_market: int
+
+
+class ComparableArea(BaseModel):
+    """Comparable market area information."""
+    zip_code: str
+    similarity_score: float
+    distance_miles: float
+    median_price: float
+    price_per_sqft: float
+
+
+class PropertyDetails(BaseModel):
+    """Details about a specific property."""
+    beds: int
+    baths: float
+    sqft: int
+
+
+class ComparableProperty(BaseModel):
+    """Comparable property information."""
+    property_id: str
+    beds: int
+    baths: float
+    sqft: int
+    sale_price: float
+    price_per_sqft: float
+    distance_miles: float
+    sale_date: str
+
+
+class PropertyValueRange(BaseModel):
+    """Value range for a property."""
+    low: float
+    high: float
+
+
+class SizeBracket(BaseModel):
+    """Price per sqft data for a specific size bracket."""
+    name: str
+    min_sqft: int
+    max_sqft: int
+    avg_ppsf: float
+    sample_count: int
+
+
+# --- Request Models ---
+
+class MarketAnalysisRunRequest(BaseModel):
+    """Request to run a market analysis job."""
+    county_id: str = Field(..., description="County ID for the analysis")
+    analysis_type: str = Field(..., description="Type of analysis to perform")
+    parameters: Dict[str, Any] = Field(
+        ..., 
+        description="Parameters for the analysis, varies by analysis type"
+    )
+
+
+# --- Response Models ---
+
+class MarketAnalysisJobStatusResponse(BaseModel):
+    """Response with job status information."""
+    job_id: str
+    county_id: str
+    analysis_type: str
+    status: str
+    message: Optional[str] = None
+    parameters: Optional[Dict[str, Any]] = None
+    created_at: datetime
+    updated_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
 
 class MarketAnalysisResultData(BaseModel):
-    """Schema for market analysis results."""
-    result_summary: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Summary of key findings from the analysis."
-    )
-    trends: Optional[List[MarketTrendDataPoint]] = Field(
-        default=None,
-        description="Time series data points for trend analysis."
-    )
-    result_data_location: Optional[str] = Field(
-        default=None,
-        description="Location of the detailed result data (e.g., S3 path)."
-    )
-    
-    # Handle None values for validation
-    @classmethod
-    def model_validate(cls, obj, *args, **kwargs):
-        if obj is None:
-            return None
-        return super().model_validate(obj, *args, **kwargs)
-    
-    model_config = {
-        "json_schema_extra": {
-            "examples": [
-                {
-                    "result_summary": {
-                        "key_finding": "Market prices increased by 5% year-over-year.",
-                        "data_points_analyzed": 1500,
-                        "recommendation": "Market conditions favorable for revaluation."
-                    },
-                    "result_data_location": "/data/analysis_results/COUNTY01/price_trend_by_zip/abc123.parquet"
-                }
-            ]
-        }
-    }
+    """Result data from a completed market analysis job."""
+    result_summary: Optional[Dict[str, Any]] = None
+    result_data_location: Optional[str] = None
+    trends: Optional[List[Dict[str, Any]]] = None
+
 
 class MarketAnalysisJobResultResponse(MarketAnalysisJobStatusResponse):
-    """Response schema for market analysis job results."""
-    result: Optional[MarketAnalysisResultData] = Field(
-        default=None,
-        description="The analysis results, if job is completed."
-    )
-    
-    # Override model_validate to handle None values
-    @classmethod
-    def model_validate(cls, obj, *args, **kwargs):
-        if obj is None:
-            return None
-            
-        # First let the parent class handle the base fields
-        instance = super().model_validate(obj, *args, **kwargs)
-        
-        # Then handle the result field
-        if hasattr(instance, 'result') and instance.result is None and hasattr(obj, 'result_summary_json'):
-            # If we have result data in the object but it wasn't mapped properly
-            result_data = MarketAnalysisResultData(
-                result_summary=obj.result_summary_json,
-                result_data_location=getattr(obj, 'result_data_location', None)
-            )
-            instance.result = result_data
-            
-        return instance
+    """
+    Response with job status and result data for a completed analysis job.
+    Extends MarketAnalysisJobStatusResponse with result data.
+    """
+    result: Optional[MarketAnalysisResultData] = None
+
+
+# --- Specialized Result Models (used internally) ---
+
+class PriceTrendResponse(BaseModel):
+    """Response for price trend analysis."""
+    zip_code: str
+    property_type: str
+    date_range: Dict[str, str]
+    average_price: float
+    median_price: float
+    price_change: float
+    price_change_percentage: float
+    trends: List[PricingDataPoint]
+
+
+class ComparableMarketAreaResponse(BaseModel):
+    """Response for comparable market area analysis."""
+    primary_zip: str
+    search_radius_miles: float
+    min_similar_listings: int
+    comparable_areas: List[ComparableArea]
+    total_comparable_areas_found: int
+
+
+class SalesVelocityResponse(BaseModel):
+    """Response for sales velocity analysis."""
+    zip_code: str
+    property_type: str
+    date_range: Dict[str, str]
+    average_days_on_market: int
+    total_listings: int
+    sold_listings: int
+    sales_per_month: float
+    absorption_rate_percentage: float
+    months_of_inventory: float
+    trends: List[SalesVelocityDataPoint]
+
+
+class MarketValuationResponse(BaseModel):
+    """Response for market valuation analysis."""
+    zip_code: str
+    property_id: Optional[str]
+    property_details: PropertyDetails
+    estimated_value: float
+    value_range: PropertyValueRange
+    price_per_sqft: float
+    confidence_score: float
+    comparable_properties: List[ComparableProperty]
+
+
+class PricePerSqftResponse(BaseModel):
+    """Response for price per square foot analysis."""
+    zip_code: str
+    property_type: str
+    date_range: Dict[str, str]
+    average_price_per_sqft: float
+    median_price_per_sqft: float
+    min_price_per_sqft: float
+    max_price_per_sqft: float
+    breakdown_by_size: List[SizeBracket]
+    trends: List[PricingDataPoint]

@@ -1,18 +1,19 @@
 """
 TerraFusion SyncService - Market Analysis Plugin
 
-This plugin provides market analysis functionality for the TerraFusion platform, 
-enabling trend analysis, comparable market area evaluation, and other real estate market metrics.
+This plugin provides market analysis functionality for real estate data,
+including trend analysis, comparable market area evaluation, and price metrics.
+
+Capabilities:
+- Price trend analysis by zip code
+- Comparable market area identification
+- Sales velocity metrics
+- Property market valuation
+- Price per square foot analytics
 """
 
-from fastapi import APIRouter
+import logging
 
-# Create the plugin router
-plugin_name = "market_analysis"
-plugin_router = APIRouter()
-
-# Import and include the market analysis routes
-from . import router
-plugin_router.include_router(router.router, prefix="")
-
-__all__ = ["plugin_name", "plugin_router"]
+# Configure plugin logger
+logger = logging.getLogger(__name__)
+logger.info("Market Analysis plugin initialized")

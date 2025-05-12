@@ -1,258 +1,291 @@
 """
-TerraFusion SyncService - Market Analysis Plugin - Service
+TerraFusion SyncService - Market Analysis Plugin - Service Layer
 
-This module provides service layer functions for the Market Analysis plugin,
-handling job lifecycle operations, state transitions, and business logic.
+This module provides service functions for the Market Analysis plugin,
+handling data access and business logic operations.
 """
 
-import logging
+import json
 import uuid
-from typing import Dict, Any, List, Optional, Tuple, Set
-from datetime import datetime, timedelta
+import logging
+from typing import List, Dict, Any, Optional, Union
+from datetime import datetime
+
+from sqlalchemy import select, and_, or_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from sqlalchemy import update, and_, or_, func, desc
+from sqlalchemy.orm import joinedload
 
 from terrafusion_sync.core_models import MarketAnalysisJob
 
+# Configure logging
 logger = logging.getLogger(__name__)
+
+# --- Job Management Functions ---
 
 async def create_analysis_job(
     db: AsyncSession,
     county_id: str,
     analysis_type: str,
-    parameters: Optional[Dict[str, Any]] = None,
+    parameters: Dict[str, Any]
 ) -> MarketAnalysisJob:
     """
     Create a new market analysis job.
     
     Args:
         db: Database session
-        county_id: County identifier
-        analysis_type: Type of market analysis to perform
-        parameters: Parameters for the analysis
-        
+        county_id: County ID
+        analysis_type: Type of analysis
+        parameters: Analysis parameters
+    
     Returns:
         Created MarketAnalysisJob instance
     """
+    # Create a new job record
     job_id = str(uuid.uuid4())
     
-    # Create new job record
-    new_job = MarketAnalysisJob(
+    # Convert parameters to JSON if needed
+    if not isinstance(parameters, str):
+        parameters_json = json.dumps(parameters)
+    else:
+        parameters_json = parameters
+    
+    # Create job record
+    job = MarketAnalysisJob(
         job_id=job_id,
-        analysis_type=analysis_type,
         county_id=county_id,
+        analysis_type=analysis_type,
         status="PENDING",
-        message="Market analysis job accepted and queued",
-        parameters_json=parameters,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
+        message="Job created, waiting to run",
+        parameters_json=parameters_json
     )
     
-    db.add(new_job)
+    # Save to database
+    db.add(job)
     await db.commit()
-    await db.refresh(new_job)
+    await db.refresh(job)
     
-    logger.info(f"MarketAnalysisJob {job_id}: Created for analysis type '{analysis_type}', county '{county_id}'")
-    
-    return new_job
+    logger.info(f"Created market analysis job {job_id} for county {county_id}")
+    return job
 
-async def get_analysis_job(db: AsyncSession, job_id: str) -> Optional[MarketAnalysisJob]:
+async def get_analysis_job(
+    db: AsyncSession, 
+    job_id: str
+) -> Optional[MarketAnalysisJob]:
     """
     Get a market analysis job by ID.
     
     Args:
         db: Database session
-        job_id: Job identifier
-        
+        job_id: Job ID
+    
     Returns:
         MarketAnalysisJob if found, None otherwise
     """
+    # Query the job
     result = await db.execute(
         select(MarketAnalysisJob).where(MarketAnalysisJob.job_id == job_id)
     )
-    return result.scalars().first()
+    job = result.scalars().first()
+    
+    if not job:
+        logger.warning(f"Market analysis job {job_id} not found")
+    
+    return job
 
 async def list_analysis_jobs(
     db: AsyncSession,
     county_id: Optional[str] = None,
     analysis_type: Optional[str] = None,
     status: Optional[str] = None,
-    limit: int = 100,
-    offset: int = 0
+    limit: int = 10
 ) -> List[MarketAnalysisJob]:
     """
     List market analysis jobs with optional filtering.
     
     Args:
         db: Database session
-        county_id: Optional filter by county ID
-        analysis_type: Optional filter by analysis type
-        status: Optional filter by job status
-        limit: Maximum number of records to return
-        offset: Number of records to skip
-        
+        county_id: Optional county ID filter
+        analysis_type: Optional analysis type filter
+        status: Optional status filter
+        limit: Maximum number of jobs to return
+    
     Returns:
         List of MarketAnalysisJob instances
     """
-    query = select(MarketAnalysisJob).order_by(MarketAnalysisJob.created_at.desc()).limit(limit).offset(offset)
+    # Build query with filters
+    query = select(MarketAnalysisJob)
     
-    # Apply filters if provided
+    # Apply filters
+    filters = []
     if county_id:
-        query = query.where(MarketAnalysisJob.county_id == county_id)
+        filters.append(MarketAnalysisJob.county_id == county_id)
     if analysis_type:
-        query = query.where(MarketAnalysisJob.analysis_type == analysis_type)
+        filters.append(MarketAnalysisJob.analysis_type == analysis_type)
     if status:
-        query = query.where(MarketAnalysisJob.status == status)
+        filters.append(MarketAnalysisJob.status == status)
     
+    # Apply filters to query
+    if filters:
+        query = query.where(and_(*filters))
+    
+    # Order by creation date (newest first)
+    query = query.order_by(desc(MarketAnalysisJob.created_at))
+    
+    # Apply limit
+    query = query.limit(limit)
+    
+    # Execute query
     result = await db.execute(query)
-    return list(result.scalars().all())
+    jobs = result.scalars().all()
+    
+    return list(jobs)
 
 async def update_job_status(
     db: AsyncSession,
     job_id: str,
     status: str,
     message: Optional[str] = None,
-    result_summary: Optional[Dict[str, Any]] = None,
+    started_at: Optional[datetime] = None,
+    completed_at: Optional[datetime] = None,
+    result_summary_json: Optional[Union[str, Dict[str, Any]]] = None,
     result_data_location: Optional[str] = None
 ) -> Optional[MarketAnalysisJob]:
     """
-    Update a market analysis job's status and related fields.
+    Update the status of a market analysis job.
     
     Args:
         db: Database session
-        job_id: Job identifier
-        status: New status
-        message: Optional status message
-        result_summary: Optional result summary JSON
-        result_data_location: Optional result data location
-        
-    Returns:
-        Updated MarketAnalysisJob instance or None if not found
-    """
-    # Prepare update values
-    values = {
-        "status": status,
-        "updated_at": datetime.utcnow(),
-    }
+        job_id: Job ID
+        status: New job status
+        message: Status message
+        started_at: Job start time
+        completed_at: Job completion time
+        result_summary_json: Summary of results (JSON string or dict)
+        result_data_location: Location of result data
     
-    # Add optional fields if provided
+    Returns:
+        Updated MarketAnalysisJob or None if not found
+    """
+    # Get the job
+    job = await get_analysis_job(db, job_id)
+    
+    if not job:
+        logger.warning(f"Cannot update status for job {job_id}: not found")
+        return None
+    
+    # Update fields
+    job.status = status
+    
     if message is not None:
-        values["message"] = message
+        job.message = message
+        
+    if started_at is not None:
+        job.started_at = started_at
+        
+    if completed_at is not None:
+        job.completed_at = completed_at
     
-    if result_summary is not None:
-        values["result_summary_json"] = result_summary
+    # Handle result summary
+    if result_summary_json is not None:
+        # Convert dict to JSON string if needed
+        if isinstance(result_summary_json, dict):
+            job.result_summary_json = json.dumps(result_summary_json)
+        else:
+            job.result_summary_json = result_summary_json
     
+    # Update result data location
     if result_data_location is not None:
-        values["result_data_location"] = result_data_location
+        job.result_data_location = result_data_location
     
-    # Add timestamps for specific status transitions
-    if status == "RUNNING":
-        values["started_at"] = datetime.utcnow()
-    elif status in ["COMPLETED", "FAILED"]:
-        values["completed_at"] = datetime.utcnow()
+    # Always update the updated_at timestamp
+    job.updated_at = datetime.now()
     
-    # Execute update
-    await db.execute(
-        update(MarketAnalysisJob)
-        .where(MarketAnalysisJob.job_id == job_id)
-        .values(**values)
-    )
+    # Save changes
     await db.commit()
+    await db.refresh(job)
     
-    # Return updated job
-    return await get_analysis_job(db, job_id)
+    logger.info(f"Updated job {job_id} status to {status}")
+    return job
 
-async def expire_stale_jobs(
-    db: AsyncSession, 
-    timeout_minutes: int = 30
-) -> Tuple[int, Set[str]]:
+# --- Analysis Management Functions ---
+
+async def get_county_market_overview(
+    db: AsyncSession,
+    county_id: str
+) -> Dict[str, Any]:
     """
-    Find and expire stale market analysis jobs that have been running for too long.
+    Get a market overview for a county.
     
     Args:
         db: Database session
-        timeout_minutes: Timeout in minutes for running jobs
-        
-    Returns:
-        Tuple of (count of expired jobs, set of expired job IDs)
-    """
-    # Find jobs that have been running for too long
-    timeout_threshold = datetime.utcnow() - timedelta(minutes=timeout_minutes)
+        county_id: County ID
     
-    query = (
+    Returns:
+        Dictionary with market overview data
+    """
+    # Get recent jobs for this county
+    result = await db.execute(
         select(MarketAnalysisJob)
         .where(
             and_(
-                MarketAnalysisJob.status == "RUNNING",
-                MarketAnalysisJob.started_at < timeout_threshold,
-                MarketAnalysisJob.completed_at.is_(None)
+                MarketAnalysisJob.county_id == county_id,
+                MarketAnalysisJob.status == "COMPLETED"
             )
         )
+        .order_by(desc(MarketAnalysisJob.completed_at))
+        .limit(20)
     )
+    recent_jobs = result.scalars().all()
     
-    result = await db.execute(query)
-    stale_jobs = result.scalars().all()
-    expired_job_ids = set()
-    
-    # Update each stale job
-    for job in stale_jobs:
-        job_id = job.job_id
-        await update_job_status(
-            db=db,
-            job_id=job_id,
-            status="FAILED",
-            message=f"Job timed out after {timeout_minutes} minutes"
-        )
-        expired_job_ids.add(job_id)
-        logger.warning(f"MarketAnalysisJob {job_id}: Expired after {timeout_minutes} minutes")
-    
-    return len(expired_job_ids), expired_job_ids
-
-async def get_metrics_data(db: AsyncSession) -> Dict[str, Any]:
-    """
-    Get metrics data for the market analysis plugin.
-    
-    Args:
-        db: Database session
-        
-    Returns:
-        Dictionary with metrics data
-    """
-    # Count jobs by status
-    status_counts = {}
-    for status in ["PENDING", "RUNNING", "COMPLETED", "FAILED"]:
-        result = await db.execute(
-            select(func.count())
-            .where(MarketAnalysisJob.status == status)
-        )
-        status_counts[status] = result.scalar() or 0
-    
-    # Count jobs by analysis type
-    analysis_type_counts = {}
-    result = await db.execute(
-        select(MarketAnalysisJob.analysis_type, func.count())
-        .group_by(MarketAnalysisJob.analysis_type)
-    )
-    
-    for row in result:
-        analysis_type, count = row
-        analysis_type_counts[analysis_type] = count
-    
-    # Count jobs by county
-    county_counts = {}
-    result = await db.execute(
-        select(MarketAnalysisJob.county_id, func.count())
-        .group_by(MarketAnalysisJob.county_id)
-    )
-    
-    for row in result:
-        county_id, count = row
-        county_counts[county_id] = count
-    
-    return {
-        "status_counts": status_counts,
-        "analysis_type_counts": analysis_type_counts,
-        "county_counts": county_counts,
-        "total_jobs": sum(status_counts.values())
+    # Create overview data
+    overview = {
+        "county_id": county_id,
+        "timestamp": datetime.now().isoformat(),
+        "recent_analyses": []
     }
+    
+    # Extract key metrics from recent analyses
+    for job in recent_jobs:
+        if not job.result_summary_json:
+            continue
+            
+        # Parse result summary
+        if isinstance(job.result_summary_json, str):
+            try:
+                result_summary = json.loads(job.result_summary_json)
+            except:
+                continue
+        else:
+            result_summary = job.result_summary_json
+        
+        # Extract relevant metrics based on analysis type
+        metrics = {}
+        if job.analysis_type == "price_trend_by_zip":
+            metrics = {
+                "zip_code": result_summary.get("zip_code"),
+                "average_price": result_summary.get("average_price"),
+                "price_change_percentage": result_summary.get("price_change_percentage")
+            }
+        elif job.analysis_type == "market_valuation":
+            metrics = {
+                "property_details": result_summary.get("property_details"),
+                "estimated_value": result_summary.get("estimated_value"),
+                "price_per_sqft": result_summary.get("price_per_sqft")
+            }
+        elif job.analysis_type == "sales_velocity":
+            metrics = {
+                "average_days_on_market": result_summary.get("average_days_on_market"),
+                "absorption_rate_percentage": result_summary.get("absorption_rate_percentage"),
+                "months_of_inventory": result_summary.get("months_of_inventory")
+            }
+            
+        # Add to overview if we have metrics
+        if metrics:
+            overview["recent_analyses"].append({
+                "job_id": job.job_id,
+                "analysis_type": job.analysis_type,
+                "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+                "metrics": metrics
+            })
+    
+    return overview
