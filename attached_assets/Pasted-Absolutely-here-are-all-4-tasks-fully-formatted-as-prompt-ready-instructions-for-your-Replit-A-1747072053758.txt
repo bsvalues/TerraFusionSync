@@ -1,0 +1,96 @@
+Absolutely—here are all **4 tasks fully formatted** as prompt-ready instructions for your **Replit AI Agent** or **GitHub Copilot**.
+
+Each includes:
+
+* ✅ Goal
+* 📂 File to work in
+* 🧠 Exact instruction
+* 🧪 Bonus testing tip (optional)
+
+---
+
+### **🧩 1. CDC Reconciliation for Stale Reports**
+
+**✅ Goal:** Detect and mark report jobs as “failed” if they’ve been in-progress > 30 minutes.
+
+**📂 File:** `terrafusion_sync/plugins/reporting/service.py`
+
+**🧠 Instruction:**
+
+> Add a background function called `expire_stale_reports` that:
+>
+> * Queries reports with `status = 'in_progress'`
+> * Checks if `created_at` is older than 30 minutes (use `datetime.utcnow() - created_at`)
+> * Sets status to `'failed'` and writes `result_metadata_json.reason = 'timeout'`
+> * Commits changes
+
+> Integrate this into a scheduler (like `BackgroundTasks` or CronJob later).
+
+---
+
+### **🔍 2. Add Search & Filtering to `/reports` List Endpoint**
+
+**✅ Goal:** Let users filter reports by `status`, `date_created`, or `report_type`
+
+**📂 File:** `terrafusion_sync/plugins/reporting/routes.py`
+
+**🧠 Instruction:**
+
+> Enhance the `GET /reports/` endpoint to accept optional query params:
+>
+> * `status: Optional[str]`
+> * `report_type: Optional[str]`
+> * `created_after: Optional[datetime]`
+
+> Filter the SQLAlchemy query dynamically using these, if provided.
+
+---
+
+### **📊 3. Prometheus Metrics for Reporting Plugin**
+
+**✅ Goal:** Track how many reports are created and how long they take
+
+**📂 File:** `terrafusion_sync/plugins/reporting/routes.py`
+**Also Touch:** `observability/metrics.py`
+
+**🧠 Instruction:**
+
+> In `metrics.py`, define:
+
+```python
+reports_created_total = Counter("reports_created_total", "Number of reports created")
+report_duration_seconds = Histogram("report_duration_seconds", "Report generation duration")
+```
+
+> In `routes.py`, import and increment `reports_created_total` on `POST /reports/`
+
+> When a report job completes in `service.py`, observe duration with:
+
+```python
+with report_duration_seconds.time():
+    run_report_logic()
+```
+
+---
+
+### **🧪 4. Integration Test for Reporting Plugin**
+
+**✅ Goal:** Full test that covers CRUD + result retrieval
+
+**📂 File:** `tests/plugins/test_reporting.py`
+
+**🧠 Instruction:**
+
+> Write a pytest using FastAPI `TestClient` that:
+>
+> * Calls `POST /reports/` with mock parameters
+> * Asserts status is 201
+> * Calls `GET /reports/{id}` and checks fields
+> * Calls `GET /reports/` with filter
+> * Optionally simulates result data for `GET /reports/{id}/results`
+
+> Mock the database with an in-memory SQLite or test session override.
+
+---
+
+Would you like me to scaffold these directly into your current codebase so the agent just fills in the blanks, or are you planning to paste them into Replit one-by-one?
