@@ -19,13 +19,16 @@ The system uses a two-tier microservice architecture:
    - Core business logic for synchronization
    - Implements change detection and validation
    - Exposes detailed metrics and health endpoints
+   - Plugin-based architecture for extensibility
 
 ## Key Features
 
 - **Intelligent Sync Workflows**: Customizable sync operations with incremental and full sync modes
+- **Report Generation**: Comprehensive report generation and management through the Reporting Plugin
 - **Advanced Monitoring**: Comprehensive metrics collection and visualization
 - **Auto-recovery**: Self-healing capabilities that automatically restart failed components
 - **Audit Logging**: Complete audit trail of all operations for compliance and debugging
+- **CDC Reconciliation**: Change Data Capture with stale process detection and recovery
 - **Performance Tuning**: Optimized database access and connection pooling
 - **Disaster Recovery**: Built-in backup, restore, and recovery procedures
 - **Scheduled Maintenance**: Automated maintenance tasks on regular schedules
@@ -83,6 +86,7 @@ The platform includes several utility scripts for operations, maintenance, and r
 Detailed documentation is available in the `docs` directory:
 
 - [System Documentation](docs/system_documentation.md): Comprehensive system documentation
+- [CI Reporting Tests](docs/ci_reporting_tests.md): Guide for Reporting Plugin CI integration
 - Recovery plans are automatically generated in the `recovery_scripts` directory
 - Maintenance reports are created in the `maintenance_scripts` directory
 
@@ -94,6 +98,19 @@ Key monitoring endpoints:
 - Health Check: `http://localhost:8080/health`
 - System Metrics: `http://localhost:8080/metrics`
 - Audit Summary: `http://localhost:5000/api/audit/summary`
+
+## Testing
+
+The platform includes comprehensive test coverage:
+
+- Unit tests: `pytest terrafusion_platform/tests/unit`
+- Integration tests: `pytest terrafusion_platform/tests/integration`
+- Reporting Plugin tests:
+  - Integration tests: `pytest tests/plugins/test_reporting.py -m "integration"`
+  - Stale reports test: `python test_stale_reports.py`
+  - Metrics verification: `python test_reporting_metrics.py`
+
+CI/CD automation is configured in `.github/workflows` to run all tests on every PR and merge.
 
 ## License
 

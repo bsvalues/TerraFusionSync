@@ -12,8 +12,7 @@ from datetime import datetime, timedelta
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-# Register pytest marks
-pytest.mark.integration = pytest.mark.integration
+# No need to manually register the mark as it's defined in pytest.ini
 
 from terrafusion_sync.app import app
 from terrafusion_sync.database import engine
