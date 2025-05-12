@@ -107,7 +107,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "up{job=\"terrafusion_sync_service\"}",
+          "expr": "up{job=~\"terrafusion_sync_service|terrafusion_sync_service_docker\"}",
           "legendFormat": "SyncService",
           "range": true,
           "refId": "A"
@@ -202,7 +202,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "process_cpu_usage{job=\"terrafusion_sync_service\"}",
+          "expr": "process_cpu_usage{job=~\"terrafusion_sync_service|terrafusion_sync_service_docker\"}",
           "legendFormat": "CPU Usage",
           "range": true,
           "refId": "A"
@@ -293,7 +293,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "process_resident_memory_bytes{job=\"terrafusion_sync_service\"}",
+          "expr": "process_resident_memory_bytes{job=~\"terrafusion_sync_service|terrafusion_sync_service_docker\"}",
           "legendFormat": "Memory Usage",
           "range": true,
           "refId": "A"
@@ -1339,7 +1339,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "rate(http_requests_total{job=\"terrafusion_sync_service\"}[5m])",
+          "expr": "rate(http_requests_total{job=~\"terrafusion_sync_service|terrafusion_sync_service_docker\"}[5m])",
           "legendFormat": "{{method}} {{path}}",
           "range": true,
           "refId": "A"
@@ -1437,7 +1437,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "http_request_duration_seconds_sum{job=\"terrafusion_sync_service\"} / http_request_duration_seconds_count{job=\"terrafusion_sync_service\"}",
+          "expr": "http_request_duration_seconds_sum{job=~\"terrafusion_sync_service|terrafusion_sync_service_docker\"} / http_request_duration_seconds_count{job=~\"terrafusion_sync_service|terrafusion_sync_service_docker\"}",
           "legendFormat": "{{method}} {{path}}",
           "range": true,
           "refId": "A"

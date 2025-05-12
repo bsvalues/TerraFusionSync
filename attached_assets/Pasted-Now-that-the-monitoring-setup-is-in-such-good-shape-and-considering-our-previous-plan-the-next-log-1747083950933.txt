@@ -1,0 +1,38 @@
+Now that the monitoring setup is in such good shape, and considering our previous plan, the next logical step is to fully integrate and test the Market Analysis plugin.
+
+We've already scaffolded it (model, initial plugin code, metrics definitions, and test stubs in terrafusion_market_analysis_plugin_scaffold_v1). The remaining steps to bring it to parity with the Valuation and Reporting plugins are:
+
+Apply the Alembic Migration for market_analysis_jobs Table:
+
+Ensure the MarketAnalysisJob model is correctly defined in terrafusion_sync/core_models.py and included in Base.metadata.
+From terrafusion_platform/terrafusion_sync/:
+Bash
+
+# 1. Generate migration (if not done after defining MarketAnalysisJob model)
+alembic revision -m "add_market_analysis_jobs_table" --autogenerate 
+# 2. Review the generated script (check down_revision, columns, indexes)
+# 3. Apply migration
+alembic upgrade head 
+Verify in your PostgreSQL database that the market_analysis_jobs table is created with the correct structure.
+Run and Finalize Market Analysis Plugin Integration Tests Locally:
+
+The agent was working on fixing async test issues for test_market_analysis_plugin.py or a similar file (the scaffold was tests/integration/test_market_analysis_end_to_end.py).
+Ensure these tests thoroughly cover the /run, /status, and /results workflow for the Market Analysis plugin, including success and simulated failure cases.
+From terrafusion_platform/:
+Bash
+
+pytest tests/integration/test_market_analysis_end_to_end.py -v -s 
+# (or the actual name of your finalized test file for this plugin)
+Iterate until all tests pass.
+Verify Market Analysis Metrics in Grafana:
+
+After running some test market analysis jobs (either manually via API calls or through the integration tests), check your Grafana dashboard.
+Add new panels specifically for the Market Analysis plugin metrics (e.g., market_analysis_jobs_submitted_total, market_analysis_processing_duration_seconds, etc.) using the newly environment-agnostic job name patterns (e.g., job=~"terrafusion_sync_service|terrafusion_sync_core").
+Confirm these panels populate correctly.
+Ensure Market Analysis Tests are in CI:
+
+Confirm that your GitHub Actions CI workflow (.github/workflows/ci.yml) picks up and runs the integration tests for the Market Analysis plugin.
+Verify the CI pipeline passes with these new tests included.
+Completing these steps will mean you have three core, observable, and well-tested plugins, significantly advancing the TerraFusion platform.
+
+How does focusing on these steps to fully integrate and verify the Market Analysis plugin sound?

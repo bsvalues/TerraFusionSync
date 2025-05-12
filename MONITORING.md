@@ -183,4 +183,7 @@ with REQUEST_LATENCY.labels(method='GET', endpoint='/api/data').time():
   - All services are on the same Docker network
   - Port mappings are correct (internal container port vs. exposed port)
 - **Container metrics not visible**: Make sure the metrics endpoints are exposed to the Docker network
-- **Job name mismatches**: Ensure that the job names in Prometheus configuration (`terrafusion_sync_service`, `terrafusion_api_gateway`) match the Grafana dashboard queries exactly
+- **Job name compatibility**: Our dashboards are configured to support both development and Docker environments:
+  - Gateway dashboard uses `job=~"terrafusion_gateway_standalone|terrafusion_api_gateway"` patterns
+  - SyncService dashboard uses `job=~"terrafusion_sync_service|terrafusion_sync_service_docker"` patterns
+  - This allows the same dashboards to work in both environments without modification
