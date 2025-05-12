@@ -1,0 +1,488 @@
+This document provides the scaffold for the new "Market Analysis" plugin, following the established pattern.
+
+#### 1. Update `terrafusion_sync/core_models.py`
+
+Add the `MarketAnalysisJob` SQLAlchemy model.
+
+```python
+# terrafusion_sync/core_models.py
+import datetime
+from sqlalchemy import Column, String, Float, DateTime, Integer, Text, Boolean, JSON
+from sqlalchemy.orm import declarative_base
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+import uuid
+
+# Assuming Base is already defined earlier in this file
+# Base = declarative_base() # Remove if already defined
+
+# ... (PropertyOperational, ValuationJob, ReportJob models should be here) ...
+
+class MarketAnalysisJob(Base):
+    """
+    Represents a market analysis job, its status, parameters, and results.
+    """
+    __tablename__ = "market_analysis_jobs"
+
+    job_id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, comment="Unique ID for the market analysis job")
+    analysis_type = Column(String, index=True, nullable=False, comment="Type of market analysis (e.g., trend_analysis, comparable_market_area)")
+    county_id = Column(String, index=True, nullable=False, comment="County ID for the analysis")
+    
+    status = Column(String, index=True, nullable=False, default="PENDING", comment="e.g., PENDING, RUNNING, COMPLETED, FAILED")
+    message = Column(Text, nullable=True, comment="Status message or error details")
+    
+    parameters_json = Column(JSON, nullable=True, comment="JSON object storing parameters for the analysis (e.g., date ranges, property types)")
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+    # Result Information (could be a summary, link to detailed data, or structured JSON)
+    result_summary_json = Column(JSON, nullable=True, comment="Summary of the analysis results")
+    result_data_location = Column(String, nullable=True, comment="Location/identifier for more detailed result data (e.g., S3 path, table name)")
+
+    def __repr__(self):
+        return f"<MarketAnalysisJob(job_id='{self.job_id}', analysis_type='{self.analysis_type}', county_id='{self.county_id}', status='{self.status}')>"
+
+```
+
+#### 2. Create `terrafusion_sync/plugins/market_analysis/` Directory and Files
+
+* **`terrafusion_sync/plugins/market_analysis/__init__.py`** (can be empty for now)
+* **`terrafusion_sync/plugins/market_analysis/schemas.py`**
+* **`terrafusion_sync/plugins/market_analysis/router.py`** (will also contain the service logic for this scaffold)
+
+```python
+# terrafusion_sync/plugins/market_analysis/schemas.py
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any, List
+import uuid
+import datetime
+
+class MarketAnalysisRunRequest(BaseModel):
+    analysis_type: str = Field(..., example="price_trend_by_zip", description="Specific type of market analysis to run.")
+    county_id: str = Field(..., example="COUNTY01")
+    parameters: Optional[Dict[str, Any]] = Field(None, example={"start_date": "2023-01-01", "end_date": "2023-12-31", "zip_codes": ["90210", "90211"]})
+
+class MarketAnalysisJobStatusResponse(BaseModel):
+    job_id: uuid.UUID
+    analysis_type: str
+    county_id: str
+    status: str
+    message: Optional[str] = None
+    parameters: Optional[Dict[str, Any]] = None
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+    started_at: Optional[datetime.datetime] = None
+    completed_at: Optional[datetime.datetime] = None
+
+class MarketTrendDataPoint(BaseModel): # Example, can be more complex
+    period: str # e.g., "2023-Q1"
+    average_price: Optional[float] = None
+    median_price: Optional[float] = None
+    sales_volume: Optional[int] = None
+
+class MarketAnalysisResultData(BaseModel):
+    result_summary: Optional[Dict[str, Any]] = None # For general summaries
+    trends: Optional[List[MarketTrendDataPoint]] = None # Example for trend analysis
+    result_data_location: Optional[str] = None # Link to more detailed data
+
+class MarketAnalysisJobResultResponse(MarketAnalysisJobStatusResponse):
+    result: Optional[MarketAnalysisResultData] = None
+```python
+# terrafusion_sync/plugins/market_analysis/router.py
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+import logging
+from typing import Optional, Dict, Any
+import uuid
+import asyncio
+import time
+import datetime
+
+# Assuming connectors.postgres is two levels up from plugins/market_analysis/
+from ...connectors.postgres import get_db_session 
+from ...core_models import MarketAnalysisJob # Import the new MarketAnalysisJob model
+# from ...core_models import PropertyOperational # If needed for analysis
+
+# Import Prometheus metrics from the shared metrics.py module
+try:
+    from ...metrics import ( # Adjust path based on your metrics.py location
+        # Define these in metrics.py
+        # MARKET_ANALYSIS_JOBS_SUBMITTED_TOTAL,
+        # MARKET_ANALYSIS_JOBS_COMPLETED_TOTAL,
+        # MARKET_ANALYSIS_JOBS_FAILED_TOTAL,
+        # MARKET_ANALYSIS_PROCESSING_DURATION_SECONDS
+    )
+    # For now, use dummy metrics if not defined yet
+    class DummyCounter:
+        def inc(self, amount=1): pass
+        def labels(self, *args, **kwargs): return self
+    class DummyHistogram:
+        def observe(self, amount): pass
+        def labels(self, *args, **kwargs): return self
+    MARKET_ANALYSIS_JOBS_SUBMITTED_TOTAL = DummyCounter()
+    MARKET_ANALYSIS_JOBS_COMPLETED_TOTAL = DummyCounter()
+    MARKET_ANALYSIS_JOBS_FAILED_TOTAL = DummyCounter()
+    MARKET_ANALYSIS_PROCESSING_DURATION_SECONDS = DummyHistogram()
+except ImportError:
+    print("Warning (market_analysis.py): Could not import Prometheus metrics. Metrics will not be recorded.")
+    # Define dummy metrics as above
+    # ... (dummy metric definitions) ...
+
+from .schemas import (
+    MarketAnalysisRunRequest, 
+    MarketAnalysisJobStatusResponse, 
+    MarketAnalysisResultData,
+    MarketAnalysisJobResultResponse
+)
+
+logger = logging.getLogger(__name__)
+router = APIRouter() # Prefix "/market-analysis" will be added by plugins/__init__.py
+
+# --- Placeholder Background Task for Market Analysis ---
+async def _simulate_market_analysis_processing(job_id: uuid.UUID, analysis_type: str, county_id: str, parameters: Optional[Dict[str, Any]], db_session_factory):
+    start_process_time = time.monotonic()
+    job_final_status_for_metric = "UNKNOWN_FAILURE"
+
+    async with db_session_factory() as db:
+        logger.info(f"MarketAnalysisJob {job_id}: Background task started for analysis type '{analysis_type}', county '{county_id}'.")
+        job_query = select(MarketAnalysisJob).where(MarketAnalysisJob.job_id == job_id)
+        
+        try:
+            result = await db.execute(job_query)
+            job = result.scalars().first()
+            if not job:
+                logger.error(f"MarketAnalysisJob {job_id}: Not found in DB at start of background task.")
+                MARKET_ANALYSIS_JOBS_FAILED_TOTAL.labels(county_id=county_id, analysis_type=analysis_type, failure_reason="job_not_found_in_bg").inc()
+                return
+
+            job.status = "RUNNING"
+            job.started_at = datetime.datetime.utcnow()
+            job.updated_at = datetime.datetime.utcnow()
+            await db.commit()
+            logger.info(f"MarketAnalysisJob {job_id}: Status updated to RUNNING.")
+
+            logger.info(f"MarketAnalysisJob {job_id}: Simulating analysis of '{analysis_type}' with params: {parameters}")
+            # TODO: Implement actual market analysis logic here.
+            # This would involve querying PropertyOperational, ValuationJob, potentially external data sources
+            # via the Analytics DB connector.
+            await asyncio.sleep(4) # Simulate processing time 
+
+            if analysis_type == "FAILING_ANALYSIS_SIM":
+                job.status = "FAILED"
+                job.message = "Simulated market analysis failure."
+                MARKET_ANALYSIS_JOBS_FAILED_TOTAL.labels(county_id=county_id, analysis_type=analysis_type, failure_reason="simulated_failure").inc()
+            else:
+                job.status = "COMPLETED"
+                job.message = f"{analysis_type} completed successfully."
+                job.result_summary_json = {"key_finding": "Market prices increased by 5% year-over-year.", "data_points_analyzed": 1500}
+                job.result_data_location = f"/data/analysis_results/{county_id}/{analysis_type}/{job_id}.parquet"
+                MARKET_ANALYSIS_JOBS_COMPLETED_TOTAL.labels(county_id=county_id, analysis_type=analysis_type).inc()
+            
+            job_final_status_for_metric = job.status
+            job.completed_at = datetime.datetime.utcnow()
+            job.updated_at = datetime.datetime.utcnow()
+            await db.commit()
+            logger.info(f"MarketAnalysisJob {job_id}: Final status '{job.status}' committed to DB.")
+
+        except Exception as e:
+            job_final_status_for_metric = "EXCEPTION_FAILURE"
+            logger.error(f"MarketAnalysisJob {job_id}: Error during background analysis: {e}", exc_info=True)
+            MARKET_ANALYSIS_JOBS_FAILED_TOTAL.labels(county_id=county_id, analysis_type=analysis_type, failure_reason="processing_exception").inc()
+            # ... (DB error handling as before) ...
+        finally:
+            duration = time.monotonic() - start_process_time
+            MARKET_ANALYSIS_PROCESSING_DURATION_SECONDS.labels(county_id=county_id, analysis_type=analysis_type).observe(duration)
+            logger.info(f"MarketAnalysisJob {job_id}: Background task finished. Duration: {duration:.2f}s. Final reported status for metrics: {job_final_status_for_metric}")
+
+
+# --- API Endpoints for Market Analysis Plugin ---
+@router.post("/run", response_model=MarketAnalysisJobStatusResponse, status_code=status.HTTP_202_ACCEPTED)
+async def run_market_analysis_job(
+    request_data: MarketAnalysisRunRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db_session)
+):
+    job_id = uuid.uuid4()
+    new_job = MarketAnalysisJob(
+        job_id=job_id,
+        analysis_type=request_data.analysis_type,
+        county_id=request_data.county_id,
+        status="PENDING",
+        message="Market analysis job accepted and queued.",
+        parameters_json=request_data.parameters,
+        created_at=datetime.datetime.utcnow(),
+        updated_at=datetime.datetime.utcnow()
+    )
+    
+    try:
+        db.add(new_job)
+        await db.commit()
+        await db.refresh(new_job)
+        logger.info(f"MarketAnalysisJob {new_job.job_id} created in DB for type '{new_job.analysis_type}', county '{new_job.county_id}'.")
+        MARKET_ANALYSIS_JOBS_SUBMITTED_TOTAL.labels(
+            county_id=request_data.county_id, 
+            analysis_type=request_data.analysis_type,
+            status_on_submit="PENDING"
+        ).inc()
+    except Exception as e:
+        logger.error(f"Failed to create market analysis job in DB: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to initiate market analysis job.")
+
+    from sqlalchemy.orm import sessionmaker 
+    db_session_factory = sessionmaker(bind=db.get_bind(), class_=AsyncSession, expire_on_commit=False)
+    
+    background_tasks.add_task(
+        _simulate_market_analysis_processing, 
+        new_job.job_id, 
+        new_job.analysis_type, 
+        new_job.county_id,
+        new_job.parameters_json,
+        db_session_factory
+    )
+    return MarketAnalysisJobStatusResponse.model_validate(new_job)
+
+@router.get("/status/{job_id_str}", response_model=MarketAnalysisJobStatusResponse)
+async def get_market_analysis_job_status(job_id_str: str, db: AsyncSession = Depends(get_db_session)):
+    try:
+        job_uuid = uuid.UUID(job_id_str)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid job_id format.")
+    
+    result = await db.execute(select(MarketAnalysisJob).where(MarketAnalysisJob.job_id == job_uuid))
+    job = result.scalars().first()
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Market analysis job '{job_uuid}' not found.")
+    return MarketAnalysisJobStatusResponse.model_validate(job)
+
+@router.get("/results/{job_id_str}", response_model=MarketAnalysisJobResultResponse)
+async def get_market_analysis_job_results(job_id_str: str, db: AsyncSession = Depends(get_db_session)):
+    try:
+        job_uuid = uuid.UUID(job_id_str)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid job_id format.")
+
+    result = await db.execute(select(MarketAnalysisJob).where(MarketAnalysisJob.job_id == job_uuid))
+    job = result.scalars().first()
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Market analysis job '{job_uuid}' not found.")
+
+    job_status_data = MarketAnalysisJobStatusResponse.model_validate(job).model_dump()
+    analysis_result_data = None
+
+    if job.status == "COMPLETED":
+        analysis_result_data = MarketAnalysisResultData(
+            result_summary=job.result_summary_json,
+            # Example: if trends were stored differently or processed
+            # trends=[MarketTrendDataPoint(period="2023", average_price=job.some_avg_price_field)] 
+            result_data_location=job.result_data_location
+        )
+    return MarketAnalysisJobResultResponse(**job_status_data, result=analysis_result_data)
+```
+
+#### 3. Update `terrafusion_sync/plugins/__init__.py`
+
+Register the new `market_analysis_router`.
+
+```python
+# terrafusion_sync/plugins/__init__.py
+from fastapi import APIRouter
+
+# Import routers from each plugin module
+try:
+    from .valuation import router as valuation_router
+    from .reporting import router as reporting_router
+    from .market_analysis.router import router as market_analysis_router # Added
+except ImportError as e:
+    print(f"Error importing plugin routers: {e}. Ensure plugin files exist and are correct.")
+    valuation_router = None 
+    reporting_router = None
+    market_analysis_router = None # Added
+
+all_plugin_routers = APIRouter()
+
+if valuation_router:
+    all_plugin_routers.include_router(valuation_router, prefix="/valuation", tags=["Valuation Services"])
+if reporting_router:
+    all_plugin_routers.include_router(reporting_router, prefix="/reporting", tags=["Reporting Services"])
+if market_analysis_router: # Added
+    all_plugin_routers.include_router(market_analysis_router, prefix="/market-analysis", tags=["Market Analysis Services"])
+
+def get_all_plugin_routers_instance():
+    return all_plugin_routers
+```
+
+#### 4. Update `terrafusion_sync/metrics.py`
+
+Add metric definitions for the Market Analysis plugin.
+
+```python
+# terrafusion_sync/metrics.py
+from prometheus_client import Counter, Histogram
+
+# --- Valuation Plugin Metrics ---
+# ... (existing valuation metrics) ...
+VALUATION_JOBS_SUBMITTED_TOTAL = Counter(
+    'valuation_jobs_submitted_total',
+    'Total number of valuation jobs submitted.',
+    ['county_id', 'status_on_submit']
+)
+VALUATION_JOBS_COMPLETED_TOTAL = Counter(
+    'valuation_jobs_completed_total',
+    'Total number of valuation jobs completed successfully.',
+    ['county_id']
+)
+VALUATION_JOBS_FAILED_TOTAL = Counter(
+    'valuation_jobs_failed_total',
+    'Total number of valuation jobs that failed.',
+    ['county_id', 'failure_reason']
+)
+VALUATION_PROCESSING_DURATION_SECONDS = Histogram(
+    'valuation_processing_duration_seconds',
+    'Histogram of valuation job processing time in seconds.',
+    ['county_id'],
+    buckets=[0.1, 0.5, 1.0, 2.5, 5.0, 7.5, 10.0, 15.0, 30.0, 60.0, float('inf')]
+)
+
+# --- Reporting Plugin Metrics ---
+# ... (existing reporting metrics) ...
+REPORT_JOBS_SUBMITTED_TOTAL = Counter(
+    'report_jobs_submitted_total',
+    'Total number of report jobs submitted.',
+    ['county_id', 'report_type', 'status_on_submit']
+)
+REPORT_JOBS_COMPLETED_TOTAL = Counter(
+    'report_jobs_completed_total',
+    'Total number of report jobs completed successfully.',
+    ['county_id', 'report_type']
+)
+REPORT_JOBS_FAILED_TOTAL = Counter(
+    'report_jobs_failed_total',
+    'Total number of report jobs that failed.',
+    ['county_id', 'report_type', 'failure_reason']
+)
+REPORT_PROCESSING_DURATION_SECONDS = Histogram(
+    'report_processing_duration_seconds',
+    'Histogram of report job processing time in seconds.',
+    ['county_id', 'report_type'],
+    buckets=[0.5, 1.0, 2.5, 5.0, 10.0, 20.0, 30.0, 60.0, 120.0, 300.0, float('inf')]
+)
+
+# --- Market Analysis Plugin Metrics ---
+MARKET_ANALYSIS_JOBS_SUBMITTED_TOTAL = Counter(
+    'market_analysis_jobs_submitted_total',
+    'Total number of market analysis jobs submitted.',
+    ['county_id', 'analysis_type', 'status_on_submit']
+)
+MARKET_ANALYSIS_JOBS_COMPLETED_TOTAL = Counter(
+    'market_analysis_jobs_completed_total',
+    'Total number of market analysis jobs completed successfully.',
+    ['county_id', 'analysis_type']
+)
+MARKET_ANALYSIS_JOBS_FAILED_TOTAL = Counter(
+    'market_analysis_jobs_failed_total',
+    'Total number of market analysis jobs that failed.',
+    ['county_id', 'analysis_type', 'failure_reason']
+)
+MARKET_ANALYSIS_PROCESSING_DURATION_SECONDS = Histogram(
+    'market_analysis_processing_duration_seconds',
+    'Histogram of market analysis job processing time in seconds.',
+    ['county_id', 'analysis_type'],
+    buckets=[1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0, float('inf')] # Potentially longer jobs
+)
+```
+*Remember to update `terrafusion_sync/app.py` to import these new metrics from `metrics.py` if it's not already importing everything.*
+
+#### 5. Create `tests/integration/test_market_analysis_end_to_end.py` (Stub)
+
+```python
+# terrafusion_platform/tests/integration/test_market_analysis_end_to_end.py
+import asyncio
+import time
+import pytest
+from fastapi.testclient import TestClient
+import uuid
+
+# Fixtures `sync_client`, `db_session` are expected from conftest.py
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_market_analysis_workflow_success(
+    sync_client: TestClient,
+    db_session: asyncio.Future # Actually AsyncSession
+):
+    """
+    Tests the full market analysis workflow: run, poll status, fetch results.
+    """
+    test_county_id = f"MARKET_TEST_COUNTY_{uuid.uuid4().hex[:4]}"
+    test_analysis_type = "simulated_price_trends"
+    test_parameters = {"start_year": 2022, "end_year": 2023, "property_types": ["SFR", "CONDO"]}
+
+    run_payload = {
+        "analysis_type": test_analysis_type,
+        "county_id": test_county_id,
+        "parameters": test_parameters
+    }
+    print(f"Test Market Analysis (Success): Posting to /plugins/v1/market-analysis/run with payload: {run_payload}")
+    
+    response = sync_client.post("/plugins/v1/market-analysis/run", json=run_payload)
+    
+    assert response.status_code == 202, f"Expected 202 Accepted, got {response.status_code}. Response: {response.text}"
+    job_data = response.json()
+    print(f"Test Market Analysis (Success): /run response: {job_data}")
+
+    assert "job_id" in job_data
+    job_id = job_data["job_id"]
+    assert job_data["status"] == "PENDING"
+
+    # Poll status
+    current_status = None
+    max_polls = 20
+    poll_interval = 0.5
+    for i in range(max_polls):
+        status_response = sync_client.get(f"/plugins/v1/market-analysis/status/{job_id}")
+        assert status_response.status_code == 200
+        status_data = status_response.json()
+        current_status = status_data["status"]
+        print(f"Test Market Analysis (Success): Poll {i+1}/{max_polls} - Status for job {job_id}: {current_status}")
+        if current_status == "COMPLETED":
+            break
+        elif current_status == "FAILED":
+            pytest.fail(f"Market Analysis job {job_id} FAILED. Message: {status_data.get('message', 'No message')}")
+        await asyncio.sleep(poll_interval)
+    assert current_status == "COMPLETED"
+
+    # Fetch results
+    results_response = sync_client.get(f"/plugins/v1/market-analysis/results/{job_id}")
+    assert results_response.status_code == 200
+    results_data = results_response.json()
+    print(f"Test Market Analysis (Success): /results response: {results_data}")
+    
+    assert results_data["status"] == "COMPLETED"
+    assert results_data["result"] is not None
+    assert "result_summary" in results_data["result"]
+    # Add more specific assertions based on the simulated results in your plugin
+    assert results_data["result"]["result_summary"]["key_finding"] == "Market prices increased by 5% year-over-year."
+
+    print(f"Test Market Analysis (Success): Job {job_id} successfully completed and results verified.")
+```
+
+#### 6. Update `.github/workflows/ci.yml` (Conceptual CI Block)
+
+Ensure your CI pipeline runs tests from the integration directory, which should now include market analysis tests. If your `pytest` command in CI is generic like `pytest tests/integration -m "integration"`, this new test file (if placed in `tests/integration/` and marked) will be picked up automatically.
+
+```yaml
+# Snippet for .github/workflows/ci.yml (within the 'test' job steps)
+
+      # ... (after Alembic migrations) ...
+
+      - name: Run Integration Tests (including Market Analysis)
+        run: |
+          echo "Running ALL Integration Tests..."
+          pytest tests/integration -v -s -m "integration"
+        env:
+          TEST_TERRAFUSION_OPERATIONAL_DB_URL: ${{ env.TEST_TERRAFUSION_OPERATIONAL_DB_URL }}
+          # Add other necessary env vars for tests

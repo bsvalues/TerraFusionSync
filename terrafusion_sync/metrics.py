@@ -119,6 +119,49 @@ REPORT_JOBS_IN_PROGRESS = Gauge(
     'Number of report jobs currently being processed'
 )
 
+# === Market Analysis Plugin Metrics ===
+
+# Counter for market analysis jobs submitted
+MARKET_ANALYSIS_JOBS_SUBMITTED = Counter(
+    'market_analysis_jobs_submitted_total',
+    'Total number of market analysis jobs submitted',
+    ['county_id', 'analysis_type']
+)
+
+# Counter for market analysis job completions
+MARKET_ANALYSIS_JOBS_COMPLETED = Counter(
+    'market_analysis_jobs_completed_total',
+    'Total number of market analysis jobs completed',
+    ['county_id', 'analysis_type']
+)
+
+# Counter for market analysis job failures
+MARKET_ANALYSIS_JOBS_FAILED = Counter(
+    'market_analysis_jobs_failed_total',
+    'Total number of market analysis jobs that failed',
+    ['county_id', 'analysis_type', 'failure_reason']
+)
+
+# Histogram for market analysis processing duration
+MARKET_ANALYSIS_PROCESSING_DURATION = Histogram(
+    'market_analysis_processing_duration_seconds',
+    'Market analysis processing duration in seconds',
+    ['county_id', 'analysis_type'],
+    buckets=[0.1, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600, 1800, 3600]
+)
+
+# Gauge for pending market analysis jobs
+MARKET_ANALYSIS_JOBS_PENDING = Gauge(
+    'market_analysis_jobs_pending',
+    'Number of market analysis jobs in pending state'
+)
+
+# Gauge for market analysis jobs in progress
+MARKET_ANALYSIS_JOBS_IN_PROGRESS = Gauge(
+    'market_analysis_jobs_in_progress',
+    'Number of market analysis jobs currently being processed'
+)
+
 
 def track_api_request(endpoint: str):
     """
@@ -286,6 +329,67 @@ def track_report_job(func: Callable) -> Callable:
     return wrapper
 
 
+def track_market_analysis_job(func: Callable) -> Callable:
+    """
+    Decorator to track market analysis job metrics.
+    
+    This will record job submission, completion, duration metrics, and update gauges.
+    """
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        county_id = kwargs.get('county_id', 'unknown')
+        analysis_type = kwargs.get('analysis_type', 'unknown')
+        
+        # Record job submission
+        MARKET_ANALYSIS_JOBS_SUBMITTED.labels(
+            county_id=county_id,
+            analysis_type=analysis_type
+        ).inc()
+        
+        # Increment pending jobs
+        MARKET_ANALYSIS_JOBS_PENDING.inc()
+        
+        start_time = time.time()
+        
+        try:
+            # Just before processing starts, update gauges
+            MARKET_ANALYSIS_JOBS_PENDING.dec()
+            MARKET_ANALYSIS_JOBS_IN_PROGRESS.inc()
+            
+            # Process the job
+            result = await func(*args, **kwargs)
+            
+            # Record completion
+            MARKET_ANALYSIS_JOBS_COMPLETED.labels(
+                county_id=county_id,
+                analysis_type=analysis_type
+            ).inc()
+            
+            return result
+            
+        except Exception as e:
+            # Record failure with reason
+            failure_reason = type(e).__name__
+            MARKET_ANALYSIS_JOBS_FAILED.labels(
+                county_id=county_id,
+                analysis_type=analysis_type,
+                failure_reason=failure_reason
+            ).inc()
+            
+            raise e
+            
+        finally:
+            # Always decrement in-progress counter and record duration
+            MARKET_ANALYSIS_JOBS_IN_PROGRESS.dec()
+            duration = time.time() - start_time
+            MARKET_ANALYSIS_PROCESSING_DURATION.labels(
+                county_id=county_id,
+                analysis_type=analysis_type
+            ).observe(duration)
+    
+    return wrapper
+
+
 def update_metrics_from_database(db_metrics: Dict[str, Any]):
     """
     Update metrics based on data from the database.
@@ -306,6 +410,13 @@ def update_metrics_from_database(db_metrics: Dict[str, Any]):
     
     if 'report_jobs_in_progress' in db_metrics:
         REPORT_JOBS_IN_PROGRESS.set(db_metrics['report_jobs_in_progress'])
+    
+    # Update market analysis job counts
+    if 'market_analysis_jobs_pending' in db_metrics:
+        MARKET_ANALYSIS_JOBS_PENDING.set(db_metrics['market_analysis_jobs_pending'])
+    
+    if 'market_analysis_jobs_in_progress' in db_metrics:
+        MARKET_ANALYSIS_JOBS_IN_PROGRESS.set(db_metrics['market_analysis_jobs_in_progress'])
     
     # Update active DB connections
     if 'db_connections_active' in db_metrics:

@@ -352,3 +352,80 @@ class ReportJob(Base):
         self.updated_at = datetime.utcnow()
 
 # All duplicate model definitions have been removed
+
+# ==========================================
+# Market Analysis Models
+# ==========================================
+
+class MarketAnalysisType(enum.Enum):
+    """Types of market analyses that can be performed."""
+    PRICE_TREND_BY_ZIP = "price_trend_by_zip"
+    COMPARABLE_MARKET_AREA = "comparable_market_area"
+    SALES_VELOCITY = "sales_velocity"
+    MARKET_VALUATION = "market_valuation"
+    PRICE_PER_SQFT = "price_per_sqft"
+    CUSTOM = "custom"
+
+
+class MarketAnalysisJob(Base):
+    """
+    Represents a market analysis job, its status, parameters, and results.
+    """
+    __tablename__ = "market_analysis_jobs"
+
+    job_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), comment="Unique ID for the market analysis job")
+    analysis_type = Column(String(50), index=True, nullable=False, comment="Type of market analysis (e.g., trend_analysis, comparable_market_area)")
+    county_id = Column(String(50), index=True, nullable=False, comment="County ID for the analysis")
+    
+    status = Column(String(20), index=True, nullable=False, default="PENDING", comment="e.g., PENDING, RUNNING, COMPLETED, FAILED")
+    message = Column(Text, nullable=True, comment="Status message or error details")
+    
+    parameters_json = Column(JSON, nullable=True, comment="JSON object storing parameters for the analysis (e.g., date ranges, property types)")
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+    # Result Information
+    result_summary_json = Column(JSON, nullable=True, comment="Summary of the analysis results")
+    result_data_location = Column(String(255), nullable=True, comment="Location/identifier for more detailed result data (e.g., S3 path, table name)")
+
+    def __repr__(self):
+        return f"<MarketAnalysisJob(job_id='{self.job_id}', analysis_type='{self.analysis_type}', county_id='{self.county_id}', status='{self.status}')>"
+        
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the model to a dictionary for API responses."""
+        # Helper function to handle date and datetime serialization
+        def serialize_value(value):
+            if isinstance(value, (datetime, date)):
+                return value.isoformat()
+            return value
+            
+        result = {
+            "job_id": self.job_id,
+            "analysis_type": self.analysis_type,
+            "county_id": self.county_id,
+            
+            "timestamps": {
+                "created_at": serialize_value(self.created_at),
+                "updated_at": serialize_value(self.updated_at),
+                "started_at": serialize_value(self.started_at),
+                "completed_at": serialize_value(self.completed_at)
+            },
+            
+            "parameters": self.parameters_json,
+            
+            "status": {
+                "current": self.status,
+                "message": self.message
+            },
+            
+            "result": {
+                "summary": self.result_summary_json,
+                "data_location": self.result_data_location
+            }
+        }
+        
+        return result
