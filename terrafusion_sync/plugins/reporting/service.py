@@ -189,7 +189,7 @@ async def update_report_job_status(
         job_started_time = None
         if status == "RUNNING" and not await _is_job_already_running(db, report_id):
             job_started_time = datetime.utcnow()
-            values["processing_started_at"] = job_started_time
+            values["started_at"] = job_started_time
             
             # Update metrics when job starts running
             REPORT_JOBS_PENDING.dec()
@@ -197,7 +197,7 @@ async def update_report_job_status(
         
         if status in ("COMPLETED", "FAILED"):
             job_completed_time = datetime.utcnow()
-            values["processing_completed_at"] = job_completed_time
+            values["completed_at"] = job_completed_time
             
             # Update metrics when job completes or fails
             REPORT_JOBS_IN_PROGRESS.dec()

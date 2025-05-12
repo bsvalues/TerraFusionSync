@@ -286,8 +286,8 @@ class ReportJob(Base):
     processing_started_at = property(lambda self: self.started_at)
     processing_completed_at = property(lambda self: self.completed_at)
     
-    # Additional metadata for cross-service tracking
-    correlation_id: Mapped[Optional[str]] = mapped_column(String(100))  # For cross-service tracking
+    # Additional metadata for cross-service tracking - Not in current schema
+    correlation_id = None  # Define as class attribute not mapped to database
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert the model to a dictionary for API responses."""
