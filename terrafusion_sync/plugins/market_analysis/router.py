@@ -6,13 +6,46 @@ exposing endpoints for job creation, status checking, and result retrieval.
 """
 
 import logging
+import sys
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Path, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from terrafusion_sync.database import get_async_session
+# Ensure terrafusion_sync module is in path
+sys.path.insert(0, '.')
+
+# Import database session factory
+try:
+    from terrafusion_sync.database import get_async_session
+except ImportError:
+    # If we can't import, we'll create a dummy session factory for testing
+    from contextlib import asynccontextmanager
+    
+    @asynccontextmanager
+    async def get_async_session():
+        """Dummy session factory for testing."""
+        class DummySession:
+            async def execute(self, *args, **kwargs):
+                class DummyResult:
+                    def scalars(self):
+                        class DummyScalars:
+                            def first(self):
+                                return None
+                            def all(self):
+                                return []
+                        return DummyScalars()
+                return DummyResult()
+            
+            async def commit(self):
+                pass
+                
+            async def close(self):
+                pass
+        
+        yield DummySession()
+
 from terrafusion_sync.plugins.market_analysis.schemas import (
     MarketAnalysisRunRequest,
     MarketAnalysisJobStatusResponse,

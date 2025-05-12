@@ -6,49 +6,25 @@ It handles job management, data processing, and result generation.
 """
 
 import json
-import uuid
 import logging
-import asyncio
-from typing import Dict, List, Any, Optional, Union, Tuple
+import uuid
 from datetime import datetime, timedelta
-from sqlalchemy import select, update, and_, or_, desc, func
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Dict, List, Any, Optional, Callable, Awaitable
+import asyncio
 
-from terrafusion_sync.core_models import MarketAnalysisJob
+from sqlalchemy import select, desc, and_, or_, func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+
+from terrafusion_sync.plugins.market_analysis.models import MarketAnalysisJob
 from terrafusion_sync.plugins.market_analysis.metrics import (
-    record_job_submission,
-    record_job_completion,
-    record_job_failure,
     update_running_jobs,
-    record_job_processing_time,
-    record_property_valuation,
-    record_price_per_sqft,
-    record_comparable_areas_count,
-    record_sales_velocity,
-    record_days_on_market,
-    update_property_price_metrics,
-    update_market_score
+    record_job_completion,
+    record_job_failure
 )
 
+# Configure logger
 logger = logging.getLogger(__name__)
-
-# Constants for job status
-JOB_STATUS_PENDING = "PENDING"
-JOB_STATUS_RUNNING = "RUNNING"
-JOB_STATUS_COMPLETED = "COMPLETED"
-JOB_STATUS_FAILED = "FAILED"
-JOB_STATUS_CANCELLED = "CANCELLED"
-
-# Constants for analysis types
-ANALYSIS_TYPE_PRICE_TREND = "price_trend_by_zip"
-ANALYSIS_TYPE_COMPARABLE_MARKET = "comparable_market_area"
-ANALYSIS_TYPE_SALES_VELOCITY = "sales_velocity"
-ANALYSIS_TYPE_MARKET_VALUATION = "market_valuation"
-ANALYSIS_TYPE_PRICE_PER_SQFT = "price_per_sqft"
-
-# Storage for background tasks
-_running_tasks = {}
-
 
 class MarketAnalysisService:
     """
@@ -63,9 +39,9 @@ class MarketAnalysisService:
         Args:
             get_session_factory: Callable that returns an async database session
         """
-        self.get_session_factory = get_session_factory
-        logger.info("Market Analysis Service initialized")
-
+        self.get_session = get_session_factory
+        logger.info("Market Analysis service initialized")
+    
     async def create_job(self, county_id: str, analysis_type: str, parameters: Dict[str, Any]) -> str:
         """
         Create a new market analysis job and return the job ID.
@@ -81,33 +57,30 @@ class MarketAnalysisService:
         job_id = str(uuid.uuid4())
         now = datetime.utcnow()
         
-        # Record metric
-        record_job_submission(county_id, analysis_type)
-        
         # Create job record
-        job = MarketAnalysisJob(
-            job_id=job_id,
-            county_id=county_id,
-            analysis_type=analysis_type,
-            status=JOB_STATUS_PENDING,
-            parameters_json=json.dumps(parameters),
-            created_at=now,
-            updated_at=now,
-            message="Job created and pending execution"
-        )
-        
-        # Save to database
-        async with self.get_session_factory() as session:
+        async with self.get_session() as session:
+            job = MarketAnalysisJob(
+                job_id=job_id,
+                county_id=county_id,
+                analysis_type=analysis_type,
+                parameters_json=json.dumps(parameters),
+                status="PENDING",
+                message="Job created and queued for processing",
+                created_at=now,
+                updated_at=now
+            )
+            
             session.add(job)
             await session.commit()
             
-        logger.info(f"Created market analysis job {job_id} for county {county_id}, type: {analysis_type}")
+        # Record metric
+        record_job_creation(county_id, analysis_type)
         
-        # Start background processing after job is saved
+        # Start background processing
         asyncio.create_task(self._process_job_async(job_id))
         
         return job_id
-
+    
     async def get_job_status(self, job_id: str) -> Optional[Dict[str, Any]]:
         """
         Get the current status of a job.
@@ -118,14 +91,14 @@ class MarketAnalysisService:
         Returns:
             dict or None: Job details if found, None otherwise
         """
-        async with self.get_session_factory() as session:
+        async with self.get_session() as session:
             job = await self._get_job(session, job_id)
             
             if not job:
                 return None
-                
-            return self._job_to_dict(job)
             
+            return self._job_to_dict(job)
+    
     async def get_job_result(self, job_id: str) -> Optional[Dict[str, Any]]:
         """
         Get the result of a completed job.
@@ -136,38 +109,27 @@ class MarketAnalysisService:
         Returns:
             dict or None: Job details with results if found and completed, None otherwise
         """
-        async with self.get_session_factory() as session:
+        async with self.get_session() as session:
             job = await self._get_job(session, job_id)
             
             if not job:
                 return None
-                
-            # Convert to dict with enhanced result handling
+            
             result = self._job_to_dict(job)
             
-            # Add result data if available
-            if job.status == JOB_STATUS_COMPLETED:
-                try:
-                    result_summary = json.loads(job.result_summary_json) if job.result_summary_json else None
-                    
-                    result["result"] = {
-                        "result_summary": result_summary,
-                        "result_data_location": job.result_data_location
-                    }
-                    
-                    # Check if we have trend data
-                    if result_summary and "trends" in result_summary:
-                        result["result"]["trends"] = result_summary["trends"]
-                        
-                except Exception as e:
-                    logger.error(f"Error processing result data for job {job_id}: {str(e)}")
-                    result["result"] = {
-                        "result_summary": None,
-                        "result_data_location": job.result_data_location
-                    }
-            
+            # Add parsed parameters and results
+            try:
+                result["parameters"] = json.loads(job.parameters_json) if job.parameters_json else {}
+            except (json.JSONDecodeError, TypeError):
+                result["parameters"] = {}
+                
+            try:
+                result["results"] = json.loads(job.result_json) if job.result_json else {}
+            except (json.JSONDecodeError, TypeError):
+                result["results"] = {}
+                
             return result
-            
+    
     async def list_jobs(self, county_id: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
         """
         List jobs, optionally filtered by county.
@@ -179,12 +141,12 @@ class MarketAnalysisService:
         Returns:
             list: List of job details dictionaries
         """
-        async with self.get_session_factory() as session:
+        async with self.get_session() as session:
             query = select(MarketAnalysisJob).order_by(desc(MarketAnalysisJob.created_at)).limit(limit)
             
             if county_id:
-                query = query.where(MarketAnalysisJob.county_id == county_id)
-                
+                query = query.filter(MarketAnalysisJob.county_id == county_id)
+            
             result = await session.execute(query)
             jobs = result.scalars().all()
             
@@ -200,30 +162,20 @@ class MarketAnalysisService:
         Returns:
             bool: True if job was cancelled, False otherwise
         """
-        async with self.get_session_factory() as session:
+        async with self.get_session() as session:
             job = await self._get_job(session, job_id)
             
-            if not job:
+            if not job or job.status not in ["PENDING", "RUNNING"]:
                 return False
-                
-            if job.status in [JOB_STATUS_PENDING, JOB_STATUS_RUNNING]:
-                # Update job status
-                job.status = JOB_STATUS_CANCELLED
-                job.message = "Job cancelled by user"
-                job.updated_at = datetime.utcnow()
-                
-                # Commit changes
-                await session.commit()
-                
-                # Stop background task if running
-                task = _running_tasks.get(job_id)
-                if task and not task.done():
-                    task.cancel()
-                    
-                logger.info(f"Cancelled job {job_id}")
-                return True
-                
-            return False
+            
+            # Update job status
+            job.status = "CANCELLED"
+            job.message = "Job cancelled by user"
+            job.updated_at = datetime.utcnow()
+            
+            await session.commit()
+            
+            return True
     
     async def cleanup_stale_jobs(self, max_age_hours: int = 24) -> int:
         """
@@ -237,32 +189,29 @@ class MarketAnalysisService:
         """
         cutoff_time = datetime.utcnow() - timedelta(hours=max_age_hours)
         
-        async with self.get_session_factory() as session:
+        async with self.get_session() as session:
             # Find running jobs that haven't been updated recently
-            query = (
-                update(MarketAnalysisJob)
-                .where(
-                    and_(
-                        MarketAnalysisJob.status == JOB_STATUS_RUNNING,
-                        MarketAnalysisJob.updated_at < cutoff_time
-                    )
-                )
-                .values(
-                    status=JOB_STATUS_FAILED,
-                    message=f"Job timed out after {max_age_hours} hours",
-                    updated_at=datetime.utcnow()
+            query = select(MarketAnalysisJob).filter(
+                and_(
+                    MarketAnalysisJob.status == "RUNNING",
+                    MarketAnalysisJob.updated_at < cutoff_time
                 )
             )
             
             result = await session.execute(query)
-            await session.commit()
+            stale_jobs = result.scalars().all()
             
-            updated_count = result.rowcount
-            if updated_count > 0:
-                logger.info(f"Cleaned up {updated_count} stale jobs")
+            # Update job statuses
+            for job in stale_jobs:
+                job.status = "FAILED"
+                job.message = f"Job timed out after {max_age_hours} hours"
+                job.updated_at = datetime.utcnow()
+            
+            if stale_jobs:
+                await session.commit()
                 
-            return updated_count
-
+            return len(stale_jobs)
+    
     async def _process_job_async(self, job_id: str) -> None:
         """
         Process a job asynchronously in the background.
@@ -272,89 +221,86 @@ class MarketAnalysisService:
         Args:
             job_id: ID of the job to process
         """
-        start_time = datetime.utcnow()
+        logger.info(f"Starting processing of job {job_id}")
         
-        async with self.get_session_factory() as session:
-            # Get the job
-            job = await self._get_job(session, job_id)
-            
-            if not job:
-                logger.error(f"Job {job_id} not found for processing")
-                return
+        try:
+            async with self.get_session() as session:
+                # Get the job
+                job = await self._get_job(session, job_id)
                 
-            # Update job status to RUNNING
-            job.status = JOB_STATUS_RUNNING
-            job.message = "Job is being processed"
-            job.started_at = start_time
-            job.updated_at = start_time
-            await session.commit()
-            
-            # Store task reference
-            _running_tasks[job_id] = asyncio.current_task()
-            
-            # Get parameters
-            try:
-                parameters = json.loads(job.parameters_json) if job.parameters_json else {}
-            except json.JSONDecodeError:
-                parameters = {}
-
-            # Update running job count for metrics
-            update_running_jobs(job.county_id, job.analysis_type, 1)
-            
-            try:
-                # Process based on analysis type
-                if job.analysis_type == ANALYSIS_TYPE_PRICE_TREND:
-                    result = await self._process_price_trend(job.county_id, parameters)
-                elif job.analysis_type == ANALYSIS_TYPE_COMPARABLE_MARKET:
-                    result = await self._process_comparable_market(job.county_id, parameters)
-                elif job.analysis_type == ANALYSIS_TYPE_SALES_VELOCITY:
-                    result = await self._process_sales_velocity(job.county_id, parameters)
-                elif job.analysis_type == ANALYSIS_TYPE_MARKET_VALUATION:
-                    result = await self._process_market_valuation(job.county_id, parameters)
-                elif job.analysis_type == ANALYSIS_TYPE_PRICE_PER_SQFT:
-                    result = await self._process_price_per_sqft(job.county_id, parameters)
-                else:
-                    raise ValueError(f"Unknown analysis type: {job.analysis_type}")
+                if not job:
+                    logger.warning(f"Job {job_id} not found, cannot process")
+                    return
                 
-                # Update job with results
-                job.status = JOB_STATUS_COMPLETED
-                job.message = "Job completed successfully"
-                job.result_summary_json = json.dumps(result["summary"])
-                job.result_data_location = result.get("data_location", "")
-                job.completed_at = datetime.utcnow()
+                # Update status to RUNNING
+                job.status = "RUNNING"
+                job.message = "Job is being processed"
+                job.started_at = datetime.utcnow()
                 job.updated_at = datetime.utcnow()
-                
-                # Record success metric
-                record_job_completion(job.county_id, job.analysis_type)
-                
-            except Exception as e:
-                # Log the error
-                error_message = f"Error processing job: {str(e)}"
-                logger.exception(error_message)
-                
-                # Update job with error
-                job.status = JOB_STATUS_FAILED
-                job.message = error_message
-                job.completed_at = datetime.utcnow()
-                job.updated_at = datetime.utcnow()
-                
-                # Record failure metric
-                record_job_failure(job.county_id, job.analysis_type, "processing_error")
-            
-            finally:
-                # Update metrics for running jobs
-                update_running_jobs(job.county_id, job.analysis_type, 0)
-                
-                # Calculate and record processing time
-                processing_time = (datetime.utcnow() - start_time).total_seconds()
-                record_job_processing_time(job.county_id, job.analysis_type, processing_time)
-                
-                # Commit changes and remove task reference
                 await session.commit()
-                _running_tasks.pop(job_id, None)
                 
-                logger.info(f"Completed processing job {job_id} with status {job.status}")
-
+                # Process based on job type
+                parameters = {}
+                try:
+                    parameters = json.loads(job.parameters_json) if job.parameters_json else {}
+                except (json.JSONDecodeError, TypeError):
+                    logger.warning(f"Failed to parse parameters for job {job_id}")
+                
+                # Update metrics
+                county_id_str = str(job.county_id) if job.county_id else "unknown"
+                analysis_type_str = str(job.analysis_type) if job.analysis_type else "unknown"
+                update_running_jobs(county_id_str, analysis_type_str)
+                
+                # Process based on analysis type
+                try:
+                    if job.analysis_type == "price_trend_by_zip":
+                        result = await self._process_price_trend(job.county_id, parameters)
+                    elif job.analysis_type == "comparable_market_area":
+                        result = await self._process_comparable_market(job.county_id, parameters)
+                    elif job.analysis_type == "sales_velocity":
+                        result = await self._process_sales_velocity(job.county_id, parameters)
+                    elif job.analysis_type == "market_valuation":
+                        result = await self._process_market_valuation(job.county_id, parameters)
+                    elif job.analysis_type == "price_per_sqft":
+                        result = await self._process_price_per_sqft(job.county_id, parameters)
+                    else:
+                        raise ValueError(f"Unknown analysis type: {job.analysis_type}")
+                    
+                    # Update job with result
+                    job.status = "COMPLETED"
+                    job.message = "Job completed successfully"
+                    job.result_json = json.dumps(result)
+                    # Summary is a simplified version of the result for quick access
+                    job.result_summary_json = json.dumps(self._create_summary(result))
+                    job.completed_at = datetime.utcnow()
+                    job.updated_at = datetime.utcnow()
+                    
+                    # Update metrics
+                    county_id_str = str(job.county_id) if job.county_id else "unknown"
+                    analysis_type_str = str(job.analysis_type) if job.analysis_type else "unknown"
+                    record_job_completion(county_id_str, analysis_type_str)
+                    
+                except Exception as e:
+                    logger.exception(f"Error processing job {job_id}: {str(e)}")
+                    
+                    # Update job with error
+                    job.status = "FAILED"
+                    job.message = f"Error: {str(e)}"
+                    job.completed_at = datetime.utcnow()
+                    job.updated_at = datetime.utcnow()
+                    
+                    # Update metrics
+                    county_id_str = str(job.county_id) if job.county_id else "unknown"
+                    analysis_type_str = str(job.analysis_type) if job.analysis_type else "unknown"
+                    record_job_failure(county_id_str, analysis_type_str)
+                
+                # Save changes
+                await session.commit()
+                logger.info(f"Finished processing job {job_id}, status={job.status}")
+                
+        except Exception as e:
+            logger.exception(f"Unhandled error processing job {job_id}: {str(e)}")
+    
     async def _get_job(self, session: AsyncSession, job_id: str) -> Optional[MarketAnalysisJob]:
         """
         Get a job by ID.
@@ -366,9 +312,8 @@ class MarketAnalysisService:
         Returns:
             MarketAnalysisJob or None: Job if found, None otherwise
         """
-        result = await session.execute(
-            select(MarketAnalysisJob).where(MarketAnalysisJob.job_id == job_id)
-        )
+        query = select(MarketAnalysisJob).filter(MarketAnalysisJob.job_id == job_id)
+        result = await session.execute(query)
         return result.scalars().first()
     
     def _job_to_dict(self, job: MarketAnalysisJob) -> Dict[str, Any]:
@@ -381,30 +326,51 @@ class MarketAnalysisService:
         Returns:
             dict: Dictionary representation of the job
         """
-        # Helper function to serialize datetime
         def serialize_datetime(dt):
+            """Serialize a datetime object to ISO format string."""
             return dt.isoformat() if dt else None
-            
-        # Try to parse parameters from JSON
-        try:
-            parameters = json.loads(job.parameters_json) if job.parameters_json else None
-        except json.JSONDecodeError:
-            parameters = None
-            
+        
         return {
             "job_id": job.job_id,
             "county_id": job.county_id,
             "analysis_type": job.analysis_type,
             "status": job.status,
             "message": job.message,
-            "parameters": parameters,
             "created_at": serialize_datetime(job.created_at),
             "updated_at": serialize_datetime(job.updated_at),
             "started_at": serialize_datetime(job.started_at),
             "completed_at": serialize_datetime(job.completed_at)
         }
+    
+    def _create_summary(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Create a summary of the result for quick access.
         
-    # === Analysis Processing Methods ===
+        Args:
+            result: Full result dictionary
+            
+        Returns:
+            dict: Summary dictionary
+        """
+        summary = {}
+        
+        # Include key metrics in summary
+        if "average_price" in result:
+            summary["average_price"] = result["average_price"]
+        if "median_price" in result:
+            summary["median_price"] = result["median_price"]
+        if "sample_size" in result:
+            summary["sample_size"] = result["sample_size"]
+            
+        # Add analysis-specific metrics
+        if "trend_direction" in result:
+            summary["trend_direction"] = result["trend_direction"]
+        if "days_on_market" in result:
+            summary["days_on_market"] = result["days_on_market"]
+        if "price_per_sqft" in result:
+            summary["price_per_sqft"] = result["price_per_sqft"]
+            
+        return summary
     
     async def _process_price_trend(self, county_id: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -417,58 +383,25 @@ class MarketAnalysisService:
         Returns:
             dict: Analysis results
         """
-        # Simulate processing time
+        # Simulated processing time
         await asyncio.sleep(2)
         
-        # Extract parameters
-        zip_code = parameters.get("zip_code", "00000")
-        property_type = parameters.get("property_type", "residential")
-        
-        # Generate sample data (in production this would query the database)
-        trends = []
-        base_price = 450000  # Base price in dollars
-        
-        # Generate 12 months of trend data
-        for i in range(12):
-            month = datetime.now() - timedelta(days=30 * (11 - i))
-            # Add some random variation to create a trend
-            price = base_price * (1 + (i * 0.01)) 
-            
-            trends.append({
-                "date": month.strftime("%Y-%m-%d"),
-                "year_month": month.strftime("%Y-%m"),
-                "value": price
-            })
-            
-        # Calculate summary metrics
-        avg_price = sum(t["value"] for t in trends) / len(trends)
-        start_price = trends[0]["value"]
-        end_price = trends[-1]["value"]
-        price_change = end_price - start_price
-        price_change_pct = (price_change / start_price) * 100
-        
-        # Record metrics
-        record_property_valuation(county_id, property_type, avg_price)
-        
-        # Prepare result
-        result = {
-            "summary": {
-                "zip_code": zip_code,
-                "property_type": property_type,
-                "date_range": {
-                    "from": trends[0]["date"],
-                    "to": trends[-1]["date"]
-                },
-                "average_price": avg_price,
-                "median_price": trends[len(trends) // 2]["value"],
-                "price_change": price_change,
-                "price_change_percentage": price_change_pct,
-                "trends": trends
-            }
+        # Sample data structure for price trend analysis
+        return {
+            "average_price": 850000,
+            "median_price": 780000,
+            "price_trend": [
+                {"month": "2024-01", "avg_price": 780000},
+                {"month": "2024-02", "avg_price": 795000},
+                {"month": "2024-03", "avg_price": 810000},
+                {"month": "2024-04", "avg_price": 835000},
+                {"month": "2024-05", "avg_price": 850000},
+            ],
+            "trend_direction": "upward",
+            "trend_percentage": 8.97,
+            "sample_size": 187
         }
-        
-        return result
-        
+    
     async def _process_comparable_market(self, county_id: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process comparable market area analysis.
@@ -480,48 +413,22 @@ class MarketAnalysisService:
         Returns:
             dict: Analysis results
         """
-        # Simulate processing time
-        await asyncio.sleep(2)
+        # Simulated processing time
+        await asyncio.sleep(3)
         
-        # Extract parameters
-        zip_code = parameters.get("zip_code", "00000")
-        radius_miles = parameters.get("radius_miles", 25)
-        min_similar = parameters.get("min_similar_listings", 5)
-        
-        # Generate sample comparable areas
-        comparable_areas = []
-        
-        # Sample zip codes near the given one
-        sample_zips = [
-            f"{int(zip_code) + i}" for i in range(1, 6)
-        ]
-        
-        for i, sample_zip in enumerate(sample_zips):
-            # Create a comparable area with sample data
-            comparable_areas.append({
-                "zip_code": sample_zip,
-                "similarity_score": 0.95 - (i * 0.05),
-                "distance_miles": (i + 1) * 5,
-                "median_price": 450000 - (i * 15000),
-                "price_per_sqft": 275 - (i * 10)
-            })
-            
-        # Record metrics
-        record_comparable_areas_count(county_id, zip_code, len(comparable_areas))
-        
-        # Prepare result
-        result = {
-            "summary": {
-                "primary_zip": zip_code,
-                "search_radius_miles": radius_miles,
-                "min_similar_listings": min_similar,
-                "comparable_areas": comparable_areas,
-                "total_comparable_areas_found": len(comparable_areas)
-            }
+        # Sample data structure for comparable market analysis
+        return {
+            "average_price": 920000,
+            "median_price": 875000,
+            "comparable_areas": [
+                {"zip_code": "90211", "similarity": 0.92, "avg_price": 890000},
+                {"zip_code": "90212", "similarity": 0.87, "avg_price": 950000},
+                {"zip_code": "90024", "similarity": 0.81, "avg_price": 1050000}
+            ],
+            "price_index": 112.5,
+            "sample_size": 143
         }
-        
-        return result
-        
+    
     async def _process_sales_velocity(self, county_id: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process sales velocity analysis.
@@ -533,66 +440,23 @@ class MarketAnalysisService:
         Returns:
             dict: Analysis results
         """
-        # Simulate processing time
-        await asyncio.sleep(2)
+        # Simulated processing time
+        await asyncio.sleep(2.5)
         
-        # Extract parameters
-        zip_code = parameters.get("zip_code", "00000")
-        property_type = parameters.get("property_type", "residential")
-        
-        # Generate sample data
-        trends = []
-        
-        # Generate 12 months of trend data
-        for i in range(12):
-            month = datetime.now() - timedelta(days=30 * (11 - i))
-            
-            # Seasonal variation with random component
-            month_factor = 1.0 + 0.2 * ((month.month % 12) / 12.0)
-            
-            new_listings = int(50 * month_factor)
-            sales = int(40 * month_factor)
-            days_on_market = int(45 - (i * 0.5))
-            
-            trends.append({
-                "year_month": month.strftime("%Y-%m"),
-                "new_listings": new_listings,
-                "sales": sales,
-                "avg_days_on_market": days_on_market
-            })
-            
-        # Calculate summary metrics
-        total_listings = sum(t["new_listings"] for t in trends)
-        total_sales = sum(t["sales"] for t in trends)
-        avg_days = sum(t["avg_days_on_market"] for t in trends) / len(trends)
-        sales_per_month = total_sales / len(trends)
-        absorption_rate = (sales_per_month / total_listings) * 100 if total_listings > 0 else 0
-        months_inventory = (total_listings / sales_per_month) if sales_per_month > 0 else 0
-        
-        # Record metrics
-        update_market_score(county_id, zip_code, sales_per_month, avg_days)
-        
-        # Prepare result
-        result = {
-            "summary": {
-                "zip_code": zip_code,
-                "property_type": property_type,
-                "date_range": {
-                    "from": datetime.now() - timedelta(days=30 * 11),
-                    "to": datetime.now()
-                },
-                "average_days_on_market": avg_days,
-                "total_listings": total_listings,
-                "sold_listings": total_sales,
-                "sales_per_month": sales_per_month,
-                "absorption_rate_percentage": absorption_rate,
-                "months_of_inventory": months_inventory,
-                "trends": trends
-            }
+        # Sample data structure for sales velocity analysis
+        return {
+            "days_on_market": 28,
+            "sales_per_month": 42,
+            "velocity_trend": [
+                {"month": "2024-01", "days_on_market": 35, "sales": 38},
+                {"month": "2024-02", "days_on_market": 32, "sales": 40},
+                {"month": "2024-03", "days_on_market": 29, "sales": 41},
+                {"month": "2024-04", "days_on_market": 28, "sales": 42}
+            ],
+            "seasonal_adjustment": 1.05,
+            "sample_size": 165
         }
-        
-        return result
-        
+    
     async def _process_market_valuation(self, county_id: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process market valuation for a specific property.
@@ -604,70 +468,39 @@ class MarketAnalysisService:
         Returns:
             dict: Analysis results
         """
-        # Simulate processing time
-        await asyncio.sleep(3)
+        # Simulated processing time
+        await asyncio.sleep(4)
         
-        # Extract parameters
-        zip_code = parameters.get("zip_code", "00000")
-        property_id = parameters.get("property_id")
-        beds = parameters.get("beds", 3)
-        baths = parameters.get("baths", 2)
+        # Get property attributes from parameters
+        property_id = parameters.get("property_id", "unknown")
         sqft = parameters.get("sqft", 2000)
+        bedrooms = parameters.get("bedrooms", 3)
+        bathrooms = parameters.get("bathrooms", 2)
+        year_built = parameters.get("year_built", 1990)
         
-        # Calculate baseline price and price per square foot
-        base_price = 450000
-        # Adjust for property attributes
-        price_per_sqft = 225
-        estimated_value = sqft * price_per_sqft
-        
-        # Generate comparable properties
-        comps = []
-        for i in range(5):
-            # Create a comparable property with slight variations
-            comp_sqft = sqft + ((i - 2) * 200)
-            comp_price = comp_sqft * price_per_sqft * (1 + ((i - 2) * 0.03))
-            comp_ppsf = comp_price / comp_sqft
-            
-            comp_date = datetime.now() - timedelta(days=i * 15)
-            
-            comps.append({
-                "property_id": f"PROP-{i+1000}",
-                "beds": beds + ((i % 3) - 1),
-                "baths": baths + ((i % 3) - 1) * 0.5,
-                "sqft": comp_sqft,
-                "sale_price": comp_price,
-                "price_per_sqft": comp_ppsf,
-                "distance_miles": i * 0.5,
-                "sale_date": comp_date.strftime("%Y-%m-%d")
-            })
-            
-        # Record metrics
-        record_property_valuation(county_id, "residential", estimated_value)
-        record_price_per_sqft(county_id, "residential", price_per_sqft)
-        
-        # Prepare result
-        result = {
-            "summary": {
-                "zip_code": zip_code,
-                "property_id": property_id,
-                "property_details": {
-                    "beds": beds,
-                    "baths": baths,
-                    "sqft": sqft
-                },
-                "estimated_value": estimated_value,
-                "value_range": {
-                    "low": estimated_value * 0.95,
-                    "high": estimated_value * 1.05
-                },
-                "price_per_sqft": price_per_sqft,
-                "confidence_score": 0.85,
-                "comparable_properties": comps
-            }
+        # Sample data structure for market valuation
+        return {
+            "property_id": property_id,
+            "estimated_value": 925000,
+            "value_range": {
+                "low": 875000,
+                "high": 975000
+            },
+            "comparable_properties": [
+                {"id": "prop-123", "price": 910000, "similarity": 0.94},
+                {"id": "prop-456", "price": 945000, "similarity": 0.89},
+                {"id": "prop-789", "price": 895000, "similarity": 0.86}
+            ],
+            "valuation_factors": {
+                "location": 0.4,
+                "size": 0.25,
+                "condition": 0.2,
+                "amenities": 0.15
+            },
+            "confidence_score": 0.87,
+            "sample_size": 12
         }
-        
-        return result
-        
+    
     async def _process_price_per_sqft(self, county_id: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process price per square foot analysis.
@@ -679,91 +512,29 @@ class MarketAnalysisService:
         Returns:
             dict: Analysis results
         """
-        # Simulate processing time
-        await asyncio.sleep(2)
+        # Simulated processing time
+        await asyncio.sleep(1.5)
         
-        # Extract parameters
-        zip_code = parameters.get("zip_code", "00000")
-        property_type = parameters.get("property_type", "residential")
+        # Get zip_code from parameters
+        zip_code = parameters.get("zip_code", "90210")
         
-        # Generate sample data
-        trends = []
-        
-        # Base price per square foot
-        base_ppsf = 225
-        
-        # Generate 12 months of trend data
-        for i in range(12):
-            month = datetime.now() - timedelta(days=30 * (11 - i))
-            
-            # Add increasing trend
-            ppsf = base_ppsf * (1 + (i * 0.015))
-            
-            trends.append({
-                "date": month.strftime("%Y-%m-%d"),
-                "year_month": month.strftime("%Y-%m"),
-                "value": ppsf
-            })
-            
-        # Generate size brackets
-        size_brackets = [
-            {
-                "name": "Small",
-                "min_sqft": 500,
-                "max_sqft": 1200,
-                "avg_ppsf": base_ppsf * 1.1,
-                "sample_count": 25
+        # Sample data structure for price per square foot analysis
+        return {
+            "zip_code": zip_code,
+            "price_per_sqft": 425,
+            "comparison": {
+                "county_average": 380,
+                "percentile": 68
             },
-            {
-                "name": "Medium",
-                "min_sqft": 1201,
-                "max_sqft": 2000,
-                "avg_ppsf": base_ppsf,
-                "sample_count": 40
+            "breakdown_by_property_type": {
+                "single_family": 450,
+                "condo": 380,
+                "multi_family": 320
             },
-            {
-                "name": "Large",
-                "min_sqft": 2001,
-                "max_sqft": 3000,
-                "avg_ppsf": base_ppsf * 0.95,
-                "sample_count": 30
-            },
-            {
-                "name": "Extra Large",
-                "min_sqft": 3001,
-                "max_sqft": 5000,
-                "avg_ppsf": base_ppsf * 0.9,
-                "sample_count": 15
-            }
-        ]
-        
-        # Calculate metrics
-        avg_ppsf = sum(t["value"] for t in trends) / len(trends)
-        ppsfes = [t["value"] for t in trends]
-        ppsfes.sort()
-        median_ppsf = ppsfes[len(ppsfes) // 2]
-        min_ppsf = min(ppsfes)
-        max_ppsf = max(ppsfes)
-        
-        # Record metrics
-        record_price_per_sqft(county_id, property_type, avg_ppsf)
-        
-        # Prepare result
-        result = {
-            "summary": {
-                "zip_code": zip_code,
-                "property_type": property_type,
-                "date_range": {
-                    "from": trends[0]["date"],
-                    "to": trends[-1]["date"]
-                },
-                "average_price_per_sqft": avg_ppsf,
-                "median_price_per_sqft": median_ppsf,
-                "min_price_per_sqft": min_ppsf,
-                "max_price_per_sqft": max_ppsf,
-                "breakdown_by_size": size_brackets,
-                "trends": trends
-            }
+            "historical_trend": [
+                {"year": 2022, "price_per_sqft": 390},
+                {"year": 2023, "price_per_sqft": 405},
+                {"year": 2024, "price_per_sqft": 425}
+            ],
+            "sample_size": 95
         }
-        
-        return result

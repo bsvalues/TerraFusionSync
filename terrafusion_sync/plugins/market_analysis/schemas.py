@@ -1,193 +1,125 @@
 """
 TerraFusion SyncService - Market Analysis Plugin - Schemas
 
-This module provides Pydantic schema models for the Market Analysis plugin.
-These schemas define the structure of request and response objects for the API.
+This module defines the Pydantic models/schemas for the Market Analysis plugin.
+These schemas are used for request validation, response serialization, and API documentation.
 """
 
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Any, Optional
 from datetime import datetime
-from enum import Enum
-from pydantic import BaseModel, Field
-
-
-class AnalysisType(str, Enum):
-    """Types of market analysis that can be performed."""
-    PRICE_TREND_BY_ZIP = "price_trend_by_zip"
-    COMPARABLE_MARKET_AREA = "comparable_market_area"
-    SALES_VELOCITY = "sales_velocity"
-    MARKET_VALUATION = "market_valuation"
-    PRICE_PER_SQFT = "price_per_sqft"
-
-
-class JobStatus(str, Enum):
-    """Possible statuses for a market analysis job."""
-    PENDING = "PENDING"
-    RUNNING = "RUNNING"
-    COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
-    CANCELLED = "CANCELLED"
-
-
-class MarketTrendDataPoint(BaseModel):
-    """Data point for market trend data."""
-    date: Optional[str] = None
-    year_month: Optional[str] = None
-    value: float
-
-
-class PricingDataPoint(BaseModel):
-    """Data point for pricing trends."""
-    date: str
-    value: float
-    year_month: Optional[str] = None
-
-
-class SalesVelocityDataPoint(BaseModel):
-    """Data point for sales velocity trends."""
-    year_month: str
-    new_listings: int
-    sales: int
-    avg_days_on_market: int
-
-
-class ComparableArea(BaseModel):
-    """Comparable market area information."""
-    zip_code: str
-    similarity_score: float
-    distance_miles: float
-    median_price: float
-    price_per_sqft: float
-
-
-class PropertyDetails(BaseModel):
-    """Details about a specific property."""
-    beds: int
-    baths: float
-    sqft: int
-
-
-class ComparableProperty(BaseModel):
-    """Comparable property information."""
-    property_id: str
-    beds: int
-    baths: float
-    sqft: int
-    sale_price: float
-    price_per_sqft: float
-    distance_miles: float
-    sale_date: str
-
-
-class PropertyValueRange(BaseModel):
-    """Value range for a property."""
-    low: float
-    high: float
-
-
-class SizeBracket(BaseModel):
-    """Price per sqft data for a specific size bracket."""
-    name: str
-    min_sqft: int
-    max_sqft: int
-    avg_ppsf: float
-    sample_count: int
+from pydantic import BaseModel, Field, validator
 
 
 class MarketAnalysisRunRequest(BaseModel):
-    """Request to run a market analysis job."""
-    county_id: str = Field(..., description="County ID for the analysis")
+    """
+    Schema for submitting a market analysis job.
+    """
+    county_id: str = Field(..., description="County ID for which to run the analysis")
     analysis_type: str = Field(..., description="Type of analysis to perform")
     parameters: Dict[str, Any] = Field(
         ..., 
-        description="Parameters for the analysis, varies by analysis type"
+        description="Parameters specific to the analysis type"
     )
+    
+    @validator('analysis_type')
+    def validate_analysis_type(cls, v):
+        valid_types = [
+            'price_trend_by_zip', 
+            'comparable_market_area', 
+            'sales_velocity', 
+            'market_valuation',
+            'price_per_sqft'
+        ]
+        if v not in valid_types:
+            raise ValueError(f"Analysis type must be one of: {', '.join(valid_types)}")
+        return v
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "county_id": "county-123",
+                "analysis_type": "price_trend_by_zip",
+                "parameters": {
+                    "zip_code": "90210",
+                    "start_date": "2024-01-01",
+                    "end_date": "2024-12-31"
+                }
+            }
+        }
 
 
 class MarketAnalysisJobStatusResponse(BaseModel):
-    """Response with job status information."""
+    """
+    Schema for job status response.
+    """
+    job_id: str
+    county_id: str
+    analysis_type: str
+    status: str 
+    message: Optional[str] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "job_id": "job-123456",
+                "county_id": "county-123",
+                "analysis_type": "price_trend_by_zip",
+                "status": "RUNNING",
+                "message": "Job is being processed",
+                "created_at": "2025-05-12T10:00:00",
+                "updated_at": "2025-05-12T10:01:00",
+                "started_at": "2025-05-12T10:00:30",
+                "completed_at": None
+            }
+        }
+
+
+class MarketAnalysisJobResultResponse(BaseModel):
+    """
+    Schema for job result response.
+    """
     job_id: str
     county_id: str
     analysis_type: str
     status: str
     message: Optional[str] = None
-    parameters: Optional[Dict[str, Any]] = None
     created_at: datetime
-    updated_at: datetime
+    updated_at: Optional[datetime] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
-
-
-class MarketAnalysisResultData(BaseModel):
-    """Result data from a completed market analysis job."""
-    result_summary: Optional[Dict[str, Any]] = None
-    result_data_location: Optional[str] = None
-    trends: Optional[List[Dict[str, Any]]] = None
-
-
-class MarketAnalysisJobResultResponse(MarketAnalysisJobStatusResponse):
-    """
-    Response with job status and result data for a completed analysis job.
-    Extends MarketAnalysisJobStatusResponse with result data.
-    """
-    result: Optional[MarketAnalysisResultData] = None
-
-
-class PriceTrendResponse(BaseModel):
-    """Response for price trend analysis."""
-    zip_code: str
-    property_type: str
-    date_range: Dict[str, str]
-    average_price: float
-    median_price: float
-    price_change: float
-    price_change_percentage: float
-    trends: List[PricingDataPoint]
-
-
-class ComparableMarketAreaResponse(BaseModel):
-    """Response for comparable market area analysis."""
-    primary_zip: str
-    search_radius_miles: float
-    min_similar_listings: int
-    comparable_areas: List[ComparableArea]
-    total_comparable_areas_found: int
-
-
-class SalesVelocityResponse(BaseModel):
-    """Response for sales velocity analysis."""
-    zip_code: str
-    property_type: str
-    date_range: Dict[str, str]
-    average_days_on_market: int
-    total_listings: int
-    sold_listings: int
-    sales_per_month: float
-    absorption_rate_percentage: float
-    months_of_inventory: float
-    trends: List[SalesVelocityDataPoint]
-
-
-class MarketValuationResponse(BaseModel):
-    """Response for market valuation analysis."""
-    zip_code: str
-    property_id: Optional[str]
-    property_details: PropertyDetails
-    estimated_value: float
-    value_range: PropertyValueRange
-    price_per_sqft: float
-    confidence_score: float
-    comparable_properties: List[ComparableProperty]
-
-
-class PricePerSqftResponse(BaseModel):
-    """Response for price per square foot analysis."""
-    zip_code: str
-    property_type: str
-    date_range: Dict[str, str]
-    average_price_per_sqft: float
-    median_price_per_sqft: float
-    min_price_per_sqft: float
-    max_price_per_sqft: float
-    breakdown_by_size: List[SizeBracket]
-    trends: List[PricingDataPoint]
+    parameters: Dict[str, Any]
+    results: Dict[str, Any]
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "job_id": "job-123456",
+                "county_id": "county-123",
+                "analysis_type": "price_trend_by_zip",
+                "status": "COMPLETED",
+                "message": "Job completed successfully",
+                "created_at": "2025-05-12T10:00:00",
+                "updated_at": "2025-05-12T10:02:00",
+                "started_at": "2025-05-12T10:00:30",
+                "completed_at": "2025-05-12T10:02:00",
+                "parameters": {
+                    "zip_code": "90210",
+                    "start_date": "2024-01-01",
+                    "end_date": "2024-12-31"
+                },
+                "results": {
+                    "average_price": 1250000,
+                    "median_price": 1100000,
+                    "price_trend": [
+                        {"month": "2024-01", "avg_price": 1100000},
+                        {"month": "2024-02", "avg_price": 1150000},
+                        {"month": "2024-03", "avg_price": 1200000}
+                    ],
+                    "sample_size": 245
+                }
+            }
+        }

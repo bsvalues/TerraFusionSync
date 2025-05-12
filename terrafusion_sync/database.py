@@ -19,6 +19,70 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
 # Database connection string from environment variables
 DATABASE_URL = os.getenv("DATABASE_URL")
 
+# Convert standard PostgreSQL URL to async PostgreSQL URL if needed
+if DATABASE_URL and DATABASE_URL.startswith("postgresql://"):
+    components = urlparse(DATABASE_URL)
+    query_params = parse_qs(components.query)
+    
+    # Build new components
+    new_scheme = "postgresql+asyncpg"
+    new_netloc = components.netloc
+    new_path = components.path
+    
+    # Rebuild URL
+    async_url = urlunparse((
+        new_scheme,
+        new_netloc,
+        new_path,
+        components.params,
+        urlencode(query_params, doseq=True),
+        components.fragment
+    ))
+    
+    logger.info("Using async PostgreSQL connection: %s", 
+                async_url.replace(new_netloc, 
+                                  f"{components.username}:***@{components.hostname}"))
+    logger.info("Modified database URL for asyncpg compatibility")
+    DATABASE_URL = async_url
+
+# Create async engine and session factory
+engine = create_async_engine(
+    DATABASE_URL, 
+    echo=False,
+    future=True,
+    pool_size=10,
+    pool_recycle=300,
+    pool_pre_ping=True,
+)
+
+# Create session factory
+async_session_factory = async_sessionmaker(
+    engine, 
+    expire_on_commit=False,
+    autoflush=False,
+    class_=AsyncSession,
+)
+
+@asynccontextmanager
+async def get_async_session():
+    """
+    Async context manager for database sessions.
+    
+    Usage:
+        async with get_async_session() as session:
+            result = await session.execute(query)
+            ...
+    """
+    session = async_session_factory()
+    try:
+        yield session
+    except SQLAlchemyError as e:
+        logger.error(f"Database error: {str(e)}")
+        await session.rollback()
+        raise
+    finally:
+        await session.close()
+
 if not DATABASE_URL:
     logger.warning("DATABASE_URL environment variable not set. Using SQLite in-memory database for development.")
     DATABASE_URL = "sqlite+aiosqlite:///terrafusion.db"
