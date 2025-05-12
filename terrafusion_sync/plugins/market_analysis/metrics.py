@@ -11,15 +11,8 @@ from typing import Dict, Any, Callable, Optional
 
 from prometheus_client import Counter, Gauge, Histogram
 
-# Import metrics from core module
-from terrafusion_sync.metrics import (
-    MARKET_ANALYSIS_JOBS_SUBMITTED,
-    MARKET_ANALYSIS_JOBS_COMPLETED,
-    MARKET_ANALYSIS_JOBS_FAILED,
-    MARKET_ANALYSIS_PROCESSING_DURATION as MARKET_ANALYSIS_JOB_DURATION,
-    MARKET_ANALYSIS_JOBS_PENDING,
-    MARKET_ANALYSIS_JOBS_IN_PROGRESS
-)
+# Use the metrics from the main metrics module
+import terrafusion_sync.metrics as core_metrics
 
 # Property price metrics
 PROPERTY_AVERAGE_PRICE = Gauge(
@@ -70,7 +63,7 @@ def track_market_analysis_job(analysis_type: str, county_id: str) -> Callable:
                 result = await func(*args, **kwargs)
                 
                 # Record successful completion
-                MARKET_ANALYSIS_JOBS_COMPLETED.labels(
+                core_metrics.MARKET_ANALYSIS_JOBS_COMPLETED.labels(
                     county_id=county_id,
                     analysis_type=analysis_type
                 ).inc()
@@ -79,9 +72,10 @@ def track_market_analysis_job(analysis_type: str, county_id: str) -> Callable:
                 
             except Exception as e:
                 # Record failure
-                MARKET_ANALYSIS_JOBS_FAILED.labels(
+                core_metrics.MARKET_ANALYSIS_JOBS_FAILED.labels(
                     county_id=county_id,
-                    analysis_type=analysis_type
+                    analysis_type=analysis_type,
+                    failure_reason=type(e).__name__
                 ).inc()
                 
                 # Re-raise the exception
@@ -90,7 +84,7 @@ def track_market_analysis_job(analysis_type: str, county_id: str) -> Callable:
             finally:
                 # Record duration
                 execution_time = time.time() - start_time
-                MARKET_ANALYSIS_JOB_DURATION.labels(
+                core_metrics.MARKET_ANALYSIS_PROCESSING_DURATION.labels(
                     county_id=county_id,
                     analysis_type=analysis_type
                 ).observe(execution_time)
@@ -150,3 +144,11 @@ def update_queue_metrics(queue_status: Dict[str, int]):
     """
     for status, count in queue_status.items():
         MARKET_ANALYSIS_QUEUE_SIZE.labels(status=status).set(count)
+        
+    # Also update the core metrics for visibility in main dashboard
+    core_metrics.MARKET_ANALYSIS_JOBS_PENDING.set(
+        queue_status.get('PENDING', 0)
+    )
+    core_metrics.MARKET_ANALYSIS_JOBS_IN_PROGRESS.set(
+        queue_status.get('RUNNING', 0)
+    )
