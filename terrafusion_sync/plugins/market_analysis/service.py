@@ -8,7 +8,7 @@ handling job lifecycle operations, state transitions, and business logic.
 import logging
 import uuid
 from typing import Dict, Any, List, Optional, Tuple, Set
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import update, and_, or_, func, desc
@@ -178,7 +178,7 @@ async def expire_stale_jobs(
         Tuple of (count of expired jobs, set of expired job IDs)
     """
     # Find jobs that have been running for too long
-    timeout_threshold = datetime.utcnow() - datetime.timedelta(minutes=timeout_minutes)
+    timeout_threshold = datetime.utcnow() - timedelta(minutes=timeout_minutes)
     
     query = (
         select(MarketAnalysisJob)

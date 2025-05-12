@@ -1,56 +1,51 @@
 """
 TerraFusion SyncService - Market Analysis Plugin - Metrics
 
-This module defines Prometheus metrics specific to the Market Analysis plugin.
-The metrics are registered with the global Prometheus registry for collection
-via the /metrics endpoint.
+This module defines Prometheus metrics specific to the Market Analysis plugin
+and functions to interact with these metrics.
 """
 
-import logging
-from functools import wraps
 import time
-from typing import Callable, Dict, Any
+import functools
+from typing import Dict, Any, Callable, Optional
 
-from prometheus_client import Counter, Histogram, Gauge
+from prometheus_client import Counter, Gauge, Histogram
 
-logger = logging.getLogger(__name__)
-
-# Define plugin-specific metrics
-
-# Counter for market analysis jobs
-MARKET_ANALYSIS_JOBS_TOTAL = Counter(
-    'market_analysis_jobs_total',
-    'Total number of market analysis jobs by type and status',
-    ['county_id', 'analysis_type', 'status']
+# Import metrics from core module
+from terrafusion_sync.metrics import (
+    MARKET_ANALYSIS_JOBS_SUBMITTED,
+    MARKET_ANALYSIS_JOBS_COMPLETED,
+    MARKET_ANALYSIS_JOBS_FAILED,
+    MARKET_ANALYSIS_PROCESSING_DURATION as MARKET_ANALYSIS_JOB_DURATION,
+    MARKET_ANALYSIS_JOBS_PENDING,
+    MARKET_ANALYSIS_JOBS_IN_PROGRESS
 )
 
-# Counter for data points analyzed
-MARKET_ANALYSIS_DATA_POINTS_TOTAL = Counter(
-    'market_analysis_data_points_total',
-    'Total number of data points analyzed by the market analysis plugin',
-    ['county_id', 'analysis_type']
+# Property price metrics
+PROPERTY_AVERAGE_PRICE = Gauge(
+    'property_average_price_dollars',
+    'Average property price in dollars',
+    ['county_id', 'zip_code', 'property_type']
 )
 
-# Histogram for analysis processing time
-MARKET_ANALYSIS_PROCESSING_SECONDS = Histogram(
-    'market_analysis_processing_seconds',
-    'Time taken to process market analysis jobs',
-    ['county_id', 'analysis_type'],
-    buckets=[0.1, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600, 1800, 3600]
+PROPERTY_MEDIAN_PRICE = Gauge(
+    'property_median_price_dollars',
+    'Median property price in dollars',
+    ['county_id', 'zip_code', 'property_type']
 )
 
-# Gauge for current property prices by area
-MARKET_ANALYSIS_PROPERTY_PRICES = Gauge(
-    'market_analysis_property_prices',
-    'Current property prices from analysis results',
-    ['county_id', 'zip_code', 'property_type', 'metric']
-)
-
-# Gauge for market score
-MARKET_ANALYSIS_MARKET_SCORE = Gauge(
-    'market_analysis_market_score',
-    'Market health score from 0-100',
+# Market score (0-100)
+MARKET_SCORE = Gauge(
+    'market_score',
+    'Market score from 0-100',
     ['county_id', 'zip_code']
+)
+
+# Queue metrics
+MARKET_ANALYSIS_QUEUE_SIZE = Gauge(
+    'market_analysis_queue_size',
+    'Number of market analysis jobs in queue',
+    ['status']
 )
 
 def track_market_analysis_job(analysis_type: str, county_id: str) -> Callable:
@@ -65,38 +60,37 @@ def track_market_analysis_job(analysis_type: str, county_id: str) -> Callable:
         Decorated function
     """
     def decorator(func: Callable) -> Callable:
-        @wraps(func)
+        @functools.wraps(func)
         async def wrapper(*args, **kwargs) -> Any:
-            start_time = time.monotonic()
+            # Record job start
+            start_time = time.time()
             
             try:
-                # Execute the original function
+                # Call the original function
                 result = await func(*args, **kwargs)
                 
-                # Record success
-                MARKET_ANALYSIS_JOBS_TOTAL.labels(
+                # Record successful completion
+                MARKET_ANALYSIS_JOBS_COMPLETED.labels(
                     county_id=county_id,
-                    analysis_type=analysis_type,
-                    status="success"
+                    analysis_type=analysis_type
                 ).inc()
                 
                 return result
                 
             except Exception as e:
                 # Record failure
-                MARKET_ANALYSIS_JOBS_TOTAL.labels(
+                MARKET_ANALYSIS_JOBS_FAILED.labels(
                     county_id=county_id,
-                    analysis_type=analysis_type,
-                    status="failure"
+                    analysis_type=analysis_type
                 ).inc()
                 
                 # Re-raise the exception
-                raise
+                raise e
                 
             finally:
-                # Record execution time
-                execution_time = time.monotonic() - start_time
-                MARKET_ANALYSIS_PROCESSING_SECONDS.labels(
+                # Record duration
+                execution_time = time.time() - start_time
+                MARKET_ANALYSIS_JOB_DURATION.labels(
                     county_id=county_id,
                     analysis_type=analysis_type
                 ).observe(execution_time)
@@ -121,18 +115,16 @@ def update_property_price_metrics(
         average_price: Average property price
         median_price: Median property price
     """
-    MARKET_ANALYSIS_PROPERTY_PRICES.labels(
+    PROPERTY_AVERAGE_PRICE.labels(
         county_id=county_id,
         zip_code=zip_code,
-        property_type=property_type,
-        metric="average"
+        property_type=property_type
     ).set(average_price)
     
-    MARKET_ANALYSIS_PROPERTY_PRICES.labels(
+    PROPERTY_MEDIAN_PRICE.labels(
         county_id=county_id,
         zip_code=zip_code,
-        property_type=property_type,
-        metric="median"
+        property_type=property_type
     ).set(median_price)
 
 def update_market_score(county_id: str, zip_code: str, score: float):
@@ -144,7 +136,17 @@ def update_market_score(county_id: str, zip_code: str, score: float):
         zip_code: ZIP code
         score: Market score (0-100)
     """
-    MARKET_ANALYSIS_MARKET_SCORE.labels(
+    MARKET_SCORE.labels(
         county_id=county_id,
         zip_code=zip_code
     ).set(score)
+
+def update_queue_metrics(queue_status: Dict[str, int]):
+    """
+    Update queue metrics.
+    
+    Args:
+        queue_status: Dictionary mapping status to count
+    """
+    for status, count in queue_status.items():
+        MARKET_ANALYSIS_QUEUE_SIZE.labels(status=status).set(count)
