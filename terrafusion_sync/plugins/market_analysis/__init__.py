@@ -13,7 +13,11 @@ Capabilities:
 """
 
 import logging
+from terrafusion_sync.plugins.market_analysis.router import plugin_router
 
 # Configure plugin logger
 logger = logging.getLogger(__name__)
 logger.info("Market Analysis plugin initialized")
+
+# Expose the router for registration with the main app
+__all__ = ["plugin_router"]

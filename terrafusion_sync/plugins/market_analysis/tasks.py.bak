@@ -1,277 +1,308 @@
 """
-TerraFusion SyncService - Market Analysis Plugin - Tasks
+TerraFusion SyncService - Market Analysis Plugin - Background Tasks
 
-This module provides background task processing for market analysis jobs.
-It includes functions to run analysis jobs asynchronously and handle errors.
+This module provides background task functions for asynchronous 
+processing of market analysis jobs.
 """
 
-import asyncio
 import logging
-import random
+import json
+import asyncio
 import time
 from datetime import datetime
-from typing import Dict, Any, Optional, List, Callable
-import traceback
+from typing import Dict, Any, Optional, List, Callable, Awaitable
+import uuid
 
-from .service import get_analysis_job, update_job_status
-from .metrics import track_market_analysis_job, update_property_price_metrics, update_market_score
+# Core imports
+from terrafusion_sync.database import get_db_session
+from terrafusion_sync.core_models import MarketAnalysisJob
 
+# Import metrics module directly
+import terrafusion_sync.metrics as core_metrics
+
+# Setup logging
 logger = logging.getLogger(__name__)
 
 async def run_analysis_job(
-    db_session_factory,
+    get_session_factory: Callable[[], Awaitable],
     job_id: str,
     analysis_type: str,
     county_id: str,
-    parameters: Optional[Dict[str, Any]] = None
+    parameters: Dict[str, Any]
 ):
     """
-    Run a market analysis job as a background task.
-    
-    This function is intended to be called as a background task
-    and handles the complete lifecycle of the job, from status updates
-    to error handling and metrics tracking.
+    Run a market analysis job asynchronously.
     
     Args:
-        db_session_factory: Function that returns a database session
-        job_id: Job identifier
-        analysis_type: Type of market analysis to perform
-        county_id: County identifier
-        parameters: Optional parameters for the analysis
-    """
-    async with db_session_factory() as db:
-        try:
-            # Update job status to running
-            await update_job_status(
-                db=db,
-                job_id=job_id,
-                status="RUNNING",
-                message=f"Started processing {analysis_type} for county {county_id}"
-            )
-            
-            logger.info(f"MarketAnalysisJob {job_id}: Processing started for {analysis_type}")
-            
-            # Process the actual analysis with metrics tracking
-            decorated_process = track_market_analysis_job(analysis_type, county_id)(process_market_analysis)
-            result = await decorated_process(analysis_type, county_id, parameters)
-            
-            # Update metrics from result data where applicable
-            if analysis_type == "price_trend_by_zip" and "zip_codes" in result:
-                for zip_data in result["zip_codes"]:
-                    update_property_price_metrics(
-                        county_id=county_id,
-                        zip_code=zip_data["zip"],
-                        property_type=zip_data.get("property_type", "residential"),
-                        average_price=zip_data.get("average_price", 0),
-                        median_price=zip_data.get("median_price", 0)
-                    )
-                    
-                    update_market_score(
-                        county_id=county_id,
-                        zip_code=zip_data["zip"],
-                        score=zip_data.get("market_score", 50)
-                    )
-            
-            # Update job status to completed
-            await update_job_status(
-                db=db,
-                job_id=job_id,
-                status="COMPLETED",
-                message=f"Successfully completed {analysis_type} for county {county_id}",
-                result_summary=result,
-                result_data_location=f"/data/market-analysis/{county_id}/{job_id}.json"
-            )
-            
-            logger.info(f"MarketAnalysisJob {job_id}: Completed successfully")
-            
-        except Exception as e:
-            error_message = str(e)
-            stack_trace = traceback.format_exc()
-            logger.error(f"MarketAnalysisJob {job_id}: Failed with error: {error_message}\n{stack_trace}")
-            
-            # Update job status to failed
-            await update_job_status(
-                db=db,
-                job_id=job_id,
-                status="FAILED",
-                message=f"Error in {analysis_type}: {error_message}"
-            )
-
-async def process_market_analysis(
-    analysis_type: str,
-    county_id: str,
-    parameters: Optional[Dict[str, Any]]
-) -> Dict[str, Any]:
-    """
-    Process a market analysis job.
-    
-    This function implements the core analytical logic for different
-    types of market analysis. It should be extended with more sophisticated
-    analytical methods as needed.
-    
-    Args:
-        analysis_type: Type of market analysis to perform
+        get_session_factory: Function that returns a database session
+        job_id: ID of the job to process
+        analysis_type: Type of analysis to perform (e.g., 'price_trend_by_zip')
         county_id: County identifier
         parameters: Parameters for the analysis
+    """
+    # Get the session factory
+    try:
+        # Import service functions here to avoid circular imports
+        from .service import update_job_status, get_analysis_job
+        
+        logger.info(f"Starting market analysis job {job_id} of type {analysis_type}")
+        
+        # Increment in-progress counter
+        core_metrics.MARKET_ANALYSIS_JOBS_IN_PROGRESS.labels(
+            county_id=county_id,
+            analysis_type=analysis_type
+        ).inc()
+        
+        # Get DB session
+        async with get_session_factory() as session:
+            # Update job status to IN_PROGRESS
+            await update_job_status(
+                db=session,
+                job_id=job_id,
+                status="IN_PROGRESS",
+                message="Analysis job started",
+                started_at=datetime.now()
+            )
+        
+        # Record job start time for duration tracking
+        start_time = time.time()
+        
+        # Process job based on analysis type
+        try:
+            # Get the result based on analysis type
+            result = await process_analysis_by_type(
+                job_id=job_id,
+                analysis_type=analysis_type,
+                county_id=county_id,
+                parameters=parameters,
+                get_session_factory=get_session_factory
+            )
+            
+            # Calculate processing duration
+            duration = time.time() - start_time
+            
+            # Record successful completion metrics
+            core_metrics.MARKET_ANALYSIS_JOBS_COMPLETED.labels(
+                county_id=county_id,
+                analysis_type=analysis_type
+            ).inc()
+            
+            core_metrics.MARKET_ANALYSIS_PROCESSING_DURATION.labels(
+                county_id=county_id,
+                analysis_type=analysis_type
+            ).observe(duration)
+            
+            # Update job with results
+            async with get_session_factory() as session:
+                await update_job_status(
+                    db=session,
+                    job_id=job_id,
+                    status="COMPLETED",
+                    message="Analysis completed successfully",
+                    completed_at=datetime.now(),
+                    result_summary_json=result.get("summary"),
+                    result_data_location=result.get("data_location")
+                )
+                
+            logger.info(f"Market analysis job {job_id} completed successfully in {duration:.2f}s")
+            
+        except Exception as e:
+            # Log the exception
+            logger.error(f"Error processing market analysis job {job_id}: {str(e)}", exc_info=True)
+            
+            # Record failure metrics
+            core_metrics.MARKET_ANALYSIS_JOBS_FAILED.labels(
+                county_id=county_id,
+                analysis_type=analysis_type
+            ).inc()
+            
+            # Update job with error information
+            try:
+                async with get_session_factory() as session:
+                    await update_job_status(
+                        db=session,
+                        job_id=job_id,
+                        status="FAILED",
+                        message=f"Analysis failed: {str(e)}",
+                        completed_at=datetime.now()
+                    )
+            except Exception as update_error:
+                logger.error(f"Failed to update job status for {job_id}: {str(update_error)}")
+        
+        finally:
+            # Decrement in-progress counter
+            core_metrics.MARKET_ANALYSIS_JOBS_IN_PROGRESS.labels(
+                county_id=county_id,
+                analysis_type=analysis_type
+            ).dec()
+            
+    except Exception as e:
+        logger.error(f"Unhandled exception in run_analysis_job for job {job_id}: {str(e)}", exc_info=True)
+        # Ensure metrics are decremented even on unexpected errors
+        try:
+            core_metrics.MARKET_ANALYSIS_JOBS_IN_PROGRESS.labels(
+                county_id=county_id,
+                analysis_type=analysis_type
+            ).dec()
+            
+            core_metrics.MARKET_ANALYSIS_JOBS_FAILED.labels(
+                county_id=county_id,
+                analysis_type=analysis_type
+            ).inc()
+        except Exception:
+            pass
+
+async def process_analysis_by_type(
+    job_id: str,
+    analysis_type: str,
+    county_id: str,
+    parameters: Dict[str, Any],
+    get_session_factory: Callable[[], Awaitable]
+) -> Dict[str, Any]:
+    """
+    Process a market analysis job based on its type.
+    
+    Args:
+        job_id: ID of the job to process
+        analysis_type: Type of analysis to perform
+        county_id: County identifier
+        parameters: Parameters for the analysis
+        get_session_factory: Function that returns a database session
         
     Returns:
-        Dictionary with result data
+        Dictionary with analysis results
     """
-    # Default parameters if none provided
-    if parameters is None:
-        parameters = {}
+    # Import analysis functions here to avoid circular imports
+    from .service import get_metrics_data
+    from .metrics import update_property_price_metrics, update_market_score
     
-    # Common parameters with defaults
-    time_period = parameters.get("time_period", "last_6_months")
-    property_types = parameters.get("property_types", ["residential"])
-    zip_codes = parameters.get("zip_codes", [])
-    
-    # Add a small random delay to simulate processing time
-    await asyncio.sleep(random.uniform(0.5, 3.0))
-    
-    # Process based on analysis type
-    if analysis_type == "price_trend_by_zip":
-        # Generate price trend analysis by ZIP code
-        result = {
-            "analysis_type": "price_trend_by_zip",
+    # Default response structure
+    result = {
+        "summary": {
+            "job_id": job_id,
+            "analysis_type": analysis_type,
             "county_id": county_id,
-            "time_period": time_period,
-            "generated_at": datetime.utcnow().isoformat(),
-            "zip_codes": []
-        }
+            "processed_at": datetime.now().isoformat(),
+            "trends": []
+        },
+        "data_location": None
+    }
+    
+    # Different processing based on analysis type
+    if analysis_type == "price_trend_by_zip":
+        # Process price trends by ZIP code
+        zip_code = parameters.get("zip_code")
+        time_period = parameters.get("time_period", "1y")
         
-        # If no ZIP codes specified, generate for 3 random ones
-        if not zip_codes:
-            # Create some fake ZIP codes for the county
-            base_zip = 90000 + int(county_id) * 100
-            zip_codes = [str(base_zip + i) for i in range(3)]
+        logger.info(f"Processing price trend analysis for ZIP {zip_code} over {time_period}")
         
-        # Generate data for each ZIP code
-        for zip_code in zip_codes:
-            zip_data = {
-                "zip": zip_code,
-                "property_type": property_types[0] if property_types else "residential",
-                "average_price": random.uniform(300000, 1200000),
-                "median_price": random.uniform(250000, 1000000),
-                "price_change_percent": random.uniform(-5, 15),
-                "market_score": random.uniform(30, 95),
-                "inventory_count": random.randint(10, 200),
-                "average_days_on_market": random.randint(10, 120)
-            }
-            result["zip_codes"].append(zip_data)
+        # Get metrics data for processing
+        metrics_data = await get_metrics_data(county_id, "property_prices", time_period)
         
-        return result
+        # Process the data (simulated)
+        await asyncio.sleep(2)  # Simulate processing time
+        
+        # Update metrics for future queries
+        await update_property_price_metrics(zip_code, metrics_data)
+        
+        # Add trends to result
+        result["summary"]["zip_code"] = zip_code
+        result["summary"]["time_period"] = time_period
+        result["summary"]["avg_price"] = 450000
+        result["summary"]["price_change_pct"] = 5.2
+        result["summary"]["n_properties"] = 120
+        
+        # Add trend points (simulated data)
+        result["summary"]["trends"] = [
+            {"date": "2024-01", "value": 430000},
+            {"date": "2024-02", "value": 435000},
+            {"date": "2024-03", "value": 442000},
+            {"date": "2024-04", "value": 448000},
+            {"date": "2024-05", "value": 450000}
+        ]
         
     elif analysis_type == "comparable_market_area":
-        # Generate comparable market area analysis
-        result = {
-            "analysis_type": "comparable_market_area",
-            "county_id": county_id,
-            "time_period": time_period,
-            "generated_at": datetime.utcnow().isoformat(),
-            "market_areas": []
-        }
+        # Process comparable market areas
+        property_id = parameters.get("property_id")
+        radius_miles = parameters.get("radius_miles", 5)
         
-        # Generate 3-5 comparable market areas
-        num_areas = random.randint(3, 5)
-        for i in range(num_areas):
-            area_data = {
-                "area_id": f"area_{i+1}",
-                "area_name": f"Market Area {i+1}",
-                "similarity_score": random.uniform(50, 98),
-                "key_metrics": {
-                    "population": random.randint(5000, 100000),
-                    "median_income": random.randint(45000, 150000),
-                    "price_per_sqft": random.uniform(100, 800),
-                    "average_price": random.uniform(300000, 1500000),
-                    "median_price": random.uniform(250000, 1300000),
-                    "year_over_year_change": random.uniform(-10, 20)
-                }
-            }
-            result["market_areas"].append(area_data)
+        logger.info(f"Processing comparable market area for property {property_id}")
         
-        return result
+        # Simulate processing
+        await asyncio.sleep(3)
+        
+        # Add results
+        result["summary"]["property_id"] = property_id
+        result["summary"]["radius_miles"] = radius_miles
+        result["summary"]["n_comparables"] = 15
+        result["summary"]["avg_comparable_price"] = 425000
+        result["summary"]["market_liquidity_score"] = 7.2
         
     elif analysis_type == "sales_velocity":
-        # Generate sales velocity analysis
-        result = {
-            "analysis_type": "sales_velocity",
-            "county_id": county_id,
-            "time_period": time_period,
-            "generated_at": datetime.utcnow().isoformat(),
-            "overall_velocity": random.uniform(0.5, 5.5),
-            "velocity_trend": random.choice(["increasing", "stable", "decreasing"]),
-            "segments": []
-        }
+        # Process sales velocity metrics
+        area_code = parameters.get("area_code")
+        period_months = parameters.get("period_months", 6)
         
-        # Generate velocity data for different property segments
-        segments = ["entry_level", "mid_range", "luxury", "multi_family"]
-        for segment in segments:
-            segment_data = {
-                "segment": segment,
-                "velocity": random.uniform(0.2, 7.5),
-                "average_days_on_market": random.randint(10, 180),
-                "inventory_level": random.choice(["low", "moderate", "high"]),
-                "month_over_month_change": random.uniform(-15, 15)
-            }
-            result["segments"].append(segment_data)
+        logger.info(f"Processing sales velocity for area {area_code}")
         
-        return result
+        # Simulate processing
+        await asyncio.sleep(2.5)
+        
+        # Update market score metrics
+        await update_market_score(area_code, 8.3)
+        
+        # Add results
+        result["summary"]["area_code"] = area_code
+        result["summary"]["period_months"] = period_months
+        result["summary"]["avg_days_on_market"] = 22
+        result["summary"]["demand_supply_ratio"] = 1.3
+        result["summary"]["market_score"] = 8.3
+        
+        # Add trend points
+        result["summary"]["trends"] = [
+            {"date": "2024-01", "value": 8.1},
+            {"date": "2024-02", "value": 8.0},
+            {"date": "2024-03", "value": 8.2},
+            {"date": "2024-04", "value": 8.4},
+            {"date": "2024-05", "value": 8.3}
+        ]
         
     elif analysis_type == "market_valuation":
-        # Generate market valuation analysis
-        result = {
-            "analysis_type": "market_valuation",
-            "county_id": county_id,
-            "time_period": time_period,
-            "generated_at": datetime.utcnow().isoformat(),
-            "overall_valuation": random.choice(["undervalued", "fair_value", "overvalued"]),
-            "confidence_score": random.uniform(60, 95),
-            "metrics": {
-                "price_to_income_ratio": random.uniform(2.5, 12.0),
-                "price_to_rent_ratio": random.uniform(10, 40),
-                "historical_deviation_percent": random.uniform(-20, 30),
-                "affordability_index": random.uniform(40, 180)
-            },
-            "forecast": {
-                "short_term_trend": random.choice(["strong_growth", "moderate_growth", "stable", "moderate_decline", "strong_decline"]),
-                "long_term_outlook": random.choice(["very_positive", "positive", "neutral", "negative", "very_negative"]),
-                "projected_appreciation": random.uniform(-5, 15),
-                "risk_factors": random.randint(1, 5)
-            }
-        }
+        # Process market valuation
+        property_type = parameters.get("property_type", "residential")
+        region_id = parameters.get("region_id")
         
-        return result
+        logger.info(f"Processing market valuation for {property_type} in region {region_id}")
+        
+        # Simulate processing
+        await asyncio.sleep(4)
+        
+        # Add results
+        result["summary"]["property_type"] = property_type
+        result["summary"]["region_id"] = region_id
+        result["summary"]["valuation_confidence"] = 0.89
+        result["summary"]["market_trend"] = "appreciating"
+        result["summary"]["forecast_change_6m"] = 3.1
         
     elif analysis_type == "price_per_sqft":
-        # Generate price per square foot analysis
-        result = {
-            "analysis_type": "price_per_sqft",
-            "county_id": county_id,
-            "time_period": time_period,
-            "generated_at": datetime.utcnow().isoformat(),
-            "average_price_per_sqft": random.uniform(100, 1000),
-            "median_price_per_sqft": random.uniform(90, 900),
-            "year_over_year_change_percent": random.uniform(-10, 25),
-            "property_types": []
-        }
+        # Process price per square foot analysis
+        property_type = parameters.get("property_type", "all")
+        area_ids = parameters.get("area_ids", [])
         
-        # Generate data for different property types
-        for prop_type in property_types:
-            prop_data = {
-                "property_type": prop_type,
-                "average_price_per_sqft": random.uniform(80, 1200),
-                "median_price_per_sqft": random.uniform(75, 1100),
-                "range": {
-                    "low": random.uniform(50, 200),
-                    "high": random.uniform(500, 2000)
-                },
-                "year_over_year_change_percent": random.uniform(-15, 30)
-            }
-            result["property_types"].append(prop_data)
+        logger.info(f"Processing price per sqft for {property_type} in {len(area_ids)} areas")
         
-        return result
-    
+        # Simulate processing
+        await asyncio.sleep(2)
+        
+        # Add results
+        result["summary"]["property_type"] = property_type
+        result["summary"]["area_count"] = len(area_ids)
+        result["summary"]["avg_price_sqft"] = 275
+        result["summary"]["min_price_sqft"] = 190
+        result["summary"]["max_price_sqft"] = 350
+        
     else:
         # Unknown analysis type
-        raise ValueError(f"Unsupported analysis type: {analysis_type}")
+        raise ValueError(f"Unknown analysis type: {analysis_type}")
+    
+    return result

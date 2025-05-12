@@ -2,343 +2,172 @@
 TerraFusion SyncService - Market Analysis Plugin - Router
 
 This module provides the FastAPI router for the Market Analysis plugin,
-connecting HTTP endpoints to service layer functions.
+exposing endpoints for job creation, status checking, and result retrieval.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import inspect
 import logging
-from typing import Dict, Any, Optional, List
-from datetime import datetime as dt
-import uuid
+from typing import Dict, List, Any, Optional
+from datetime import datetime
 
-# Database connector
-from terrafusion_sync.database import get_db_session
-from terrafusion_sync.core_models import MarketAnalysisJob
+from fastapi import APIRouter, Depends, HTTPException, Query, Path, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
-# Import schemas
-from .schemas import (
+from terrafusion_sync.database import get_async_session
+from terrafusion_sync.plugins.market_analysis.schemas import (
     MarketAnalysisRunRequest,
     MarketAnalysisJobStatusResponse,
-    MarketAnalysisResultData,
-    MarketAnalysisJobResultResponse,
-    MarketTrendDataPoint
+    MarketAnalysisJobResultResponse
 )
+from terrafusion_sync.plugins.market_analysis.service import MarketAnalysisService
 
-# Import service
-from .service import (
-    create_analysis_job,
-    get_analysis_job,
-    list_analysis_jobs,
-    update_job_status
-)
+# Lazy load dependencies
+# This helps prevent circular imports
+SERVICE = None
 
-# Configure logging
+# Configure logger
 logger = logging.getLogger(__name__)
 
-# Create router with correct prefix
-router = APIRouter(prefix="/plugins/market-analysis", tags=["Market Analysis"])
+# Create router
+plugin_router = APIRouter(prefix="/plugins/market-analysis", tags=["Market Analysis"])
 
-print("[✅] market_analysis.router module loaded successfully.")
 
-@router.get("/health", status_code=status.HTTP_200_OK)
+def get_service(session_factory=Depends(get_async_session)):
+    """Get the Market Analysis service instance with proper dependency injection."""
+    global SERVICE
+    if SERVICE is None:
+        SERVICE = MarketAnalysisService(session_factory)
+    return SERVICE
+
+
+@plugin_router.get("/health", 
+    summary="Check the health of the Market Analysis plugin",
+    description="Returns basic health information for the Market Analysis plugin")
 async def health_check():
     """
-    Health check endpoint for the Market Analysis plugin.
+    Check if the Market Analysis plugin is healthy.
     """
+    # Basic health check
     return {
         "status": "ok",
-        "plugin": "market_analysis",
+        "name": "Market Analysis Plugin",
         "version": "1.0.0",
-        "timestamp": dt.now().isoformat()
+        "timestamp": datetime.utcnow().isoformat()
     }
 
-# --- Utility Functions ---
 
-def _convert_model_to_schema_dict(model):
-    """
-    Convert a SQLAlchemy model instance to a dict with compatible Python types for Pydantic schemas.
-    """
-    if model is None:
-        return None
-        
-    # Directly convert to dict for simplicity
-    result = {}
-    for column in inspect(model).mapper.column_attrs:
-        name = column.key
-        value = getattr(model, name)
-        
-        # Ensure value is a Python native type
-        if value is not None:
-            # Handle specific type conversions if needed
-            if isinstance(value, dt):
-                # Datetime objects are already compatible
-                result[name] = value
-            elif hasattr(value, '_sa_instance_state'):
-                # Handle nested SQLAlchemy models (recursion)
-                result[name] = _convert_model_to_schema_dict(value)
-            else:
-                # For all other values, convert to string if not a basic type
-                if not isinstance(value, (str, int, float, bool, dict, list)):
-                    result[name] = str(value)
-                else:
-                    result[name] = value
-        else:
-            result[name] = None
-    
-    return result
-
-# --- API Endpoints ---
-
-@router.post("/run", response_model=MarketAnalysisJobStatusResponse, status_code=status.HTTP_202_ACCEPTED)
-async def run_market_analysis(
+@plugin_router.post("/run", 
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Run a market analysis job",
+    description="Submit a market analysis job for processing")
+async def run_analysis(
     request: MarketAnalysisRunRequest,
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db_session)
+    service: MarketAnalysisService = Depends(get_service)
 ):
     """
     Run a market analysis job.
-    
-    This endpoint accepts a market analysis request and queues it for background processing.
     """
-    # Ensure we're using the db session correctly
-    if hasattr(db, '__aenter__') and not hasattr(db, 'execute'):
-        # We have a session factory or context manager, not a session
-        async with db as session:
-            return await _run_market_analysis_impl(request, background_tasks, session)
-    else:
-        # We already have a session
-        return await _run_market_analysis_impl(request, background_tasks, db)
-
-async def _run_market_analysis_impl(
-    request: MarketAnalysisRunRequest,
-    background_tasks: BackgroundTasks,
-    db: AsyncSession
-) -> MarketAnalysisJobStatusResponse:
-    """Implementation of job run logic."""
     try:
-        # Create a new job record using the service function
-        job = await create_analysis_job(
-            db=db,
+        # Create job
+        job_id = await service.create_job(
             county_id=request.county_id,
             analysis_type=request.analysis_type,
             parameters=request.parameters
         )
         
-        # Record job submission metric - import here to avoid circular imports
-        import terrafusion_sync.metrics as core_metrics
-        core_metrics.MARKET_ANALYSIS_JOBS_SUBMITTED.labels(
-            county_id=request.county_id,
-            analysis_type=request.analysis_type
-        ).inc()
-        
-        # Lazy import of tasks module to avoid circular imports
-        from .tasks import run_analysis_job
-        
-        # Add background task to process the job
-        background_tasks.add_task(
-            run_analysis_job,
-            get_db_session,  # Pass the session factory
-            str(job.job_id),
-            str(job.analysis_type),
-            str(job.county_id),
-            job.parameters_json
-        )
-        
-        # Return the job status response with explicitly converted types
-        return MarketAnalysisJobStatusResponse(
-            job_id=str(job.job_id),
-            analysis_type=str(job.analysis_type),
-            county_id=str(job.county_id),
-            status=str(job.status),
-            message=str(job.message) if job.message else None,
-            parameters=job.parameters_json,
-            created_at=job.created_at,
-            updated_at=job.updated_at,
-            started_at=None,
-            completed_at=None
-        )
-        
+        return {
+            "job_id": job_id,
+            "status": "PENDING",
+            "message": "Job created and queued for processing"
+        }
     except Exception as e:
-        logger.error(f"Failed to create market analysis job: {str(e)}", exc_info=True)
+        logger.exception(f"Error running analysis: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to initiate market analysis job: {str(e)}"
+            detail=f"Error submitting job: {str(e)}"
         )
 
-@router.get("/status/{job_id}", response_model=MarketAnalysisJobStatusResponse)
-async def get_market_analysis_status(job_id: str, db: AsyncSession = Depends(get_db_session)):
-    """
-    Get the status of a market analysis job.
-    """
-    # Ensure we're using the db session correctly
-    if hasattr(db, '__aenter__') and not hasattr(db, 'execute'):
-        # We have a session factory or context manager, not a session
-        async with db as session:
-            return await _get_market_analysis_status_impl(job_id, session)
-    else:
-        # We already have a session
-        return await _get_market_analysis_status_impl(job_id, db)
 
-async def _get_market_analysis_status_impl(job_id: str, db: AsyncSession) -> MarketAnalysisJobStatusResponse:
-    """Implementation of job status retrieval logic."""
-    # Use service function to get the job
-    job = await get_analysis_job(db, job_id)
-    
-    if not job:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Market analysis job with ID {job_id} not found"
-        )
-    
-    # Convert to response model with explicit type conversions
-    return MarketAnalysisJobStatusResponse(
-        job_id=str(job.job_id),
-        analysis_type=str(job.analysis_type),
-        county_id=str(job.county_id),
-        status=str(job.status),
-        message=str(job.message) if job.message else None,
-        parameters=job.parameters_json,
-        created_at=job.created_at,
-        updated_at=job.updated_at,
-        started_at=job.started_at,
-        completed_at=job.completed_at
-    )
-
-@router.get("/results/{job_id}", response_model=MarketAnalysisJobResultResponse)
-async def get_market_analysis_results(job_id: str, db: AsyncSession = Depends(get_db_session)):
-    """
-    Get the results of a completed market analysis job.
-    """
-    # Ensure we're using the db session correctly
-    if hasattr(db, '__aenter__') and not hasattr(db, 'execute'):
-        # We have a session factory or context manager, not a session
-        async with db as session:
-            return await _get_market_analysis_results_impl(job_id, session)
-    else:
-        # We already have a session
-        return await _get_market_analysis_results_impl(job_id, db)
-
-async def _get_market_analysis_results_impl(job_id: str, db: AsyncSession) -> MarketAnalysisJobResultResponse:
-    """Implementation of job results retrieval logic."""
-    # Use service function to get the job
-    job = await get_analysis_job(db, job_id)
-    
-    if not job:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Market analysis job with ID {job_id} not found"
-        )
-    
-    if str(job.status) != "COMPLETED":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Market analysis job is not completed (current status: {job.status})"
-        )
-    
-    # Create base job status response
-    job_status_response = MarketAnalysisJobStatusResponse(
-        job_id=str(job.job_id),
-        analysis_type=str(job.analysis_type),
-        county_id=str(job.county_id),
-        status=str(job.status),
-        message=str(job.message) if job.message else None,
-        parameters=job.parameters_json,
-        created_at=job.created_at,
-        updated_at=job.updated_at,
-        started_at=job.started_at,
-        completed_at=job.completed_at
-    )
-
-    # Prepare result data
-    trends = None
-    result_summary = None
-    result_data_location = None
-    
-    # Extract result data from job
-    if job.result_summary_json:
-        result_summary = job.result_summary_json
-        
-        # Extract trends if available
-        if result_summary and 'trends' in result_summary:
-            trends = result_summary.pop('trends', None)
-    
-    # Get result location if available
-    if job.result_data_location:
-        result_data_location = str(job.result_data_location)
-    
-    # Create the result data model
-    result_data = MarketAnalysisResultData(
-        result_summary=result_summary,
-        result_data_location=result_data_location,
-        trends=trends
-    )
-    
-    # Return the full response with job status and results
-    return MarketAnalysisJobResultResponse(
-        **job_status_response.model_dump(),  # Use all fields from status response
-        result=result_data
-    )
-
-@router.get("/list", response_model=List[MarketAnalysisJobStatusResponse])
-async def list_market_analysis_jobs(
-    county_id: Optional[str] = None,
-    analysis_type: Optional[str] = None,
-    status: Optional[str] = None,
-    limit: int = 10,
-    db: AsyncSession = Depends(get_db_session)
+@plugin_router.get("/status/{job_id}", 
+    response_model=MarketAnalysisJobStatusResponse,
+    summary="Get the status of a market analysis job",
+    description="Check the current status of a previously submitted market analysis job")
+async def get_job_status(
+    job_id: str = Path(..., description="ID of the job to check"),
+    service: MarketAnalysisService = Depends(get_service)
 ):
     """
-    List market analysis jobs with optional filtering.
+    Get the current status of a job.
     """
-    # Ensure we're using the db session correctly
-    if hasattr(db, '__aenter__') and not hasattr(db, 'execute'):
-        # We have a session factory or context manager, not a session
-        async with db as session:
-            return await _list_market_analysis_jobs_impl(
-                session, county_id, analysis_type, status, limit
-            )
-    else:
-        # We already have a session
-        return await _list_market_analysis_jobs_impl(
-            db, county_id, analysis_type, status, limit
+    result = await service.get_job_status(job_id)
+    
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job with ID {job_id} not found"
         )
+        
+    return result
 
-async def _list_market_analysis_jobs_impl(
-    db: AsyncSession,
-    county_id: Optional[str],
-    analysis_type: Optional[str],
-    status: Optional[str],
-    limit: int
-) -> List[MarketAnalysisJobStatusResponse]:
-    """Implementation of job listing logic."""
-    # Use service function to list jobs with filters
-    jobs = await list_analysis_jobs(
-        db=db,
-        county_id=county_id,
-        analysis_type=analysis_type,
-        status=status,
-        limit=limit
-    )
+
+@plugin_router.get("/results/{job_id}", 
+    response_model=MarketAnalysisJobResultResponse,
+    summary="Get the results of a completed job",
+    description="Retrieve the detailed results of a completed market analysis job")
+async def get_job_results(
+    job_id: str = Path(..., description="ID of the job to get results for"),
+    service: MarketAnalysisService = Depends(get_service)
+):
+    """
+    Get the results of a completed job.
+    """
+    result = await service.get_job_result(job_id)
     
-    # Convert each job to response model with proper type handling
-    job_responses = []
-    for job in jobs:
-        # Create response for each job
-        job_responses.append(
-            MarketAnalysisJobStatusResponse(
-                job_id=str(job.job_id),
-                analysis_type=str(job.analysis_type),
-                county_id=str(job.county_id),
-                status=str(job.status),
-                message=str(job.message) if job.message else None,
-                parameters=job.parameters_json,
-                created_at=job.created_at,
-                updated_at=job.updated_at,
-                started_at=job.started_at,
-                completed_at=job.completed_at
-            )
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job with ID {job_id} not found"
         )
+        
+    if result.get("status") != "COMPLETED":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Job is not completed. Current status: {result.get('status')}"
+        )
+        
+    return result
+
+
+@plugin_router.get("/list", 
+    summary="List market analysis jobs",
+    description="List market analysis jobs, optionally filtered by county")
+async def list_jobs(
+    county_id: Optional[str] = Query(None, description="Filter jobs by county ID"),
+    limit: int = Query(100, description="Maximum number of jobs to return"),
+    service: MarketAnalysisService = Depends(get_service)
+):
+    """
+    List jobs, optionally filtered by county.
+    """
+    jobs = await service.list_jobs(county_id=county_id, limit=limit)
+    return {"jobs": jobs, "count": len(jobs)}
+
+
+@plugin_router.post("/cancel/{job_id}", 
+    summary="Cancel a running job",
+    description="Cancel a pending or running market analysis job")
+async def cancel_job(
+    job_id: str = Path(..., description="ID of the job to cancel"),
+    service: MarketAnalysisService = Depends(get_service)
+):
+    """
+    Cancel a job.
+    """
+    success = await service.cancel_job(job_id)
     
-    return job_responses
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Job cannot be cancelled. It may be completed, failed, or not found."
+        )
+        
+    return {"status": "cancelled", "job_id": job_id}

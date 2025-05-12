@@ -1,200 +1,351 @@
-#!/usr/bin/env python3
 """
-Test script for Market Analysis Plugin
+Test Market Analysis Plugin Integration
 
-This script demonstrates how to use the Market Analysis plugin
-by sending requests to the plugin's endpoints.
+This script tests the Market Analysis plugin for TerraFusion SyncService.
+It verifies basic functionality like job creation, status querying, and result retrieval.
 """
 
-import asyncio
+import os
+import sys
 import json
-import uuid
+import time
+import asyncio
+import logging
+import argparse
 import httpx
-import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any
+from datetime import datetime
 
-# API base URL
-API_BASE_URL = "http://localhost:8080"
-MARKET_ANALYSIS_ENDPOINT = f"{API_BASE_URL}/plugins/v1/market-analysis"
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s - %(message)s')
+logger = logging.getLogger("market_analysis_test")
 
-# Test data
-TEST_COUNTY_ID = "TEST_COUNTY"
-TEST_ANALYSIS_TYPES = [
-    "price_trend_by_zip",
-    "comparable_market_area",
-    "sales_velocity",
-    "market_valuation",
-    "price_per_sqft"
-]
-TEST_PARAMETERS = {
-    "price_trend_by_zip": {
-        "start_date": "2024-01-01",
-        "end_date": "2024-12-31",
-        "zip_codes": ["90210", "90211"],
-        "property_types": ["residential"]
-    },
-    "comparable_market_area": {
-        "reference_zip": "90210",
-        "max_distance_miles": 25,
-        "property_types": ["residential", "commercial"]
-    },
-    "sales_velocity": {
-        "start_date": "2024-01-01",
-        "end_date": "2024-12-31",
-        "area_codes": ["90210", "90211", "90212"]
-    },
-    "market_valuation": {
-        "area_code": "90210",
-        "property_type": "residential",
-        "min_sqft": 1000,
-        "max_sqft": 3000
-    },
-    "price_per_sqft": {
-        "area_codes": ["90210", "90211"],
-        "property_types": ["residential", "commercial"],
-        "start_date": "2024-01-01",
-        "end_date": "2024-12-31"
-    }
-}
+# Constants
+DEFAULT_BASE_URL = "http://localhost:8080"
+DEFAULT_COUNTY_ID = "test_county_001"
+TIMEOUT = 30  # Seconds to wait for job completion
 
-# Test request functions
-async def submit_market_analysis_job(
+
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Test Market Analysis Plugin Integration")
+    parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help="Base URL for SyncService API")
+    parser.add_argument("--county-id", default=DEFAULT_COUNTY_ID, help="County ID to use for test jobs")
+    parser.add_argument("--timeout", type=int, default=TIMEOUT, help="Timeout in seconds for waiting for job completion")
+    parser.add_argument("--test-health-only", action="store_true", help="Only test the health endpoint")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
+    return parser.parse_args()
+
+
+async def check_health(client: httpx.AsyncClient, base_url: str) -> bool:
+    """Check if the health endpoint is responding."""
+    try:
+        url = f"{base_url}/plugins/market-analysis/health"
+        logger.info(f"Checking health at {url}")
+        
+        response = await client.get(url, timeout=5.0)
+        
+        if response.status_code == 200:
+            logger.info(f"Health check successful: {response.json()}")
+            return True
+        else:
+            logger.error(f"Health check failed with status code {response.status_code}: {response.text}")
+            return False
+    except Exception as e:
+        logger.error(f"Health check error: {str(e)}")
+        return False
+
+
+async def run_analysis_job(
+    client: httpx.AsyncClient, 
+    base_url: str, 
+    county_id: str, 
     analysis_type: str, 
-    county_id: str,
     parameters: Dict[str, Any]
 ) -> Dict[str, Any]:
-    """Submit a market analysis job."""
-    print(f"\n----- Submitting {analysis_type} Market Analysis Job -----")
+    """Run a market analysis job and return the job ID."""
+    try:
+        url = f"{base_url}/plugins/market-analysis/run"
+        payload = {
+            "county_id": county_id,
+            "analysis_type": analysis_type,
+            "parameters": parameters
+        }
+        
+        logger.info(f"Starting {analysis_type} job with parameters: {parameters}")
+        response = await client.post(url, json=payload, timeout=10.0)
+        
+        if response.status_code == 202:
+            result = response.json()
+            logger.info(f"Job created successfully with ID: {result.get('job_id')}")
+            return result
+        else:
+            logger.error(f"Failed to create job: {response.status_code} - {response.text}")
+            return {}
+    except Exception as e:
+        logger.error(f"Error creating job: {str(e)}")
+        return {}
+
+
+async def check_job_status(client: httpx.AsyncClient, base_url: str, job_id: str) -> Dict[str, Any]:
+    """Check the status of a market analysis job."""
+    try:
+        url = f"{base_url}/plugins/market-analysis/status/{job_id}"
+        response = await client.get(url, timeout=5.0)
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            logger.error(f"Failed to get job status: {response.status_code} - {response.text}")
+            return {}
+    except Exception as e:
+        logger.error(f"Error checking job status: {str(e)}")
+        return {}
+
+
+async def get_job_results(client: httpx.AsyncClient, base_url: str, job_id: str) -> Dict[str, Any]:
+    """Get the results of a completed market analysis job."""
+    try:
+        url = f"{base_url}/plugins/market-analysis/results/{job_id}"
+        response = await client.get(url, timeout=5.0)
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            logger.error(f"Failed to get job results: {response.status_code} - {response.text}")
+            return {}
+    except Exception as e:
+        logger.error(f"Error getting job results: {str(e)}")
+        return {}
+
+
+async def list_jobs(client: httpx.AsyncClient, base_url: str, county_id: str = None) -> Dict[str, Any]:
+    """List market analysis jobs."""
+    try:
+        url = f"{base_url}/plugins/market-analysis/list"
+        params = {}
+        if county_id:
+            params["county_id"] = county_id
+            
+        response = await client.get(url, params=params, timeout=5.0)
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            logger.error(f"Failed to list jobs: {response.status_code} - {response.text}")
+            return []
+    except Exception as e:
+        logger.error(f"Error listing jobs: {str(e)}")
+        return []
+
+
+async def wait_for_job_completion(
+    client: httpx.AsyncClient, 
+    base_url: str, 
+    job_id: str, 
+    timeout: int = TIMEOUT
+) -> Dict[str, Any]:
+    """
+    Wait for a job to complete, polling every second up to the timeout.
     
-    url = f"{MARKET_ANALYSIS_ENDPOINT}/run"
-    payload = {
-        "analysis_type": analysis_type,
-        "county_id": county_id,
-        "parameters": parameters
+    Returns the final job status, or an empty dict if timeout is reached.
+    """
+    logger.info(f"Waiting for job {job_id} to complete (timeout: {timeout}s)")
+    start_time = time.time()
+    
+    while time.time() - start_time < timeout:
+        status = await check_job_status(client, base_url, job_id)
+        
+        if not status:
+            # Error getting status
+            await asyncio.sleep(1)
+            continue
+            
+        current_status = status.get("status")
+        logger.info(f"Current status: {current_status} - {status.get('message', '')}")
+        
+        if current_status in ["COMPLETED", "FAILED", "CANCELLED"]:
+            logger.info(f"Job reached terminal state: {current_status}")
+            return status
+            
+        # Wait before next check
+        await asyncio.sleep(1)
+    
+    logger.error(f"Timeout waiting for job {job_id} to complete")
+    return {}
+
+
+async def test_price_trend_analysis(client: httpx.AsyncClient, base_url: str, county_id: str, timeout: int) -> bool:
+    """Test the price trend analysis functionality."""
+    
+    # Create job parameters
+    parameters = {
+        "zip_code": "90210",
+        "date_from": (datetime.now().replace(year=datetime.now().year - 1)).isoformat(),
+        "date_to": datetime.now().isoformat(),
+        "property_type": "residential"
     }
     
-    print(f"Request: POST {url}")
-    print(f"Payload: {json.dumps(payload, indent=2)}")
+    # Run the job
+    job = await run_analysis_job(client, base_url, county_id, "price_trend_by_zip", parameters)
     
+    if not job:
+        return False
+        
+    job_id = job.get("job_id")
+    if not job_id:
+        logger.error("No job ID returned")
+        return False
+        
+    # Wait for job completion
+    final_status = await wait_for_job_completion(client, base_url, job_id, timeout)
+    
+    if not final_status:
+        return False
+        
+    # Check if job completed successfully
+    if final_status.get("status") != "COMPLETED":
+        logger.error(f"Job did not complete successfully: {final_status}")
+        return False
+    
+    # Get results
+    results = await get_job_results(client, base_url, job_id)
+    
+    if not results:
+        logger.error("Failed to get job results")
+        return False
+        
+    # Validate results structure
+    result_data = results.get("result", {})
+    trends = result_data.get("trends", [])
+    
+    if not trends:
+        logger.error("No trend data in results")
+        return False
+        
+    logger.info(f"Price trend analysis successful with {len(trends)} data points")
+    return True
+
+
+async def test_comparable_market_area(client: httpx.AsyncClient, base_url: str, county_id: str, timeout: int) -> bool:
+    """Test the comparable market area functionality."""
+    
+    # Create job parameters
+    parameters = {
+        "zip_code": "90210",
+        "radius_miles": 25,
+        "min_similar_listings": 5
+    }
+    
+    # Run the job
+    job = await run_analysis_job(client, base_url, county_id, "comparable_market_area", parameters)
+    
+    if not job:
+        return False
+        
+    job_id = job.get("job_id")
+    if not job_id:
+        logger.error("No job ID returned")
+        return False
+        
+    # Wait for job completion
+    final_status = await wait_for_job_completion(client, base_url, job_id, timeout)
+    
+    if not final_status:
+        return False
+        
+    # Check if job completed successfully
+    if final_status.get("status") != "COMPLETED":
+        logger.error(f"Job did not complete successfully: {final_status}")
+        return False
+    
+    # Get results
+    results = await get_job_results(client, base_url, job_id)
+    
+    if not results:
+        logger.error("Failed to get job results")
+        return False
+        
+    # Validate results structure
+    result_data = results.get("result", {})
+    summary = result_data.get("result_summary", {})
+    
+    if not summary:
+        logger.error("No summary data in results")
+        return False
+        
+    comparable_areas = summary.get("comparable_areas", [])
+    
+    if not comparable_areas:
+        logger.error("No comparable areas in results")
+        return False
+        
+    logger.info(f"Comparable market area analysis successful with {len(comparable_areas)} areas")
+    return True
+
+
+async def run_tests(args):
+    """Run all tests."""
+    
+    logger.info(f"Starting tests against {args.base_url}")
+    
+    # Create HTTP client
     async with httpx.AsyncClient() as client:
-        response = await client.post(url, json=payload)
+        # Test health endpoint
+        health_ok = await check_health(client, args.base_url)
         
-    print(f"Response status: {response.status_code}")
-    if response.status_code == 202:
-        print(f"Response body: {json.dumps(response.json(), indent=2)}")
-        return response.json()
-    else:
-        print(f"Error: {response.text}")
-        return {}
-
-async def get_job_status(job_id: str) -> Dict[str, Any]:
-    """Get the status of a market analysis job."""
-    print(f"\n----- Checking Status for Job {job_id} -----")
-    
-    url = f"{MARKET_ANALYSIS_ENDPOINT}/status/{job_id}"
-    print(f"Request: GET {url}")
-    
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url)
+        if not health_ok:
+            logger.error("Health check failed, aborting further tests")
+            return 1
+            
+        # Exit if only testing health
+        if args.test_health_only:
+            logger.info("Health check successful, exiting as requested")
+            return 0
+            
+        # Test price trend analysis
+        price_trend_ok = await test_price_trend_analysis(client, args.base_url, args.county_id, args.timeout)
         
-    print(f"Response status: {response.status_code}")
-    if response.status_code == 200:
-        print(f"Response body: {json.dumps(response.json(), indent=2)}")
-        return response.json()
-    else:
-        print(f"Error: {response.text}")
-        return {}
-
-async def get_job_results(job_id: str) -> Dict[str, Any]:
-    """Get the results of a market analysis job."""
-    print(f"\n----- Getting Results for Job {job_id} -----")
-    
-    url = f"{MARKET_ANALYSIS_ENDPOINT}/results/{job_id}"
-    print(f"Request: GET {url}")
-    
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url)
+        if not price_trend_ok:
+            logger.error("Price trend analysis test failed")
+            return 1
+            
+        # Test comparable market area
+        comp_market_ok = await test_comparable_market_area(client, args.base_url, args.county_id, args.timeout)
         
-    print(f"Response status: {response.status_code}")
-    if response.status_code == 200:
-        print(f"Response body: {json.dumps(response.json(), indent=2)}")
-        return response.json()
-    else:
-        print(f"Error: {response.text}")
-        return {}
-
-async def list_jobs(
-    county_id: Optional[str] = None,
-    analysis_type: Optional[str] = None,
-    status: Optional[str] = None
-) -> Dict[str, Any]:
-    """List market analysis jobs with optional filtering."""
-    print("\n----- Listing Market Analysis Jobs -----")
-    
-    params = {}
-    if county_id:
-        params["county_id"] = county_id
-    if analysis_type:
-        params["analysis_type"] = analysis_type
-    if status:
-        params["status"] = status
+        if not comp_market_ok:
+            logger.error("Comparable market area test failed")
+            return 1
+            
+        # List jobs
+        jobs = await list_jobs(client, args.base_url, args.county_id)
         
-    url = f"{MARKET_ANALYSIS_ENDPOINT}/list"
-    print(f"Request: GET {url}")
-    print(f"Params: {params}")
-    
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url, params=params)
+        if jobs:
+            logger.info(f"Listed {len(jobs)} jobs for county {args.county_id}")
         
-    print(f"Response status: {response.status_code}")
-    if response.status_code == 200:
-        print(f"Response body: {json.dumps(response.json(), indent=2)}")
-        return response.json()
-    else:
-        print(f"Error: {response.text}")
-        return {}
+        logger.info("All tests completed successfully!")
+        return 0
 
-async def run_test_sequence():
-    """Run a test sequence for the market analysis plugin."""
-    # Submit a job for each analysis type
-    job_ids = []
-    for analysis_type in TEST_ANALYSIS_TYPES:
-        if analysis_type in TEST_PARAMETERS:
-            job_response = await submit_market_analysis_job(
-                analysis_type=analysis_type,
-                county_id=TEST_COUNTY_ID,
-                parameters=TEST_PARAMETERS[analysis_type]
-            )
-            if job_response and "job_id" in job_response:
-                job_ids.append((job_response["job_id"], analysis_type))
-                
-                # Check the job status immediately
-                await get_job_status(job_response["job_id"])
-                
-                # Wait a moment (in a real test, this would wait for job completion)
-                await asyncio.sleep(1)
-    
-    # List all jobs
-    await list_jobs()
-    
-    # List jobs for specific county
-    await list_jobs(county_id=TEST_COUNTY_ID)
-    
-    # List jobs for specific analysis type
-    if job_ids:
-        await list_jobs(analysis_type=job_ids[0][1])
-    
-    # Try to get results for the first job (might not be completed yet in a real test)
-    if job_ids:
-        await get_job_results(job_ids[0][0])
 
-# Main execution
+def main():
+    """Main entry point."""
+    args = parse_args()
+    
+    # Configure log level
+    log_level = logging.DEBUG if args.verbose else logging.INFO
+    logging.getLogger("market_analysis_test").setLevel(log_level)
+    
+    # Run the tests
+    try:
+        exit_code = asyncio.run(run_tests(args))
+        return exit_code
+    except KeyboardInterrupt:
+        logger.info("Tests interrupted by user")
+        return 1
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        return 1
+
+
 if __name__ == "__main__":
-    print("\n=== Market Analysis Plugin Test ===")
-    print(f"API Base URL: {API_BASE_URL}")
-    print(f"Testing with County ID: {TEST_COUNTY_ID}")
-    print(f"Testing analysis types: {', '.join(TEST_ANALYSIS_TYPES)}")
-    
-    asyncio.run(run_test_sequence())
-    
-    print("\n=== Test Complete ===")
+    sys.exit(main())

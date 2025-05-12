@@ -5,13 +5,11 @@ This module provides Pydantic schema models for the Market Analysis plugin.
 These schemas define the structure of request and response objects for the API.
 """
 
+from typing import Dict, List, Optional, Any
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Any, Optional, Union
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field
 
-
-# --- Enums ---
 
 class AnalysisType(str, Enum):
     """Types of market analysis that can be performed."""
@@ -30,8 +28,6 @@ class JobStatus(str, Enum):
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
 
-
-# --- Base Models ---
 
 class MarketTrendDataPoint(BaseModel):
     """Data point for market trend data."""
@@ -98,8 +94,6 @@ class SizeBracket(BaseModel):
     sample_count: int
 
 
-# --- Request Models ---
-
 class MarketAnalysisRunRequest(BaseModel):
     """Request to run a market analysis job."""
     county_id: str = Field(..., description="County ID for the analysis")
@@ -109,8 +103,6 @@ class MarketAnalysisRunRequest(BaseModel):
         description="Parameters for the analysis, varies by analysis type"
     )
 
-
-# --- Response Models ---
 
 class MarketAnalysisJobStatusResponse(BaseModel):
     """Response with job status information."""
@@ -140,8 +132,6 @@ class MarketAnalysisJobResultResponse(MarketAnalysisJobStatusResponse):
     """
     result: Optional[MarketAnalysisResultData] = None
 
-
-# --- Specialized Result Models (used internally) ---
 
 class PriceTrendResponse(BaseModel):
     """Response for price trend analysis."""

@@ -13,7 +13,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime as dt
 import uuid
 
-# Import database and model dependencies
+# Database connector
 from terrafusion_sync.database import get_db_session
 from terrafusion_sync.core_models import MarketAnalysisJob
 
@@ -26,23 +26,20 @@ from .schemas import (
     MarketTrendDataPoint
 )
 
-# Import service functionality - NOT tasks which causes circular imports
+# Import service
 from .service import (
     create_analysis_job,
     get_analysis_job,
     list_analysis_jobs,
-    update_job_status,
-    expire_stale_jobs,
-    get_metrics_data
+    update_job_status
 )
 
-# Set up logging
+# Configure logging
 logger = logging.getLogger(__name__)
 
-# Initialize router with proper prefix
+# Create router with correct prefix
 router = APIRouter(prefix="/plugins/market-analysis", tags=["Market Analysis"])
 
-# Log successful import
 print("[✅] market_analysis.router module loaded successfully.")
 
 @router.get("/health", status_code=status.HTTP_200_OK)
@@ -66,6 +63,7 @@ def _convert_model_to_schema_dict(model):
     if model is None:
         return None
         
+    # Directly convert to dict for simplicity
     result = {}
     for column in inspect(model).mapper.column_attrs:
         name = column.key
@@ -73,14 +71,15 @@ def _convert_model_to_schema_dict(model):
         
         # Ensure value is a Python native type
         if value is not None:
-            # Handle specific type conversions
+            # Handle specific type conversions if needed
             if isinstance(value, dt):
+                # Datetime objects are already compatible
                 result[name] = value
             elif hasattr(value, '_sa_instance_state'):
-                # Handle nested SQLAlchemy models
+                # Handle nested SQLAlchemy models (recursion)
                 result[name] = _convert_model_to_schema_dict(value)
             else:
-                # Convert to string if not a basic type
+                # For all other values, convert to string if not a basic type
                 if not isinstance(value, (str, int, float, bool, dict, list)):
                     result[name] = str(value)
                 else:
@@ -127,15 +126,14 @@ async def _run_market_analysis_impl(
             parameters=request.parameters
         )
         
-        # Record job submission metric with core metrics
-        # Uses dynamic import to avoid circular dependencies
+        # Record job submission metric - import here to avoid circular imports
         import terrafusion_sync.metrics as core_metrics
         core_metrics.MARKET_ANALYSIS_JOBS_SUBMITTED.labels(
             county_id=request.county_id,
             analysis_type=request.analysis_type
         ).inc()
         
-        # Lazily import tasks module to avoid circular import
+        # Lazy import of tasks module to avoid circular imports
         from .tasks import run_analysis_job
         
         # Add background task to process the job
@@ -148,7 +146,7 @@ async def _run_market_analysis_impl(
             job.parameters_json
         )
         
-        # Return the job status response
+        # Return the job status response with explicitly converted types
         return MarketAnalysisJobStatusResponse(
             job_id=str(job.job_id),
             analysis_type=str(job.analysis_type),
@@ -194,7 +192,7 @@ async def _get_market_analysis_status_impl(job_id: str, db: AsyncSession) -> Mar
             detail=f"Market analysis job with ID {job_id} not found"
         )
     
-    # Convert to response model
+    # Convert to response model with explicit type conversions
     return MarketAnalysisJobStatusResponse(
         job_id=str(job.job_id),
         analysis_type=str(job.analysis_type),
@@ -233,7 +231,6 @@ async def _get_market_analysis_results_impl(job_id: str, db: AsyncSession) -> Ma
             detail=f"Market analysis job with ID {job_id} not found"
         )
     
-    # Check if job is completed
     if str(job.status) != "COMPLETED":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
