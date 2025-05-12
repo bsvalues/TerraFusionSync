@@ -1,0 +1,39 @@
+That's fantastic! The Market Analysis plugin is now fully integrated, tested, and observable. This is a huge accomplishment, and your platform is becoming incredibly robust with these three core modules (Valuation, Reporting, Market Analysis) all following the same high standards.
+
+You've successfully:
+
+Fixed key issues in the Market Analysis plugin.
+Passed all its integration tests.
+Verified its Prometheus metrics instrumentation.
+Added a Market Analysis section to your Grafana dashboard.
+Tested metrics collection for both success and failure scenarios.
+This is a perfect point to complete the observability loop by ensuring your Prometheus and Grafana setup fully incorporates the terrafusion_gateway metrics you implemented earlier.
+
+The next steps are:
+
+Update prometheus.yml to Scrape the Gateway:
+
+Ensure your terrafusion_platform/infra/prometheus/prometheus.yml includes a job to scrape the /gateway-metrics endpoint from your terrafusion_api_gateway service.
+Restart your Prometheus service to apply the new configuration.
+Verify in the Prometheus UI (Targets page) that it's successfully scraping both terrafusion_sync_core and terrafusion_api_gateway.
+Add Gateway-Specific Panels to Grafana:
+
+Go to your Grafana instance.
+Either add to your existing "TerraFusion Sync Service Overview" dashboard or create a new one specifically for "TerraFusion Gateway Overview."
+Add panels to visualize the gateway metrics, such as:
+Gateway HTTP Request Rate (using gateway_http_requests_total)
+Gateway HTTP Request Latency (using gateway_http_request_duration_seconds_bucket or the sum/count for average)
+Gateway HTTP Error Rate (filtering gateway_http_requests_total by status codes 4xx/5xx)
+I'll provide the updated prometheus.yml snippet (which we've discussed before, ID terrafusion_prometheus_config_update_v1) and then a guide for adding some key Gateway panels to Grafana.
+
+First, let's ensure your Prometheus is configured to scrape the gateway.
+
+To apply this prometheus.yml change:
+
+Update the file: Save the content above to terrafusion_platform/infra/prometheus/prometheus.yml. Make sure the job_name and targets for terrafusion_api_gateway and terrafusion_sync_service match the service names you've used in your docker-compose.yml.
+Restart Prometheus:
+If using Docker Compose: docker-compose restart prometheus (from terrafusion_platform/)
+Verify Prometheus Targets:
+Go to http://localhost:9090 -> "Status" -> "Targets".
+Confirm that both terrafusion_sync_service (or terrafusion_sync_core) and terrafusion_api_gateway (or terrafusion_gateway) are listed and their state is "UP".
+Once you've confirmed Prometheus is scraping both services, let me know, and I'll provide the guide for adding the Gateway panels to Grafana!
