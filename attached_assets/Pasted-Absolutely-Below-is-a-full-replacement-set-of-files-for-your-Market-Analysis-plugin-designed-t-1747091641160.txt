@@ -1,0 +1,199 @@
+Absolutely. Below is a full replacement set of files for your **Market Analysis plugin**, designed to:
+
+* ✅ Avoid circular imports
+* ✅ Delay any async logic until runtime
+* ✅ Cleanly register routes
+* ✅ Log success/failure of startup
+* ✅ Be drop-in compatible with your existing `SyncService` architecture
+
+---
+
+# ✅ `routes.py` (safe, lazy-loaded, logs startup)
+
+```python
+# terrafusion_sync/plugins/market_analysis/routes.py
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Optional
+
+from terrafusion_sync.db import get_async_session
+from terrafusion_sync.plugins.market_analysis import service
+from terrafusion_sync.plugins.market_analysis.schemas import (
+    AnalysisJobCreateRequest,
+    AnalysisJobStatusResponse,
+    AnalysisJobResultResponse,
+    AnalysisJobListResponse
+)
+
+router = APIRouter(prefix="/v1/market-analysis", tags=["Market Analysis"])
+
+@router.post("/run", response_model=AnalysisJobStatusResponse)
+async def run_analysis_job(
+    request: AnalysisJobCreateRequest,
+    db: AsyncSession = Depends(get_async_session),
+):
+    job = await service.create_analysis_job(
+        db=db,
+        county_id=request.county_id,
+        analysis_type=request.analysis_type,
+        parameters=request.parameters
+    )
+    return AnalysisJobStatusResponse.from_orm(job)
+
+@router.get("/status/{job_id}", response_model=AnalysisJobStatusResponse)
+async def check_job_status(job_id: str, db: AsyncSession = Depends(get_async_session)):
+    job = await service.get_analysis_job(db, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return AnalysisJobStatusResponse.from_orm(job)
+
+@router.get("/results/{job_id}", response_model=AnalysisJobResultResponse)
+async def get_job_results(job_id: str, db: AsyncSession = Depends(get_async_session)):
+    job = await service.get_analysis_job(db, job_id)
+    if not job or job.status != "COMPLETED":
+        raise HTTPException(status_code=400, detail="Results not available")
+    return AnalysisJobResultResponse.from_orm(job)
+
+@router.get("/list", response_model=AnalysisJobListResponse)
+async def list_jobs(
+    county_id: Optional[str] = None,
+    analysis_type: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_async_session),
+):
+    jobs = await service.list_analysis_jobs(
+        db=db,
+        county_id=county_id,
+        analysis_type=analysis_type,
+        status=status,
+        limit=limit,
+        offset=offset
+    )
+    return AnalysisJobListResponse(jobs=jobs)
+
+print("[✅] market_analysis.routes loaded and registered.")
+```
+
+---
+
+# ✅ `schemas.py`
+
+```python
+# terrafusion_sync/plugins/market_analysis/schemas.py
+
+from typing import Optional, Dict, Any, List
+from pydantic import BaseModel, Field
+from datetime import datetime
+
+class AnalysisJobCreateRequest(BaseModel):
+    county_id: str
+    analysis_type: str
+    parameters: Optional[Dict[str, Any]] = None
+
+class AnalysisJobStatusResponse(BaseModel):
+    job_id: str
+    county_id: str
+    analysis_type: str
+    status: str
+    message: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
+
+class AnalysisJobResultResponse(BaseModel):
+    job_id: str
+    result_summary_json: Optional[Dict[str, Any]]
+    result_data_location: Optional[str]
+
+    class Config:
+        orm_mode = True
+
+class AnalysisJobListResponse(BaseModel):
+    jobs: List[AnalysisJobStatusResponse]
+```
+
+---
+
+# ✅ `models.py`
+
+(Already good – assumed from your `service.py` use of `MarketAnalysisJob`.)
+
+Make sure this model is declared in your `core_models.py` or `market_analysis/models.py`:
+
+```python
+# core_models.py or plugins/market_analysis/models.py
+from sqlalchemy import Column, String, DateTime, Text, JSON
+from sqlalchemy.ext.declarative import declarative_base
+import datetime
+
+Base = declarative_base()
+
+class MarketAnalysisJob(Base):
+    __tablename__ = "market_analysis_jobs"
+
+    job_id = Column(String, primary_key=True)
+    county_id = Column(String, nullable=False)
+    analysis_type = Column(String, nullable=False)
+    parameters_json = Column(JSON)
+    status = Column(String, nullable=False, default="PENDING")
+    message = Column(Text)
+    result_summary_json = Column(JSON)
+    result_data_location = Column(String)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+```
+
+---
+
+# ✅ `main.py` (gateway registration)
+
+Somewhere in your `syncservice/main.py`, register the router like:
+
+```python
+from fastapi import FastAPI
+from plugins.market_analysis.routes import router as market_analysis_router
+
+app = FastAPI()
+app.include_router(market_analysis_router)
+```
+
+---
+
+# ✅ Test It
+
+After making these changes, try starting SyncService again:
+
+```bash
+python apps/backend/syncservice/syncservice_launcher.py
+```
+
+Or:
+
+```bash
+uvicorn syncservice.main:app --reload --port 8080
+```
+
+You should see:
+
+```
+[✅] market_analysis.routes loaded and registered.
+```
+
+And then test:
+
+```bash
+curl -X POST http://localhost:8080/v1/market-analysis/run \
+  -H "Content-Type: application/json" \
+  -d '{"county_id": "TEST", "analysis_type": "sales_comps"}'
+```
+
+---
+
+Would you like me to now generate the corresponding **Prometheus metrics**, test file stub, or Airflow DAG scaffold?

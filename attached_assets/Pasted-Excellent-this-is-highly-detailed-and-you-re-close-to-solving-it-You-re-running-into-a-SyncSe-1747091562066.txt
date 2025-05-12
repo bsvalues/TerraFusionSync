@@ -1,0 +1,124 @@
+Excellent—this is highly detailed, and you're close to solving it.
+
+You're running into a **SyncService startup crash**, likely because one or more of the following is happening during plugin boot:
+
+---
+
+### 🚨 Immediate Suspicion: Circular Import or Async Misfire
+
+The symptoms you're describing (SyncService fails to start cleanly) often point to:
+
+1. **`routes.py` or `main.py` has an import ordering issue**
+
+   * Circular dependency across plugins or shared modules (e.g. `core_models`, `db`, or `metrics`)
+   * A `FastAPI()` app trying to use a router before the plugin module has finished evaluating
+
+2. **Async ORM Issue**
+
+   * SQLAlchemy's `AsyncSession` might be created or committed improperly (e.g. inside a sync context or outside the event loop)
+
+3. **Service `await` Usage in `__init__.py` or Top-Level Import**
+
+   * If any `await` call is made outside of a function, Python throws `RuntimeWarning` or dies silently on Uvicorn boot
+
+---
+
+## ✅ Checklist for Debugging Startup Crash
+
+Let’s triage this precisely. Start with these:
+
+---
+
+### ✅ 1. Isolate the Crash Scope
+
+Run Uvicorn directly in dev mode:
+
+```bash
+uvicorn syncservice.main:app --reload --port 8080
+```
+
+Check if the traceback pinpoints:
+
+* `routes.py`
+* `app.include_router(...)`
+* `@router.get(...)` or related async def call
+
+---
+
+### ✅ 2. Test Import Safety
+
+In `apps/backend/syncservice`, open a Python shell:
+
+```bash
+python
+>>> from plugins.market_analysis.routes import router
+```
+
+If this raises **immediately**, the issue is likely in `routes.py`'s import block or a top-level service call.
+
+---
+
+### ✅ 3. Confirm Router Import is Not Causing Side Effects
+
+In `routes.py`:
+
+* Make sure **no top-level `await` calls**
+* All DB ops must occur **within endpoints or task runners**
+
+---
+
+### ✅ 4. Check Task Imports for Background Jobs
+
+If `tasks.py` is imported in `routes.py`, and `tasks.py` imports `service.py`, and `service.py` does an immediate database read—it will crash.
+
+**Solution:**
+Delay task imports by placing them inside endpoint functions.
+
+Example:
+
+```python
+@router.post("/run")
+async def run_job(...):
+    from .tasks import run_analysis_job
+    await run_analysis_job(...)
+```
+
+---
+
+### ✅ 5. Prometheus Registry Duplication
+
+In `metrics.py`, make sure you're using a shared `registry` if needed and not double-registering counters on reload.
+
+---
+
+## 🧩 Hypothetical Fix Strategy (Summary)
+
+If you confirm it’s an import-time failure:
+
+1. ✅ Move all task imports inside endpoint routes
+2. ✅ Audit all top-level code in `routes.py`, `service.py`, `tasks.py`
+3. ✅ Add `try/except` blocks around router registration in `main.py` to isolate plugin errors
+
+---
+
+## Optional Debug Boost: Add Startup Logs
+
+In `routes.py`:
+
+```python
+print("[market_analysis] routes.py loaded successfully.")
+```
+
+In `main.py`:
+
+```python
+print("Registering market_analysis plugin router...")
+app.include_router(market_analysis_router)
+print("Router registered.")
+```
+
+You’ll instantly know if it’s import vs. registration crash.
+
+---
+
+Would you like me to generate a validated and sanitized `routes.py` stub for Market Analysis right now that avoids async pitfalls and circular imports?

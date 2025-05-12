@@ -7,55 +7,17 @@ connecting HTTP endpoints to service layer functions.
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from sqlalchemy import update, func, inspect, sql
-import sqlalchemy
+from sqlalchemy import inspect
 import logging
 from typing import Dict, Any, Optional, List
-import uuid
-import asyncio
-import time
-import datetime
 from datetime import datetime as dt
 
 # Database connector
 from terrafusion_sync.database import get_db_session
 from terrafusion_sync.core_models import MarketAnalysisJob
 
-# Import service and tasks functionality
-from .service import (
-    create_analysis_job,
-    get_analysis_job,
-    list_analysis_jobs,
-    update_job_status
-)
-from .tasks import run_analysis_job
-
-# Import metrics
-from terrafusion_sync.metrics import (
-    MARKET_ANALYSIS_JOBS_SUBMITTED,
-    MARKET_ANALYSIS_JOBS_COMPLETED,
-    MARKET_ANALYSIS_JOBS_FAILED,
-    MARKET_ANALYSIS_PROCESSING_DURATION,
-    MARKET_ANALYSIS_JOBS_PENDING,
-    MARKET_ANALYSIS_JOBS_IN_PROGRESS,
-    track_market_analysis_job
-)
-
-# Import plugin-specific modules
-from .service import (
-    create_analysis_job,
-    get_analysis_job,
-    list_analysis_jobs,
-    update_job_status,
-    expire_stale_jobs,
-    get_metrics_data
-)
-from .tasks import run_analysis_job
-from .metrics import (
-    update_property_price_metrics,
-    update_market_score
-)
+# Import core metrics (avoid circular imports)
+import terrafusion_sync.metrics as core_metrics
 
 # Import schemas
 from .schemas import (
@@ -66,8 +28,20 @@ from .schemas import (
     MarketTrendDataPoint
 )
 
+# Import service (avoid importing tasks at the top level)
+from .service import (
+    create_analysis_job,
+    get_analysis_job,
+    list_analysis_jobs,
+    update_job_status,
+    expire_stale_jobs,
+    get_metrics_data
+)
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+print("[✅] market_analysis.router module loaded successfully.")
 
 # --- Utility Functions ---
 
