@@ -17,7 +17,8 @@ from typing import Dict, Any, Optional, List
 from urllib.parse import urljoin
 from functools import wraps
 
-from flask import Flask, jsonify, request, render_template, redirect, url_for, Response, session, flash
+from flask import Flask, jsonify, request, render_template, redirect, url_for, Response, session, flash, g
+from prometheus_client import Counter, Histogram, generate_latest, CollectorRegistry, CONTENT_TYPE_LATEST
 
 # Configure logging first to avoid "logger not defined" errors
 logging.basicConfig(level=logging.DEBUG)
@@ -26,6 +27,26 @@ logger = logging.getLogger(__name__)
 # Create and initialize the Flask app
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or "a secret key"
+
+# Create a dedicated registry for gateway metrics
+GATEWAY_REGISTRY = CollectorRegistry()
+
+# Define Prometheus metrics
+HTTP_REQUESTS_TOTAL = Counter(
+    "gateway_http_requests_total",
+    "Total count of HTTP requests processed by the Gateway.",
+    ["method", "endpoint", "http_status"],
+    registry=GATEWAY_REGISTRY
+)
+
+HTTP_REQUEST_DURATION_SECONDS = Histogram(
+    "gateway_http_request_duration_seconds",
+    "Histogram of HTTP request latency in seconds for the Gateway.",
+    ["method", "endpoint"],
+    registry=GATEWAY_REGISTRY,
+    # Define buckets appropriate for expected latencies (in seconds)
+    buckets=[0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0, float('inf')]
+)
 
 # Configure ProxyFix for running behind Replit's proxy
 from werkzeug.middleware.proxy_fix import ProxyFix
