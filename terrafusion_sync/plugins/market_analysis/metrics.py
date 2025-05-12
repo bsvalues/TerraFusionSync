@@ -72,10 +72,11 @@ def track_market_analysis_job(analysis_type: str, county_id: str) -> Callable:
                 
             except Exception as e:
                 # Record failure
+                failure_reason = type(e).__name__
                 core_metrics.MARKET_ANALYSIS_JOBS_FAILED.labels(
                     county_id=county_id,
                     analysis_type=analysis_type,
-                    failure_reason=type(e).__name__
+                    failure_reason=failure_reason
                 ).inc()
                 
                 # Re-raise the exception

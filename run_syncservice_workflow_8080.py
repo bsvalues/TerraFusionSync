@@ -34,13 +34,21 @@ def main():
     
     logger.info(f"Command: {command}")
     
-    # Start uvicorn server
-    uvicorn.run(
-        "terrafusion_sync.app:app",
-        host="0.0.0.0",
-        port=8080,
-        reload=True
-    )
+    try:
+        # Start uvicorn server
+        uvicorn.run(
+            "terrafusion_sync.app:app",
+            host="0.0.0.0",
+            port=8080,
+            reload=True,
+            log_level="debug"
+        )
+    except Exception as e:
+        logger.error(f"Failed to start SyncService: {str(e)}")
+        # Print exception traceback
+        import traceback
+        logger.error(traceback.format_exc())
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
