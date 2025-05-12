@@ -7,7 +7,8 @@ This module provides the FastAPI router and service logic for the Market Analysi
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import update, func
+from sqlalchemy import update, func, inspect, sql
+import sqlalchemy
 import logging
 from typing import Dict, Any, Optional, List
 import uuid
@@ -24,7 +25,7 @@ from terrafusion_sync.metrics import (
     MARKET_ANALYSIS_JOBS_SUBMITTED,
     MARKET_ANALYSIS_JOBS_COMPLETED,
     MARKET_ANALYSIS_JOBS_FAILED,
-    MARKET_ANALYSIS_PROCESSING_DURATION_SECONDS,
+    MARKET_ANALYSIS_PROCESSING_DURATION,  # Fixed metric name
     MARKET_ANALYSIS_JOBS_PENDING,
     MARKET_ANALYSIS_JOBS_IN_PROGRESS,
     track_market_analysis_job
@@ -164,12 +165,46 @@ async def _process_market_analysis_job(
             # Always decrement in-progress counter and record duration
             MARKET_ANALYSIS_JOBS_IN_PROGRESS.dec()
             duration = time.monotonic() - start_process_time
-            MARKET_ANALYSIS_PROCESSING_DURATION_SECONDS.labels(
+            MARKET_ANALYSIS_PROCESSING_DURATION.labels(
                 county_id=county_id,
                 analysis_type=analysis_type
             ).observe(duration)
             
             logger.info(f"MarketAnalysisJob {job_id}: Background task finished. Status: {job_final_status}, Duration: {duration:.2f}s")
+
+# Helper function to convert model objects to schema-compatible types
+def _convert_model_to_schema_dict(model):
+    """
+    Convert a SQLAlchemy model instance to a dict with compatible Python types for Pydantic schemas.
+    """
+    if model is None:
+        return None
+        
+    # Directly convert to dict for simplicity
+    result = {}
+    for column in inspect(model).mapper.column_attrs:
+        name = column.key
+        value = getattr(model, name)
+        
+        # Ensure value is a Python native type
+        if value is not None:
+            # Handle specific type conversions if needed
+            if isinstance(value, datetime.datetime):
+                # Datetime objects are already compatible
+                result[name] = value
+            elif hasattr(value, '_sa_instance_state'):
+                # Handle nested SQLAlchemy models (recursion)
+                result[name] = _convert_model_to_schema_dict(value)
+            else:
+                # For all other values, convert to string if not a basic type
+                if not isinstance(value, (str, int, float, bool, dict, list)):
+                    result[name] = str(value)
+                else:
+                    result[name] = value
+        else:
+            result[name] = None
+    
+    return result
 
 # --- API Endpoints ---
 @router.post("/run", response_model=MarketAnalysisJobStatusResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -269,17 +304,29 @@ async def get_market_analysis_status(job_id: str, db: AsyncSession = Depends(get
             detail=f"Market analysis job with ID {job_id} not found"
         )
     
+    # Convert SQLAlchemy model directly to response model
+    job_id = str(job.job_id) if job.job_id else None
+    analysis_type = str(job.analysis_type) if job.analysis_type else None
+    county_id = str(job.county_id) if job.county_id else None
+    status = str(job.status) if job.status else None
+    message = str(job.message) if job.message else None
+    parameters = job.parameters_json if hasattr(job, 'parameters_json') and job.parameters_json is not None else None
+    created_at = job.created_at
+    updated_at = job.updated_at
+    started_at = job.started_at if hasattr(job, 'started_at') else None
+    completed_at = job.completed_at if hasattr(job, 'completed_at') else None
+    
     return MarketAnalysisJobStatusResponse(
-        job_id=str(job.job_id),
-        analysis_type=str(job.analysis_type),
-        county_id=str(job.county_id),
-        status=str(job.status),
-        message=str(job.message) if job.message else None,
-        parameters=job.parameters_json if job.parameters_json else None,
-        created_at=job.created_at,
-        updated_at=job.updated_at,
-        started_at=job.started_at,
-        completed_at=job.completed_at
+        job_id=job_id,
+        analysis_type=analysis_type,
+        county_id=county_id,
+        status=status,
+        message=message,
+        parameters=parameters,
+        created_at=created_at,
+        updated_at=updated_at,
+        started_at=started_at,
+        completed_at=completed_at
     )
 
 @router.get("/results/{job_id}", response_model=MarketAnalysisJobResultResponse)
