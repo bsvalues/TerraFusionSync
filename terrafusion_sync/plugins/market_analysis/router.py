@@ -1,7 +1,8 @@
 """
 TerraFusion SyncService - Market Analysis Plugin - Router
 
-This module provides the FastAPI router and service logic for the Market Analysis plugin.
+This module provides the FastAPI router for the Market Analysis plugin,
+connecting HTTP endpoints to service layer functions.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
@@ -26,10 +27,25 @@ from terrafusion_sync.metrics import (
     MARKET_ANALYSIS_JOBS_SUBMITTED,
     MARKET_ANALYSIS_JOBS_COMPLETED,
     MARKET_ANALYSIS_JOBS_FAILED,
-    MARKET_ANALYSIS_PROCESSING_DURATION,  # Fixed metric name
+    MARKET_ANALYSIS_PROCESSING_DURATION,
     MARKET_ANALYSIS_JOBS_PENDING,
     MARKET_ANALYSIS_JOBS_IN_PROGRESS,
     track_market_analysis_job
+)
+
+# Import plugin-specific modules
+from .service import (
+    create_analysis_job,
+    get_analysis_job,
+    list_analysis_jobs,
+    update_job_status,
+    expire_stale_jobs,
+    get_metrics_data
+)
+from .tasks import run_analysis_job
+from .metrics import (
+    update_property_price_metrics,
+    update_market_score
 )
 
 # Import schemas
@@ -44,165 +60,7 @@ from .schemas import (
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# --- Background Processing Logic ---
-async def _process_market_analysis_job(
-    job_id: str,
-    analysis_type: str,
-    county_id: str,
-    parameters: Optional[Dict[str, Any]],
-    db_session_factory
-):
-    """Background task to process a market analysis job."""
-    
-    # Simulate a failure for testing if the analysis type matches the failure test case
-    if analysis_type == "FAILING_ANALYSIS_SIM":
-        async with db_session_factory() as db:
-            # Retrieve the job
-            query = (
-                select(MarketAnalysisJob)
-                .where(MarketAnalysisJob.job_id == job_id)
-            )
-            result = await db.execute(query)
-            job = result.scalar_one_or_none()
-            
-            if job:
-                # Update job to failed status
-                job.status = "FAILED"
-                job.message = "Simulated market analysis failure for testing purposes"
-                job.completed_at = dt.utcnow()
-                await db.commit()
-                
-        return
-    start_process_time = time.monotonic()
-    job_final_status = "UNKNOWN"
-
-    # Get a session using the context manager
-    async with db_session_factory() as db:
-        try:
-            logger.info(f"MarketAnalysisJob {job_id}: Starting background processing for '{analysis_type}', county '{county_id}'")
-            # Update job to RUNNING status
-            await db.execute(
-                update(MarketAnalysisJob)
-                .where(MarketAnalysisJob.job_id == job_id)
-                .values(
-                    status="RUNNING",
-                    started_at=dt.utcnow(),
-                    updated_at=dt.utcnow(),
-                    message="Analysis in progress"
-                )
-            )
-            await db.commit()
-            
-            # Increment the in-progress counter and decrement pending
-            MARKET_ANALYSIS_JOBS_PENDING.dec()
-            MARKET_ANALYSIS_JOBS_IN_PROGRESS.inc()
-
-            # Simulate processing time - to be replaced with actual analysis logic
-            await asyncio.sleep(3)
-            
-            # Special case for testing - simulate failure for a specific analysis type
-            if analysis_type.upper() == "FAILING_ANALYSIS_SIM":
-                logger.warning(f"MarketAnalysisJob {job_id}: Simulating market analysis failure for testing purposes")
-                raise ValueError("Simulated market analysis failure for testing purposes")
-
-            # Based on analysis type, perform different calculations
-            result_summary = {}
-            trends = []
-            
-            # Example implementation for price trend analysis
-            if analysis_type.lower() == "price_trend_by_zip":
-                start_date = parameters.get("start_date") if parameters else "2024-01-01"
-                end_date = parameters.get("end_date") if parameters else "2024-12-31"
-                zip_codes = parameters.get("zip_codes") if parameters else []
-                
-                # This would be replaced with actual database queries in production
-                # For demonstration, generate sample data
-                quarters = ["2024-Q1", "2024-Q2", "2024-Q3", "2024-Q4"]
-                zip_codes_to_use = zip_codes if zip_codes else ["90210", "90211"]
-                
-                # Create trend data points directly (not organized by zip code)
-                # This matches the MarketTrendDataPoint schema for integration tests
-                for quarter in quarters:
-                    trends.append({
-                        "period": quarter,
-                        "average_price": 450000 + (quarters.index(quarter) * 12500),
-                        "median_price": 425000 + (quarters.index(quarter) * 10000),
-                        "sales_volume": 125 - (quarters.index(quarter) * 5),
-                        "price_per_sqft": 350 + (quarters.index(quarter) * 5.5)
-                    })
-                
-                result_summary = {
-                    "key_finding": "Market prices increased by 5% year-over-year",
-                    "data_points_analyzed": len(zip_codes) * len(quarters) if zip_codes else len(quarters) * 5,
-                    "recommendation": "Market conditions favorable for revaluation",
-                    "analyzed_zip_codes": zip_codes if zip_codes else ["90210", "90211", "90212", "90220", "90230"],
-                    "trends": trends
-                }
-            
-            # Update job with success status and results
-            result_data_location = f"/data/analysis_results/{county_id}/{analysis_type}/{job_id}.parquet"
-            
-            await db.execute(
-                update(MarketAnalysisJob)
-                .where(MarketAnalysisJob.job_id == job_id)
-                .values(
-                    status="COMPLETED",
-                    completed_at=dt.utcnow(),
-                    updated_at=dt.utcnow(),
-                    message="Analysis completed successfully",
-                    result_summary_json=result_summary,
-                    result_data_location=result_data_location
-                )
-            )
-            await db.commit()
-            
-            # Record job completion metric
-            MARKET_ANALYSIS_JOBS_COMPLETED.labels(
-                county_id=county_id,
-                analysis_type=analysis_type
-            ).inc()
-            
-            job_final_status = "COMPLETED"
-            logger.info(f"MarketAnalysisJob {job_id}: Processing completed successfully")
-            
-        except Exception as e:
-            job_final_status = "FAILED"
-            error_message = f"Error processing market analysis job: {str(e)}"
-            logger.error(f"MarketAnalysisJob {job_id}: {error_message}", exc_info=True)
-            
-            # Record failure in database
-            try:
-                await db.execute(
-                    update(MarketAnalysisJob)
-                    .where(MarketAnalysisJob.job_id == job_id)
-                    .values(
-                        status="FAILED",
-                        completed_at=dt.utcnow(),
-                        updated_at=dt.utcnow(),
-                        message=error_message
-                    )
-                )
-                await db.commit()
-            except Exception as db_error:
-                logger.error(f"MarketAnalysisJob {job_id}: Failed to update job status in database: {str(db_error)}")
-            
-            # Record failure metric
-            MARKET_ANALYSIS_JOBS_FAILED.labels(
-                county_id=county_id,
-                analysis_type=analysis_type,
-                failure_reason=type(e).__name__
-            ).inc()
-            
-        finally:
-            # Always decrement in-progress counter and record duration
-            MARKET_ANALYSIS_JOBS_IN_PROGRESS.dec()
-            duration = time.monotonic() - start_process_time
-            MARKET_ANALYSIS_PROCESSING_DURATION.labels(
-                county_id=county_id,
-                analysis_type=analysis_type
-            ).observe(duration)
-            
-            logger.info(f"MarketAnalysisJob {job_id}: Background task finished. Status: {job_final_status}, Duration: {duration:.2f}s")
+# --- Utility Functions ---
 
 # Helper function to convert model objects to schema-compatible types
 def _convert_model_to_schema_dict(model):
@@ -265,27 +123,14 @@ async def _run_market_analysis_impl(
     db: AsyncSession
 ) -> MarketAnalysisJobStatusResponse:
     """Implementation of job run logic."""
-    # Generate a new UUID for the job
-    job_id = str(uuid.uuid4())
-    
     try:
-        # Create new job record
-        new_job = MarketAnalysisJob(
-            job_id=job_id,
-            analysis_type=request.analysis_type,
+        # Create a new job record using the service function
+        job = await create_analysis_job(
+            db=db,
             county_id=request.county_id,
-            status="PENDING",
-            message="Market analysis job accepted and queued",
-            parameters_json=request.parameters,
-            created_at=dt.utcnow(),
-            updated_at=dt.utcnow()
+            analysis_type=request.analysis_type,
+            parameters=request.parameters
         )
-        
-        db.add(new_job)
-        await db.commit()
-        await db.refresh(new_job)
-        
-        logger.info(f"MarketAnalysisJob {job_id}: Created for analysis type '{request.analysis_type}', county '{request.county_id}'")
         
         # Record job submission metric
         MARKET_ANALYSIS_JOBS_SUBMITTED.labels(
@@ -293,31 +138,26 @@ async def _run_market_analysis_impl(
             analysis_type=request.analysis_type
         ).inc()
         
-        # Increment pending jobs counter
-        MARKET_ANALYSIS_JOBS_PENDING.inc()
-        
-        # Add background task to process the job using the provided get_db_session function
-        # which already handles the AsyncSession creation properly
-        from terrafusion_sync.database import get_db_session
-        
+        # Add background task to process the job
         background_tasks.add_task(
-            _process_market_analysis_job,
-            job_id,
+            run_analysis_job,
+            get_db_session,  # Pass the session factory
+            job.job_id,
             request.analysis_type,
             request.county_id,
-            request.parameters,
-            get_db_session
+            request.parameters
         )
         
+        # Return the job status response
         return MarketAnalysisJobStatusResponse(
-            job_id=job_id,
-            analysis_type=request.analysis_type,
-            county_id=request.county_id,
-            status="PENDING",
-            message="Market analysis job accepted and queued",
-            parameters=request.parameters,
-            created_at=new_job.created_at,
-            updated_at=new_job.updated_at,
+            job_id=job.job_id,
+            analysis_type=job.analysis_type,
+            county_id=job.county_id,
+            status=job.status,
+            message=job.message,
+            parameters=job.parameters_json,
+            created_at=job.created_at,
+            updated_at=job.updated_at,
             started_at=None,
             completed_at=None
         )
@@ -345,10 +185,8 @@ async def get_market_analysis_status(job_id: str, db: AsyncSession = Depends(get
 
 async def _get_market_analysis_status_impl(job_id: str, db: AsyncSession) -> MarketAnalysisJobStatusResponse:
     """Implementation of job status retrieval logic."""
-    result = await db.execute(
-        select(MarketAnalysisJob).where(MarketAnalysisJob.job_id == job_id)
-    )
-    job = result.scalars().first()
+    # Use service function to get the job
+    job = await get_analysis_job(db, job_id)
     
     if not job:
         raise HTTPException(
@@ -356,29 +194,18 @@ async def _get_market_analysis_status_impl(job_id: str, db: AsyncSession) -> Mar
             detail=f"Market analysis job with ID {job_id} not found"
         )
     
-    # Convert SQLAlchemy model directly to response model
-    job_id = str(job.job_id) if job.job_id else None
-    analysis_type = str(job.analysis_type) if job.analysis_type else None
-    county_id = str(job.county_id) if job.county_id else None
-    job_status = str(job.status) if job.status else None
-    message = str(job.message) if job.message else None
-    parameters = job.parameters_json if hasattr(job, 'parameters_json') and job.parameters_json is not None else None
-    created_at = job.created_at
-    updated_at = job.updated_at
-    started_at = job.started_at if hasattr(job, 'started_at') else None
-    completed_at = job.completed_at if hasattr(job, 'completed_at') else None
-    
+    # Convert to response model
     return MarketAnalysisJobStatusResponse(
-        job_id=job_id,
-        analysis_type=analysis_type,
-        county_id=county_id,
-        status=job_status,
-        message=message,
-        parameters=parameters,
-        created_at=created_at,
-        updated_at=updated_at,
-        started_at=started_at,
-        completed_at=completed_at
+        job_id=str(job.job_id),
+        analysis_type=str(job.analysis_type),
+        county_id=str(job.county_id),
+        status=str(job.status),
+        message=str(job.message) if job.message else None,
+        parameters=job.parameters_json,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+        started_at=job.started_at,
+        completed_at=job.completed_at
     )
 
 @router.get("/results/{job_id}", response_model=MarketAnalysisJobResultResponse)
