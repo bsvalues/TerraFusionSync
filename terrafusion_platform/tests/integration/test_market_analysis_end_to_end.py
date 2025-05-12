@@ -2,14 +2,14 @@
 Integration test for the end-to-end market analysis workflow.
 
 This test verifies the full lifecycle of market analysis jobs, from creation to status checking
-to result retrieval.
+to result retrieval. It covers both successful analysis and failure scenarios.
 """
-
 import asyncio
 import time
-import pytest
-from fastapi.testclient import TestClient
 import uuid
+import pytest
+import random
+from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # Fixtures like `sync_client`, `db_session` are expected to be available

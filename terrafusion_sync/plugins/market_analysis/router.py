@@ -97,6 +97,10 @@ async def _process_market_analysis_job(
                 # This would be replaced with actual database queries in production
                 # For demonstration, generate sample data
                 quarters = ["2024-Q1", "2024-Q2", "2024-Q3", "2024-Q4"]
+                zip_codes_to_use = zip_codes if zip_codes else ["90210", "90211"]
+                
+                # Create trend data points directly (not organized by zip code)
+                # This matches the MarketTrendDataPoint schema for integration tests
                 for quarter in quarters:
                     trends.append({
                         "period": quarter,
@@ -110,7 +114,8 @@ async def _process_market_analysis_job(
                     "key_finding": "Market prices increased by 5% year-over-year",
                     "data_points_analyzed": len(zip_codes) * len(quarters) if zip_codes else len(quarters) * 5,
                     "recommendation": "Market conditions favorable for revaluation",
-                    "analyzed_zip_codes": zip_codes if zip_codes else ["90210", "90211", "90212", "90220", "90230"]
+                    "analyzed_zip_codes": zip_codes if zip_codes else ["90210", "90211", "90212", "90220", "90230"],
+                    "trends": trends
                 }
             
             # Update job with success status and results
