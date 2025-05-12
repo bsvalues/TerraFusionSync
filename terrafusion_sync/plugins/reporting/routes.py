@@ -396,19 +396,19 @@ async def get_report_results(
     
     # Prepare response
     response = ReportJobResultResponse(
-        report_id=job.job_id,
+        report_id=job.report_id,
         report_type=job.report_type,
         county_id=job.county_id,
         status=job.status,
-        message=job.error_message,
+        message=job.message,
         result=None  # Default to None
     )
     
     # If the job is completed and has results, include them
-    if job.status == "COMPLETED" and job.result_url:
+    if job.status == "COMPLETED" and job.result_location:
         response.result = ReportJobResultDetail(
-            result_location=job.result_url,
-            result_metadata={"size_bytes": job.result_size} if job.result_size else {}
+            result_location=job.result_location,
+            result_metadata=job.result_metadata_json or {}
         )
     
     return response
