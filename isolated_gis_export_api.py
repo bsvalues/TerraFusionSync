@@ -8,7 +8,7 @@ import os
 import sys
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, List, Optional, Union
 
 from fastapi import FastAPI, Depends, HTTPException, status, Request, BackgroundTasks
@@ -68,7 +68,7 @@ class GisExportJobBase(BaseModel):
     created_at: datetime
 
 class GisExportJobDetail(GisExportJobBase):
-    format: str
+    export_format: str  # Changed from format to match frontend expectations
     area_of_interest: Dict[str, Any]
     layers: List[str]
     started_at: Optional[datetime] = None
@@ -78,7 +78,26 @@ class GisExportJobDetail(GisExportJobBase):
 
 # In-memory storage for jobs
 JOB_ID_COUNTER = 0
-EXPORT_JOBS = {}
+EXPORT_JOBS = {
+    # Add a sample job for testing
+    1: {
+        "job_id": 1,
+        "county_id": "TEST_COUNTY",
+        "username": "admin",
+        "export_format": "geojson",
+        "area_of_interest": {
+            "type": "Polygon",
+            "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]
+        },
+        "layers": ["parcels", "buildings"],
+        "status": "COMPLETED",
+        "created_at": datetime.now(timezone.utc) - timedelta(hours=1),
+        "started_at": datetime.now(timezone.utc) - timedelta(minutes=55),
+        "completed_at": datetime.now(timezone.utc) - timedelta(minutes=50),
+        "download_url": "/api/v1/gis-export/download/1",
+        "message": "Export completed successfully"
+    }
+}
 
 def get_next_job_id():
     global JOB_ID_COUNTER
@@ -119,7 +138,7 @@ async def create_export_job(request: GisExportRequest, background_tasks: Backgro
         "job_id": job_id,
         "county_id": request.county_id,
         "username": request.username,
-        "format": request.format,
+        "export_format": request.format,
         "area_of_interest": request.area_of_interest,
         "layers": request.layers,
         "status": "PENDING",
