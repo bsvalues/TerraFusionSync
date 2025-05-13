@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-TerraFusion SyncService - Simplified Workflow Runner for Port 8080
+TerraFusion SyncService - Workflow Runner for Port 8080
 
-This script starts a simplified Market Analysis API on port 8080 for the TerraFusion workflow.
+This script starts the SyncService API on port 8080 for the TerraFusion workflow.
 """
 
 import os
@@ -36,8 +36,8 @@ def run_syncservice():
     env = os.environ.copy()
     env["PORT"] = str(PORT)
     
-    # Build the command to run the simplified API
-    cmd = [python_exe, "simplified_market_analysis_api.py"]
+    # Build the command to run the isolated GIS Export API
+    cmd = [python_exe, "isolated_gis_export_api.py"]
     
     try:
         # Start the process
