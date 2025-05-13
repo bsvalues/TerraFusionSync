@@ -1,0 +1,451 @@
+{% extends "base.html" %}
+
+{% block title %}GIS Export Dashboard{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <h1 class="display-5 mb-4">GIS Export Dashboard</h1>
+            <p class="lead">Export geographic data from TerraFusion in various formats.</p>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Create New GIS Export</h5>
+                </div>
+                <div class="card-body">
+                    <form id="gis-export-form">
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="county-id" class="form-label">County ID</label>
+                                <input type="text" class="form-control" id="county-id" name="county_id" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="export-format" class="form-label">Export Format</label>
+                                <select class="form-select" id="export-format" name="export_format" required>
+                                    <option value="">Select format...</option>
+                                    <option value="geojson">GeoJSON</option>
+                                    <option value="shapefile">Shapefile</option>
+                                    <option value="kml">KML</option>
+                                    <option value="csv">CSV</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="layers" class="form-label">Layers to Export</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" value="parcels" name="layers" id="layer-parcels" checked>
+                                <label class="form-check-label" for="layer-parcels">
+                                    Parcels
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" value="buildings" name="layers" id="layer-buildings">
+                                <label class="form-check-label" for="layer-buildings">
+                                    Buildings
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" value="roads" name="layers" id="layer-roads">
+                                <label class="form-check-label" for="layer-roads">
+                                    Roads
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" value="zoning" name="layers" id="layer-zoning">
+                                <label class="form-check-label" for="layer-zoning">
+                                    Zoning
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="area-of-interest" class="form-label">Area of Interest (GeoJSON)</label>
+                            <textarea class="form-control" id="area-of-interest" name="area_of_interest" rows="4" placeholder='{"type":"Polygon","coordinates":[[[-122.48,37.78],[-122.45,37.78],[-122.45,37.76],[-122.48,37.76],[-122.48,37.78]]]}'></textarea>
+                            <small class="form-text text-muted">Define a geographic area to limit the export. Leave blank to export entire county.</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="parameters" class="form-label">Additional Parameters (JSON)</label>
+                            <textarea class="form-control" id="parameters" name="parameters" rows="3" placeholder='{"simplification": 0.0001, "include_metadata": true}'></textarea>
+                            <small class="form-text text-muted">Optional format-specific parameters in JSON format.</small>
+                        </div>
+                        
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                            <button type="submit" class="btn btn-primary">Start Export</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-4">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Recent Jobs</h5>
+                    <button id="refresh-jobs-btn" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div id="recent-jobs-list">
+                        <div class="d-flex justify-content-center">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card shadow-sm mb-4">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Job Status</h5>
+                </div>
+                <div class="card-body">
+                    <div id="job-status-details">
+                        <p class="text-muted text-center">Select a job to view details</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Job Details Modal -->
+<div class="modal fade" id="jobDetailsModal" tabindex="-1" aria-labelledby="jobDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="jobDetailsModalLabel">Export Job Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="job-details-content">
+                <!-- Job details will be loaded here -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="download-result-btn" style="display: none;">Download Result</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize by loading recent jobs
+        loadRecentJobs();
+        
+        // Set up event listeners
+        document.getElementById('refresh-jobs-btn').addEventListener('click', loadRecentJobs);
+        document.getElementById('gis-export-form').addEventListener('submit', submitExportJob);
+        
+        // Load jobs on page load
+        setInterval(loadRecentJobs, 30000); // Refresh every 30 seconds
+    });
+    
+    // Load recent export jobs
+    function loadRecentJobs() {
+        fetch('/api/v1/gis-export/list')
+            .then(response => response.json())
+            .then(data => {
+                const jobsList = document.getElementById('recent-jobs-list');
+                
+                if (data && data.length > 0) {
+                    let jobsHtml = '<ul class="list-group">';
+                    
+                    data.forEach(job => {
+                        const statusClass = getStatusClass(job.status);
+                        const statusIcon = getStatusIcon(job.status);
+                        
+                        jobsHtml += `
+                            <li class="list-group-item d-flex justify-content-between align-items-center job-item" 
+                                data-job-id="${job.job_id}">
+                                <div>
+                                    <div class="fw-bold">${job.county_id} (${job.export_format})</div>
+                                    <small class="text-muted">${new Date(job.created_at).toLocaleString()}</small>
+                                </div>
+                                <span class="badge ${statusClass} rounded-pill">${statusIcon} ${job.status}</span>
+                            </li>
+                        `;
+                    });
+                    
+                    jobsHtml += '</ul>';
+                    jobsList.innerHTML = jobsHtml;
+                    
+                    // Add click listeners to job items
+                    document.querySelectorAll('.job-item').forEach(item => {
+                        item.addEventListener('click', () => {
+                            const jobId = item.getAttribute('data-job-id');
+                            loadJobDetails(jobId);
+                        });
+                    });
+                } else {
+                    jobsList.innerHTML = '<p class="text-center text-muted">No export jobs found</p>';
+                }
+            })
+            .catch(error => {
+                console.error('Error loading jobs:', error);
+                document.getElementById('recent-jobs-list').innerHTML = 
+                    '<div class="alert alert-danger">Failed to load jobs. Please try again later.</div>';
+            });
+    }
+    
+    // Submit a new export job
+    function submitExportJob(event) {
+        event.preventDefault();
+        
+        const form = event.target;
+        const countyId = form.elements.county_id.value;
+        const exportFormat = form.elements.export_format.value;
+        
+        // Get checked layers
+        const layerCheckboxes = form.querySelectorAll('input[name="layers"]:checked');
+        const layers = Array.from(layerCheckboxes).map(cb => cb.value);
+        
+        // Parse JSON inputs
+        let areaOfInterest = null;
+        if (form.elements.area_of_interest.value) {
+            try {
+                areaOfInterest = JSON.parse(form.elements.area_of_interest.value);
+            } catch (e) {
+                alert('Invalid GeoJSON for Area of Interest');
+                return;
+            }
+        }
+        
+        let parameters = {};
+        if (form.elements.parameters.value) {
+            try {
+                parameters = JSON.parse(form.elements.parameters.value);
+            } catch (e) {
+                alert('Invalid JSON for Parameters');
+                return;
+            }
+        }
+        
+        // Build request payload
+        const payload = {
+            county_id: countyId,
+            export_format: exportFormat,
+            layers: layers,
+            area_of_interest: areaOfInterest,
+            parameters: parameters
+        };
+        
+        // Submit the job
+        fetch('/api/v1/gis-export/run', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.job_id) {
+                alert('Export job submitted successfully! Job ID: ' + data.job_id);
+                loadRecentJobs(); // Refresh the jobs list
+                loadJobDetails(data.job_id); // Show the new job details
+            } else {
+                alert('Failed to submit export job');
+            }
+        })
+        .catch(error => {
+            console.error('Error submitting job:', error);
+            alert('Error submitting job. Please try again later.');
+        });
+    }
+    
+    // Load job details
+    function loadJobDetails(jobId) {
+        // First, update job status panel
+        document.getElementById('job-status-details').innerHTML = `
+            <div class="d-flex justify-content-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading job details...</span>
+                </div>
+            </div>
+        `;
+        
+        // Fetch job status
+        fetch(`/api/v1/gis-export/status/${jobId}`)
+            .then(response => response.json())
+            .then(job => {
+                const statusClass = getStatusClass(job.status);
+                const statusIcon = getStatusIcon(job.status);
+                
+                let detailsHtml = `
+                    <div class="text-center mb-3">
+                        <span class="badge ${statusClass} fs-6 px-3 py-2">${statusIcon} ${job.status}</span>
+                    </div>
+                    <p class="mb-1"><strong>Job ID:</strong> <span class="text-monospace">${job.job_id}</span></p>
+                    <p class="mb-1"><strong>County:</strong> ${job.county_id}</p>
+                    <p class="mb-1"><strong>Format:</strong> ${job.export_format}</p>
+                    <p class="mb-1"><strong>Submitted:</strong> ${new Date(job.created_at).toLocaleString()}</p>
+                `;
+                
+                if (job.started_at) {
+                    detailsHtml += `<p class="mb-1"><strong>Started:</strong> ${new Date(job.started_at).toLocaleString()}</p>`;
+                }
+                
+                if (job.completed_at) {
+                    detailsHtml += `<p class="mb-1"><strong>Completed:</strong> ${new Date(job.completed_at).toLocaleString()}</p>`;
+                }
+                
+                detailsHtml += `<p class="mb-0"><strong>Message:</strong> ${job.message}</p>`;
+                
+                if (job.status === 'COMPLETED') {
+                    detailsHtml += `
+                        <div class="d-grid gap-2 mt-3">
+                            <button class="btn btn-sm btn-success view-results-btn" data-job-id="${job.job_id}">
+                                <i class="bi bi-download"></i> View Results
+                            </button>
+                        </div>
+                    `;
+                } else if (job.status === 'RUNNING' || job.status === 'PENDING') {
+                    detailsHtml += `
+                        <div class="d-grid gap-2 mt-3">
+                            <button class="btn btn-sm btn-warning cancel-job-btn" data-job-id="${job.job_id}">
+                                <i class="bi bi-x-circle"></i> Cancel Job
+                            </button>
+                        </div>
+                    `;
+                }
+                
+                document.getElementById('job-status-details').innerHTML = detailsHtml;
+                
+                // Add event listeners for buttons
+                const viewResultsBtn = document.querySelector('.view-results-btn');
+                if (viewResultsBtn) {
+                    viewResultsBtn.addEventListener('click', () => {
+                        showJobResults(job.job_id);
+                    });
+                }
+                
+                const cancelJobBtn = document.querySelector('.cancel-job-btn');
+                if (cancelJobBtn) {
+                    cancelJobBtn.addEventListener('click', () => {
+                        cancelJob(job.job_id);
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('Error loading job details:', error);
+                document.getElementById('job-status-details').innerHTML = 
+                    '<div class="alert alert-danger">Failed to load job details</div>';
+            });
+    }
+    
+    // Show job results in modal
+    function showJobResults(jobId) {
+        // Fetch the job results
+        fetch(`/api/v1/gis-export/results/${jobId}`)
+            .then(response => response.json())
+            .then(data => {
+                const modal = new bootstrap.Modal(document.getElementById('jobDetailsModal'));
+                
+                let resultsHtml = `
+                    <div class="card mb-3">
+                        <div class="card-header bg-success text-white">
+                            Export Complete
+                        </div>
+                        <div class="card-body">
+                            <h5 class="card-title">${data.county_id} (${data.export_format})</h5>
+                            <p class="card-text">${data.message}</p>
+                        </div>
+                    </div>
+                `;
+                
+                if (data.result) {
+                    resultsHtml += `
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <tbody>
+                                    <tr>
+                                        <th>File Location:</th>
+                                        <td>${data.result.result_file_location}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>File Size:</th>
+                                        <td>${data.result.result_file_size_kb} KB</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Record Count:</th>
+                                        <td>${data.result.result_record_count}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                    
+                    // Show download button and set up action
+                    const downloadBtn = document.getElementById('download-result-btn');
+                    downloadBtn.style.display = 'block';
+                    downloadBtn.setAttribute('data-file-location', data.result.result_file_location);
+                    downloadBtn.onclick = function() {
+                        // This would be replaced with actual download logic based on your system
+                        alert('Download would start for: ' + data.result.result_file_location);
+                    };
+                } else {
+                    // Hide download button if no results
+                    document.getElementById('download-result-btn').style.display = 'none';
+                }
+                
+                document.getElementById('job-details-content').innerHTML = resultsHtml;
+                modal.show();
+            })
+            .catch(error => {
+                console.error('Error loading job results:', error);
+                alert('Failed to load job results. Please try again later.');
+            });
+    }
+    
+    // Cancel a job
+    function cancelJob(jobId) {
+        if (confirm('Are you sure you want to cancel this job?')) {
+            fetch(`/api/v1/gis-export/cancel/${jobId}`, {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert('Job cancelled successfully');
+                loadRecentJobs(); // Refresh jobs list
+                loadJobDetails(jobId); // Refresh job details
+            })
+            .catch(error => {
+                console.error('Error cancelling job:', error);
+                alert('Failed to cancel job. Please try again later.');
+            });
+        }
+    }
+    
+    // Helper functions
+    function getStatusClass(status) {
+        switch(status) {
+            case 'COMPLETED': return 'bg-success';
+            case 'RUNNING': return 'bg-primary';
+            case 'PENDING': return 'bg-secondary';
+            case 'FAILED': return 'bg-danger';
+            default: return 'bg-secondary';
+        }
+    }
+    
+    function getStatusIcon(status) {
+        switch(status) {
+            case 'COMPLETED': return '<i class="bi bi-check-circle"></i>';
+            case 'RUNNING': return '<i class="bi bi-arrow-repeat"></i>';
+            case 'PENDING': return '<i class="bi bi-hourglass"></i>';
+            case 'FAILED': return '<i class="bi bi-x-circle"></i>';
+            default: return '<i class="bi bi-question-circle"></i>';
+        }
+    }
+</script>
+{% endblock %}
