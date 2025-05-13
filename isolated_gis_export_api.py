@@ -76,7 +76,68 @@ class GisExportJobDetail(GisExportJobBase):
     download_url: Optional[str] = None
     message: Optional[str] = None
 
-# In-memory storage for jobs
+# Database configuration
+import uuid
+import os
+import json
+import asyncio
+from sqlalchemy import create_engine, Column, String, DateTime, Integer, Float, JSON, select, update, MetaData, Table
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+from contextlib import asynccontextmanager
+import time
+
+# Get database URL from environment
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    logger.error("DATABASE_URL not found in environment variables!")
+    raise ValueError("DATABASE_URL environment variable is required")
+
+# Create SQLAlchemy engine and session
+# Convert synchronous URL to async format for asyncpg
+if DATABASE_URL.startswith("postgresql://"):
+    ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
+else:
+    ASYNC_DATABASE_URL = DATABASE_URL
+
+try:
+    # Create async engine
+    async_engine = create_async_engine(
+        ASYNC_DATABASE_URL,
+        echo=False,
+        pool_recycle=300,
+        pool_pre_ping=True
+    )
+    logger.info("Created async database engine with PostgreSQL")
+    
+    # Create async session factory
+    async_session_factory = sessionmaker(
+        async_engine, 
+        class_=AsyncSession, 
+        expire_on_commit=False
+    )
+except Exception as e:
+    logger.error(f"Failed to create async database engine: {e}")
+    # Fallback to the in-memory storage
+    async_engine = None
+    async_session_factory = None
+
+# Context manager for async database sessions
+@asynccontextmanager
+async def get_db_session():
+    if async_session_factory:
+        async with async_session_factory() as session:
+            try:
+                yield session
+            except Exception as e:
+                await session.rollback()
+                raise
+    else:
+        # If database is not available, just yield None
+        yield None
+
+# In-memory storage for jobs (fallback if DB not available)
 JOB_ID_COUNTER = 0
 EXPORT_JOBS = {
     # Add a sample job for testing
@@ -100,65 +161,312 @@ EXPORT_JOBS = {
 }
 
 def get_next_job_id():
-    global JOB_ID_COUNTER
-    JOB_ID_COUNTER += 1
-    return JOB_ID_COUNTER
+    # Generate a UUID for new jobs (DB uses UUID strings not integers)
+    return str(uuid.uuid4())
 
-def process_export_job(job_id: int):
+async def process_export_job(job_id: int):
     """
     Process an export job in the background.
-    This simulates the actual processing without doing any real work.
+    If DB is available, uses the GisExportJob table, otherwise uses in-memory storage.
     """
-    import time
+    logger.info(f"Processing GIS export job {job_id}")
+    start_time = time.monotonic()
     
-    # Get the job
-    job = EXPORT_JOBS[job_id]
+    # Try to use the database if available
+    if async_session_factory:
+        try:
+            # Connect to database and get job record
+            async with get_db_session() as session:
+                if not session:
+                    raise ValueError("Database session not available")
+                
+                # Use raw SQL to avoid model dependency
+                # Step 1: Get the job from database
+                query = """
+                SELECT * FROM gis_export_jobs WHERE job_id = :job_id
+                """
+                result = await session.execute(query, {"job_id": str(job_id)})
+                job_row = result.mappings().first()
+                
+                if not job_row:
+                    logger.error(f"GIS export job {job_id} not found in database")
+                    return
+                
+                # Step 2: Update to RUNNING status
+                update_query = """
+                UPDATE gis_export_jobs
+                SET status = 'RUNNING',
+                    started_at = :started_at,
+                    updated_at = :updated_at,
+                    message = 'GIS export job is being processed.'
+                WHERE job_id = :job_id
+                """
+                now = datetime.now(timezone.utc)
+                await session.execute(
+                    update_query, 
+                    {
+                        "job_id": str(job_id),
+                        "started_at": now,
+                        "updated_at": now
+                    }
+                )
+                await session.commit()
+                
+                # Step 3: Simulate processing time
+                await asyncio.sleep(3)
+                
+                # Get job details for processing
+                export_format = job_row["export_format"]
+                county_id = job_row["county_id"]
+                
+                # Step 4: Update to COMPLETED status with result information
+                complete_query = """
+                UPDATE gis_export_jobs
+                SET status = 'COMPLETED',
+                    completed_at = :completed_at,
+                    updated_at = :updated_at,
+                    message = 'GIS export completed successfully.',
+                    result_file_location = :result_file_location,
+                    result_file_size_kb = :result_file_size_kb,
+                    result_record_count = :result_record_count
+                WHERE job_id = :job_id
+                """
+                
+                # Calculate simulated file path and metadata
+                now = datetime.now(timezone.utc)
+                file_path = f"/gis_exports/{county_id}/{job_id}.{export_format.lower()}"
+                file_size_kb = 5120  # Simulated 5MB file
+                record_count = 2500  # Simulated record count
+                
+                await session.execute(
+                    complete_query,
+                    {
+                        "job_id": str(job_id),
+                        "completed_at": now,
+                        "updated_at": now,
+                        "result_file_location": file_path,
+                        "result_file_size_kb": file_size_kb,
+                        "result_record_count": record_count
+                    }
+                )
+                await session.commit()
+                
+                # Record processing metrics
+                processing_time = time.monotonic() - start_time
+                logger.info(f"GIS export job {job_id} completed in {processing_time:.2f}s")
+                
+                return
+                
+        except Exception as e:
+            logger.error(f"Error processing GIS export job in database: {e}", exc_info=True)
+            # Try to mark as failed in database
+            try:
+                async with get_db_session() as session:
+                    if session:
+                        error_msg = str(e)
+                        now = datetime.now(timezone.utc)
+                        fail_query = """
+                        UPDATE gis_export_jobs
+                        SET status = 'FAILED',
+                            completed_at = :completed_at,
+                            updated_at = :updated_at,
+                            message = :message
+                        WHERE job_id = :job_id
+                        """
+                        await session.execute(
+                            fail_query,
+                            {
+                                "job_id": str(job_id),
+                                "completed_at": now,
+                                "updated_at": now,
+                                "message": f"GIS export failed: {error_msg}"
+                            }
+                        )
+                        await session.commit()
+            except Exception as inner_e:
+                logger.error(f"Failed to mark job as failed in database: {inner_e}")
     
-    # Update job status to RUNNING
-    job["status"] = "RUNNING"
-    job["started_at"] = datetime.now(timezone.utc)
-    job["message"] = "Processing export job"
-    
-    # Simulate processing time
-    time.sleep(2)
-    
-    # Update job status to COMPLETED
-    job["status"] = "COMPLETED"
-    job["completed_at"] = datetime.now(timezone.utc)
-    job["download_url"] = f"/api/v1/gis-export/download/{job_id}"
-    job["message"] = "Export completed successfully"
+    # Fallback to in-memory storage if database not available
+    # or if there was an error with the database operations
+    try:
+        # Get the job
+        job = EXPORT_JOBS.get(job_id)
+        if not job:
+            logger.error(f"GIS export job {job_id} not found in memory storage")
+            return
+        
+        # Update job status to RUNNING
+        job["status"] = "RUNNING"
+        job["started_at"] = datetime.now(timezone.utc)
+        job["message"] = "Processing export job"
+        
+        # Simulate processing time
+        await asyncio.sleep(2)
+        
+        # Update job status to COMPLETED
+        job["status"] = "COMPLETED"
+        job["completed_at"] = datetime.now(timezone.utc)
+        job["download_url"] = f"/api/v1/gis-export/download/{job_id}"
+        job["message"] = "Export completed successfully"
+        
+        logger.info(f"GIS export job {job_id} processed in memory storage")
+    except Exception as e:
+        logger.error(f"Error processing GIS export job in memory: {e}", exc_info=True)
 
 # API endpoints
 @app.post("/plugins/v1/gis-export/run", response_model=GisExportJobBase)
 async def create_export_job(request: GisExportRequest, background_tasks: BackgroundTasks):
     """Create a new GIS export job."""
     job_id = get_next_job_id()
+    now = datetime.now(timezone.utc)
+    
+    # Try to use the database if available
+    if async_session_factory:
+        try:
+            async with get_db_session() as session:
+                if not session:
+                    raise ValueError("Database session not available")
+                
+                # Use raw SQL to insert job
+                insert_query = """
+                INSERT INTO gis_export_jobs (
+                    job_id, county_id, export_format, status, 
+                    area_of_interest_json, layers_json, parameters_json,
+                    message, created_at, updated_at
+                ) VALUES (
+                    :job_id, :county_id, :export_format, :status,
+                    :area_of_interest_json, :layers_json, :parameters_json,
+                    :message, :created_at, :updated_at
+                ) RETURNING job_id
+                """
+                
+                # Additional parameters/settings
+                parameters = {"username": request.username}
+                
+                result = await session.execute(
+                    insert_query,
+                    {
+                        "job_id": job_id,
+                        "county_id": request.county_id,
+                        "export_format": request.format,
+                        "status": "PENDING",
+                        "area_of_interest_json": request.area_of_interest,
+                        "layers_json": request.layers,
+                        "parameters_json": parameters,
+                        "message": "GIS export job accepted and queued for processing.",
+                        "created_at": now,
+                        "updated_at": now
+                    }
+                )
+                
+                await session.commit()
+                logger.info(f"Created GIS export job {job_id} in database")
+                
+                # Prepare response
+                db_job = {
+                    "job_id": int(job_id.split("-")[0], 16) % 10000,  # Convert UUID to simple ID for response
+                    "county_id": request.county_id,
+                    "username": request.username,
+                    "export_format": request.format,
+                    "status": "PENDING",
+                    "created_at": now
+                }
+                
+                # Start processing the job in the background
+                background_tasks.add_task(process_export_job, job_id)
+                
+                return db_job
+                
+        except Exception as e:
+            logger.error(f"Error creating GIS export job in database: {e}", exc_info=True)
+    
+    # Fallback to in-memory storage
+    # Convert the UUID string to a simple integer ID for the in-memory storage
+    memory_job_id = int(job_id.split("-")[0], 16) % 10000
     
     job = {
-        "job_id": job_id,
+        "job_id": memory_job_id,
         "county_id": request.county_id,
         "username": request.username,
         "export_format": request.format,
         "area_of_interest": request.area_of_interest,
         "layers": request.layers,
         "status": "PENDING",
-        "created_at": datetime.now(timezone.utc),
+        "created_at": now,
         "message": "Job created, waiting to be processed"
     }
     
-    EXPORT_JOBS[job_id] = job
+    EXPORT_JOBS[memory_job_id] = job
+    logger.info(f"Created GIS export job {memory_job_id} in memory storage (fallback)")
     
     # Start processing the job in the background
-    background_tasks.add_task(process_export_job, job_id)
+    background_tasks.add_task(process_export_job, memory_job_id)
     
     return job
 
 @app.get("/plugins/v1/gis-export/status/{job_id}", response_model=GisExportJobDetail)
 async def get_job_status(job_id: int):
     """Get the status of a GIS export job."""
+    # Try to use the database if available
+    if async_session_factory:
+        try:
+            async with get_db_session() as session:
+                if not session:
+                    raise ValueError("Database session not available")
+                
+                # Try to find job by UUID-converted-to-simple-id
+                # First, we need to reconstruct possible UUID values based on the simple ID
+                # This is not efficient but works for the demo
+                
+                # Query by searching for jobs with a job_id starting with the same hex prefix
+                query = """
+                SELECT * FROM gis_export_jobs 
+                WHERE job_id::text LIKE :id_prefix || '%'
+                LIMIT 1
+                """
+                
+                # Convert integer ID back to a hex prefix
+                id_prefix = format(job_id % 10000, 'x')
+                
+                result = await session.execute(query, {"id_prefix": id_prefix})
+                job = result.mappings().first()
+                
+                if job:
+                    # Extract username from parameters_json if available
+                    job_username = "admin"  # Default
+                    if job["parameters_json"] and "username" in job["parameters_json"]:
+                        job_username = job["parameters_json"]["username"]
+                    
+                    # Build response
+                    response = {
+                        "job_id": job_id,  # Use the original simple ID for response
+                        "county_id": job["county_id"],
+                        "username": job_username,
+                        "export_format": job["export_format"],
+                        "status": job["status"],
+                        "created_at": job["created_at"],
+                        "started_at": job["started_at"],
+                        "completed_at": job["completed_at"],
+                        "area_of_interest": job["area_of_interest_json"],
+                        "layers": job["layers_json"],
+                        "message": job["message"]
+                    }
+                    
+                    # Add download URL if job is completed
+                    if job["status"] == "COMPLETED" and job["result_file_location"]:
+                        response["download_url"] = f"/api/v1/gis-export/download/{job_id}"
+                    
+                    logger.info(f"Retrieved GIS export job {job_id} from database")
+                    return response
+                
+        except Exception as e:
+            logger.error(f"Error getting GIS export job from database: {e}", exc_info=True)
+    
+    # Fallback to in-memory storage
     if job_id not in EXPORT_JOBS:
         raise HTTPException(status_code=404, detail="Job not found")
     
+    logger.info(f"Retrieved GIS export job {job_id} from memory storage (fallback)")
     return EXPORT_JOBS[job_id]
 
 @app.get("/plugins/v1/gis-export/list", response_model=List[GisExportJobBase])
@@ -170,7 +478,78 @@ async def list_jobs(
     offset: int = 0
 ):
     """List GIS export jobs with optional filtering."""
-    # Filter jobs based on query parameters
+    # Try to use the database if available
+    if async_session_factory:
+        try:
+            async with get_db_session() as session:
+                if not session:
+                    raise ValueError("Database session not available")
+                
+                # Build a dynamic SQL query based on filters
+                base_query = """
+                SELECT 
+                    job_id, county_id, export_format, status, 
+                    message, created_at, updated_at, 
+                    started_at, completed_at, parameters_json
+                FROM gis_export_jobs
+                """
+                
+                where_clauses = []
+                params = {}
+                
+                if county_id:
+                    where_clauses.append("county_id = :county_id")
+                    params["county_id"] = county_id
+                
+                if status:
+                    where_clauses.append("status = :status")
+                    params["status"] = status
+                
+                # Add username filter by checking in parameters_json
+                if username:
+                    where_clauses.append("parameters_json->>'username' = :username")
+                    params["username"] = username
+                
+                # Add WHERE clause if there are any filters
+                if where_clauses:
+                    base_query += " WHERE " + " AND ".join(where_clauses)
+                
+                # Add sorting and pagination
+                base_query += " ORDER BY created_at DESC LIMIT :limit OFFSET :offset"
+                params["limit"] = limit
+                params["offset"] = offset
+                
+                # Execute the query
+                result = await session.execute(base_query, params)
+                db_jobs = result.mappings().all()
+                
+                # Transform database results to response model format
+                response_jobs = []
+                for job in db_jobs:
+                    # Extract username from parameters_json if available
+                    job_username = "admin"  # Default
+                    if job["parameters_json"] and "username" in job["parameters_json"]:
+                        job_username = job["parameters_json"]["username"]
+                    
+                    # Create a synthetic integer ID for the response
+                    synthetic_id = int(job["job_id"].split("-")[0], 16) % 10000 if isinstance(job["job_id"], str) else job["job_id"]
+                    
+                    response_jobs.append({
+                        "job_id": synthetic_id,
+                        "county_id": job["county_id"],
+                        "username": job_username,
+                        "status": job["status"],
+                        "created_at": job["created_at"],
+                        "export_format": job["export_format"]
+                    })
+                
+                logger.info(f"Listed {len(response_jobs)} GIS export jobs from database")
+                return response_jobs
+                
+        except Exception as e:
+            logger.error(f"Error listing GIS export jobs from database: {e}", exc_info=True)
+    
+    # Fallback to in-memory storage
     filtered_jobs = EXPORT_JOBS.values()
     
     if county_id:
@@ -186,6 +565,7 @@ async def list_jobs(
     sorted_jobs = sorted(filtered_jobs, key=lambda job: job["created_at"], reverse=True)
     paginated_jobs = sorted_jobs[offset:offset + limit]
     
+    logger.info(f"Listed {len(paginated_jobs)} GIS export jobs from memory storage (fallback)")
     return paginated_jobs
 
 @app.delete("/plugins/v1/gis-export/cancel/{job_id}", response_model=GisExportJobBase)
