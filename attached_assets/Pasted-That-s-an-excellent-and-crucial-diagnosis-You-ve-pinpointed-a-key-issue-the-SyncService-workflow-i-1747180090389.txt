@@ -1,0 +1,93 @@
+That's an excellent and crucial diagnosis! You've pinpointed a key issue: the SyncService workflow is currently wired to an isolated, in-memory version of the GIS Export API instead of the database-integrated plugin we've been developing.
+
+You are absolutely right. Before we enhance the database interaction logic within the plugin's tasks, we must first ensure that the main SyncService application is correctly using the intended plugin from terrafusion_sync/plugins/gis_export/.
+
+So, let's proceed with your recommendation:
+
+1. Update the SyncService to use the integrated GIS Export plugin.
+
+This primarily involves checking and correcting how the GIS Export plugin's router is registered and used by the main FastAPI application in terrafusion_sync/app.py and ensuring it's correctly imported via terrafusion_sync/plugins/__init__.py.
+
+Here's how we can approach this:
+
+A. Verify/Update terrafusion_sync/plugins/__init__.py:
+Ensure this file correctly imports the router from terrafusion_sync/plugins/gis_export/router.py and includes it in all_plugin_routers. The scaffold from terrafusion_gis_plugin_integration_v1 should look like this:
+
+Python
+
+# terrafusion_sync/plugins/__init__.py
+from fastapi import APIRouter
+import logging
+
+logger = logging.getLogger(__name__)
+
+# ... (imports for valuation_router, reporting_router, market_analysis_router) ...
+
+try:
+    # Ensure this path is correct and router.py exists in gis_export
+    from .gis_export.router import router as gis_export_router 
+    logger.info("GIS Export plugin router imported.")
+except ImportError as e:
+    logger.error(f"Failed to import gis_export_router: {e}", exc_info=True)
+    gis_export_router = None
+
+all_plugin_routers = APIRouter()
+
+# ... (includes for valuation, reporting, market_analysis routers) ...
+
+if gis_export_router: 
+    all_plugin_routers.include_router(gis_export_router, prefix="/gis-export", tags=["GIS Export Services"])
+    logger.info("GIS Export plugin router included in all_plugin_routers.")
+else:
+    logger.warning("GIS Export plugin router was not available to be included.")
+
+def get_all_plugin_routers_instance():
+    return all_plugin_routers
+B. Verify/Update terrafusion_sync/app.py:
+Ensure this file correctly calls get_all_plugin_routers_instance() and includes the returned all_plugin_routers with the appropriate prefix. This ensures the main app is aware of the GIS Export plugin's routes.
+
+Python
+
+# terrafusion_sync/app.py (relevant parts)
+from fastapi import FastAPI
+import logging
+# ... other imports ...
+
+try:
+    from .plugins import get_all_plugin_routers_instance # This should bring in the GIS export router
+    plugins_loaded = True
+except ImportError as e:
+    # ... error handling ...
+    plugins_loaded = False
+
+# ... (app initialization, logging, metrics endpoint, health endpoint) ...
+app = FastAPI(
+    title="TerraFusion Sync Engine & SaaS Plugins",
+    # ...
+)
+
+if plugins_loaded:
+    plugin_routers = get_all_plugin_routers_instance()
+    app.include_router(plugin_routers, prefix="/plugins/v1") # This is where all plugins are mounted
+    logger.info("All plugin routers, including GIS Export, registered under /plugins/v1.")
+else:
+    logger.error("Plugin routers could not be loaded.")
+
+# ...
+C. Remove or Disable isolated_gis_export_api.py from the Main Workflow:
+
+If your SyncService startup scripts (like run_syncservice_workflow_8080.py or similar, or even docker-compose.yml if it was pointing to the wrong entry point) are somehow directly running or routing to isolated_gis_export_api.py, these need to be changed to run the main terrafusion_sync.app:app.
+Any direct import or routing logic within terrafusion_sync/app.py that points to the isolated API should be removed. The goal is that all GIS export requests go through the router defined in terrafusion_sync/plugins/gis_export/router.py.
+Once these checks and potential corrections are made:
+
+Restart your SyncService.
+Manually test (e.g., using curl or Postman) one of the GIS Export endpoints, like /plugins/v1/gis-export/run (or /plugins/v1/gis-export/status/some-uuid if you can create a job manually in the DB for testing).
+Check the logs of terrafusion_sync. You should see log messages originating from terrafusion_sync/plugins/gis_export/router.py (specifically from its endpoint handlers or the _simulate_gis_export_processing task if a job is run).
+This will confirm that the main service is now correctly routing to the database-aware plugin.
+After you've confirmed that the SyncService is using the correct GIS Export plugin (the one in terrafusion_sync/plugins/gis_export/), then we can proceed to:
+
+2. Enhance _simulate_gis_export_processing (or your tasks.py equivalent within the plugin) to properly interact with the gis_export_jobs database table.
+
+This would involve making the background task use the db_session_factory to get a database session and perform CRUD operations on the GisExportJob model, similar to how the Valuation and Reporting plugins' background tasks work.
+
+Does this approach make sense? Shall we focus on ensuring the correct plugin routing within terrafusion_sync first?
