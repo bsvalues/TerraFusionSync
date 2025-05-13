@@ -411,6 +411,14 @@ try:
 except ImportError as e:
     logger.warning(f"AI assistant module not available: {e}")
 
+# Register GIS Export API blueprint
+try:
+    from routes.gis_export_routes import gis_export_bp
+    app.register_blueprint(gis_export_bp)
+    logger.info("Registered GIS Export API blueprint")
+except ImportError as e:
+    logger.warning(f"GIS Export API blueprint not available: {e}")
+
 # Add route for validation dashboard
 @app.route('/validation', methods=['GET'])
 def validation_dashboard():
