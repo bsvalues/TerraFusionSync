@@ -32,8 +32,15 @@ logger = logging.getLogger(__name__)
 # Add the project root to the Python path to enable imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Import necessary modules
+# Import necessary modules without triggering other plugin imports
 from terrafusion_sync.core_models import Base, GisExportJob
+
+# Import directly from router module to avoid cross-plugin imports
+import sys, os
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'terrafusion_sync/plugins/gis_export'))
+from terrafusion_sync.database import get_async_session
+
+# Directly import our GIS Export router, avoiding other plugin imports
 from terrafusion_sync.plugins.gis_export.router import router as gis_export_router
 
 # Database connection settings - use SQLite for simplicity in standalone mode
