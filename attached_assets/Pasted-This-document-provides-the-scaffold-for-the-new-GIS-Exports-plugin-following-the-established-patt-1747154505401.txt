@@ -1,0 +1,524 @@
+This document provides the scaffold for the new "GIS Exports" plugin, following the established pattern.
+
+#### 1. Update `terrafusion_sync/core_models.py`
+
+Add the `GisExportJob` SQLAlchemy model.
+
+```python
+# terrafusion_sync/core_models.py
+import datetime
+from sqlalchemy import Column, String, Float, DateTime, Integer, Text, Boolean, JSON
+from sqlalchemy.orm import declarative_base
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+import uuid
+
+# Assuming Base is already defined earlier in this file
+# Base = declarative_base() # Remove if already defined
+
+# ... (PropertyOperational, ValuationJob, ReportJob, MarketAnalysisJob models should be here) ...
+
+class GisExportJob(Base):
+    """
+    Represents a GIS data export job, its status, parameters, and output location.
+    """
+    __tablename__ = "gis_export_jobs"
+
+    job_id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, comment="Unique ID for the GIS export job")
+    export_format = Column(String, index=True, nullable=False, comment="Requested export format (e.g., GeoJSON, Shapefile, KML)")
+    county_id = Column(String, index=True, nullable=False, comment="County ID for the data export")
+    area_of_interest_json = Column(JSON, nullable=True, comment="JSON defining the area of interest (e.g., bounding box, polygon WKT/GeoJSON)")
+    layers_json = Column(JSON, nullable=True, comment="JSON array of layer names or types to include in the export")
+    
+    status = Column(String, index=True, nullable=False, default="PENDING", comment="e.g., PENDING, RUNNING, COMPLETED, FAILED")
+    message = Column(Text, nullable=True, comment="Status message or error details")
+    
+    parameters_json = Column(JSON, nullable=True, comment="Additional JSON object storing other parameters for the export")
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+    # Result Information
+    result_file_location = Column(String, nullable=True, comment="Location of the generated export file (e.g., S3 path, downloadable link)")
+    result_file_size_kb = Column(Integer, nullable=True)
+    result_record_count = Column(Integer, nullable=True)
+
+    def __repr__(self):
+        return f"<GisExportJob(job_id='{self.job_id}', export_format='{self.export_format}', county_id='{self.county_id}', status='{self.status}')>"
+
+```
+
+#### 2. Create `terrafusion_sync/plugins/gis_export/` Directory and Files
+
+* **`terrafusion_sync/plugins/gis_export/__init__.py`** (can be empty for now)
+* **`terrafusion_sync/plugins/gis_export/schemas.py`**
+* **`terrafusion_sync/plugins/gis_export/router.py`**
+
+```python
+# terrafusion_sync/plugins/gis_export/schemas.py
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any, List
+import uuid
+import datetime
+
+class GisExportRunRequest(BaseModel):
+    export_format: str = Field(..., example="GeoJSON", description="Desired output format (e.g., GeoJSON, Shapefile, KML).")
+    county_id: str = Field(..., example="COUNTY01")
+    area_of_interest: Optional[Dict[str, Any]] = Field(None, example={"type": "bbox", "coordinates": [-120.5, 46.0, -120.0, 46.5]}, description="Defines the spatial extent.")
+    layers: List[str] = Field(..., example=["parcels", "zoning"], description="List of data layers to include.")
+    parameters: Optional[Dict[str, Any]] = Field(None, example={"include_assessment_data": True}, description="Additional export parameters.")
+
+class GisExportJobStatusResponse(BaseModel):
+    job_id: uuid.UUID
+    export_format: str
+    county_id: str
+    status: str
+    message: Optional[str] = None
+    parameters: Optional[Dict[str, Any]] = None # Includes AOI and layers for reference
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+    started_at: Optional[datetime.datetime] = None
+    completed_at: Optional[datetime.datetime] = None
+
+class GisExportResultData(BaseModel):
+    result_file_location: Optional[str] = None # URL or path to the exported file
+    result_file_size_kb: Optional[int] = None
+    result_record_count: Optional[int] = None
+    # Add other relevant result metadata
+
+class GisExportJobResultResponse(GisExportJobStatusResponse):
+    result: Optional[GisExportResultData] = None
+```python
+# terrafusion_sync/plugins/gis_export/router.py
+from fastapi import APIRouter, Depends, HTTPException, status as fastapi_status, BackgroundTasks
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+import logging
+from typing import Optional, Dict, Any, List
+import uuid
+import asyncio
+import time
+import datetime
+
+# Assuming connectors.postgres is two levels up from plugins/gis_export/
+from ...connectors.postgres import get_db_session, AsyncSessionFactory
+from ...core_models import GisExportJob, PropertyOperational # Assuming PropertyOperational has geometry
+
+# Import Prometheus metrics from the shared metrics.py module
+try:
+    from ...metrics import ( 
+        # Define these in metrics.py
+        # GIS_EXPORT_JOBS_SUBMITTED_TOTAL,
+        # GIS_EXPORT_JOBS_COMPLETED_TOTAL,
+        # GIS_EXPORT_JOBS_FAILED_TOTAL,
+        # GIS_EXPORT_PROCESSING_DURATION_SECONDS
+    )
+    # For now, use dummy metrics if not defined yet
+    class DummyCounter:
+        def inc(self, amount=1): pass
+        def labels(self, *args, **kwargs): return self
+    class DummyHistogram:
+        def observe(self, amount): pass
+        def labels(self, *args, **kwargs): return self
+    GIS_EXPORT_JOBS_SUBMITTED_TOTAL = DummyCounter()
+    GIS_EXPORT_JOBS_COMPLETED_TOTAL = DummyCounter()
+    GIS_EXPORT_JOBS_FAILED_TOTAL = DummyCounter()
+    GIS_EXPORT_PROCESSING_DURATION_SECONDS = DummyHistogram()
+except ImportError:
+    print("Warning (gis_export.py): Could not import Prometheus metrics. Metrics will not be recorded.")
+    # Define dummy metrics as above
+    # ... (dummy metric definitions) ...
+
+from .schemas import (
+    GisExportRunRequest, 
+    GisExportJobStatusResponse, 
+    GisExportResultData,
+    GisExportJobResultResponse
+)
+
+logger = logging.getLogger(__name__)
+router = APIRouter() # Prefix "/gis-export" will be added by plugins/__init__.py
+
+# --- Placeholder Background Task for GIS Export ---
+async def _simulate_gis_export_processing(
+    job_id: uuid.UUID, 
+    export_format: str, 
+    county_id: str, 
+    area_of_interest: Optional[Dict[str, Any]],
+    layers: List[str],
+    parameters: Optional[Dict[str, Any]], 
+    db_session_factory: callable
+):
+    start_process_time = time.monotonic()
+    job_final_status_for_metric = "UNKNOWN_FAILURE"
+    logger.info(f"GisExportJob {job_id}: Background task initiated. Attempting to get DB session.")
+
+    if not db_session_factory:
+        logger.error(f"GisExportJob {job_id}: db_session_factory is None. Cannot proceed.")
+        return
+
+    async with db_session_factory() as db:
+        logger.info(f"GisExportJob {job_id}: DB session acquired. Processing format '{export_format}', county '{county_id}'.")
+        job_query = select(GisExportJob).where(GisExportJob.job_id == job_id)
+        
+        try:
+            result = await db.execute(job_query)
+            job = result.scalars().first()
+            if not job:
+                logger.error(f"GisExportJob {job_id}: Not found in DB at start of background task.")
+                GIS_EXPORT_JOBS_FAILED_TOTAL.labels(county_id=county_id, export_format=export_format, failure_reason="job_not_found_in_bg").inc()
+                return
+
+            job.status = "RUNNING"
+            job.started_at = datetime.datetime.utcnow()
+            job.updated_at = datetime.datetime.utcnow()
+            await db.commit()
+            logger.info(f"GisExportJob {job_id}: Status updated to RUNNING in DB.")
+
+            # --- Actual GIS Export Logic Placeholder ---
+            logger.info(f"GisExportJob {job_id}: Simulating GIS export of format '{export_format}' for layers {layers} with AOI {area_of_interest} and params: {parameters}")
+            # TODO: Implement actual GIS export logic. This would involve:
+            # 1. Parsing area_of_interest and layers.
+            # 2. Querying PropertyOperational (and potentially other tables or a PostGIS DB)
+            #    using spatial filters based on AOI.
+            # 3. Selecting relevant attributes for the specified layers.
+            # 4. Converting data to the requested export_format (GeoJSON, Shapefile, KML).
+            #    - For Shapefile/KML, this might involve creating multiple files and zipping them.
+            #    - Libraries like GeoPandas, Fiona, shapely would be useful here.
+            # 5. Storing the resulting file(s) (e.g., to S3 or a temporary file store).
+            await asyncio.sleep(6) # Simulate processing time 
+            # --- End Actual GIS Export Logic Placeholder ---
+
+            if export_format == "FAIL_FORMAT_SIM": # For testing failure path
+                job.status = "FAILED"
+                job.message = "Simulated GIS export failure due to format."
+                GIS_EXPORT_JOBS_FAILED_TOTAL.labels(county_id=county_id, export_format=export_format, failure_reason="simulated_format_failure").inc()
+            else:
+                job.status = "COMPLETED"
+                job.message = f"GIS export ({export_format}) completed successfully."
+                job.result_file_location = f"/gis_exports/{county_id}/{job_id}_{'_'.join(layers)}.{export_format.lower().replace('shapefile','zip')}"
+                job.result_file_size_kb = 5120 # Simulated
+                job.result_record_count = 2500 # Simulated
+                GIS_EXPORT_JOBS_COMPLETED_TOTAL.labels(county_id=county_id, export_format=export_format).inc()
+            
+            job_final_status_for_metric = job.status
+            job.completed_at = datetime.datetime.utcnow()
+            job.updated_at = datetime.datetime.utcnow()
+            await db.commit()
+            logger.info(f"GisExportJob {job_id}: Final status '{job.status}' and results committed to DB.")
+
+        except Exception as e:
+            job_final_status_for_metric = "EXCEPTION_FAILURE"
+            logger.error(f"GisExportJob {job_id}: Unhandled exception during background GIS export: {e}", exc_info=True)
+            GIS_EXPORT_JOBS_FAILED_TOTAL.labels(county_id=county_id, export_format=export_format, failure_reason="processing_exception").inc()
+            # ... (DB error handling as before) ...
+        finally:
+            duration = time.monotonic() - start_process_time
+            GIS_EXPORT_PROCESSING_DURATION_SECONDS.labels(county_id=county_id, export_format=export_format).observe(duration)
+            logger.info(f"GisExportJob {job_id}: Background task finished. Duration: {duration:.2f}s. Final reported status for metrics: {job_final_status_for_metric}")
+
+
+# --- API Endpoints for GIS Export Plugin ---
+@router.post("/run", response_model=GisExportJobStatusResponse, status_code=fastapi_status.HTTP_202_ACCEPTED)
+async def run_gis_export_job(
+    request_data: GisExportRunRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db_session)
+):
+    job_id = uuid.uuid4()
+    new_job = GisExportJob(
+        job_id=job_id,
+        export_format=request_data.export_format,
+        county_id=request_data.county_id,
+        area_of_interest_json=request_data.area_of_interest,
+        layers_json=request_data.layers,
+        parameters_json=request_data.parameters,
+        status="PENDING",
+        message="GIS export job accepted and queued.",
+        created_at=datetime.datetime.utcnow(),
+        updated_at=datetime.datetime.utcnow()
+    )
+    
+    try:
+        db.add(new_job)
+        await db.commit()
+        await db.refresh(new_job)
+        logger.info(f"GisExportJob {new_job.job_id} created in DB for format '{new_job.export_format}', county '{new_job.county_id}'.")
+        GIS_EXPORT_JOBS_SUBMITTED_TOTAL.labels(
+            county_id=request_data.county_id, 
+            export_format=request_data.export_format,
+            status_on_submit="PENDING"
+        ).inc()
+    except Exception as e:
+        logger.error(f"Failed to create GIS export job in DB for {request_data.export_format} / {request_data.county_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to initiate GIS export job.")
+
+    db_session_factory = AsyncSessionFactory if AsyncSessionFactory else sessionmaker(bind=db.get_bind(), class_=AsyncSession, expire_on_commit=False)
+    
+    background_tasks.add_task(
+        _simulate_gis_export_processing, 
+        new_job.job_id, 
+        new_job.export_format, 
+        new_job.county_id,
+        new_job.area_of_interest_json,
+        new_job.layers_json,
+        new_job.parameters_json,
+        db_session_factory
+    )
+    return GisExportJobStatusResponse.model_validate(new_job)
+
+@router.get("/status/{job_id_str}", response_model=GisExportJobStatusResponse)
+async def get_gis_export_job_status(job_id_str: str, db: AsyncSession = Depends(get_db_session)):
+    try:
+        job_uuid = uuid.UUID(job_id_str)
+    except ValueError:
+        raise HTTPException(status_code=fastapi_status.HTTP_400_BAD_REQUEST, detail="Invalid job_id format.")
+    
+    logger.debug(f"Fetching status for GisExportJob ID: {job_uuid}")
+    result = await db.execute(select(GisExportJob).where(GisExportJob.job_id == job_uuid))
+    job = result.scalars().first()
+    if not job:
+        logger.warning(f"GisExportJob status request for unknown ID: {job_uuid}")
+        raise HTTPException(status_code=fastapi_status.HTTP_404_NOT_FOUND, detail=f"GIS export job '{job_uuid}' not found.")
+    
+    # Reconstruct parameters for response if needed (they are part of the DB model)
+    response_payload = job.__dict__ # Get all attributes
+    response_payload["parameters"] = { # Reconstruct the original parameters structure for the response model
+        "area_of_interest": job.area_of_interest_json,
+        "layers": job.layers_json,
+        ** (job.parameters_json if job.parameters_json else {})
+    }
+    return GisExportJobStatusResponse.model_validate(response_payload)
+
+
+@router.get("/results/{job_id_str}", response_model=GisExportJobResultResponse)
+async def get_gis_export_job_results(job_id_str: str, db: AsyncSession = Depends(get_db_session)):
+    try:
+        job_uuid = uuid.UUID(job_id_str)
+    except ValueError:
+        raise HTTPException(status_code=fastapi_status.HTTP_400_BAD_REQUEST, detail="Invalid job_id format.")
+
+    logger.debug(f"Fetching results for GisExportJob ID: {job_uuid}")
+    result = await db.execute(select(GisExportJob).where(GisExportJob.job_id == job_uuid))
+    job = result.scalars().first()
+    if not job:
+        logger.warning(f"GisExportJob results request for unknown ID: {job_uuid}")
+        raise HTTPException(status_code=fastapi_status.HTTP_404_NOT_FOUND, detail=f"GIS export job '{job_uuid}' not found.")
+
+    job_status_data_dict = GisExportJobStatusResponse.model_validate(job).model_dump()
+    # Re-add combined parameters to the status part of the response if needed by Pydantic model
+    job_status_data_dict["parameters"] = {
+        "area_of_interest": job.area_of_interest_json,
+        "layers": job.layers_json,
+        ** (job.parameters_json if job.parameters_json else {})
+    }
+
+    export_result_data_obj = None
+
+    if job.status == "COMPLETED":
+        export_result_data_obj = GisExportResultData(
+            result_file_location=job.result_file_location,
+            result_file_size_kb=job.result_file_size_kb,
+            result_record_count=job.result_record_count
+        )
+        logger.info(f"GisExportJob {job_uuid} results retrieved. File location: {job.result_file_location}")
+    else:
+        logger.info(f"GisExportJob {job_uuid} not yet completed or failed. Status: {job.status}")
+        
+    return GisExportJobResultResponse(**job_status_data_dict, result=export_result_data_obj)
+```
+
+#### 3. Update `terrafusion_sync/plugins/__init__.py`
+
+Register the new `gis_export_router`.
+
+```python
+# terrafusion_sync/plugins/__init__.py
+from fastapi import APIRouter
+
+# Import routers from each plugin module
+try:
+    from .valuation import router as valuation_router
+    from .reporting import router as reporting_router
+    from .market_analysis.router import router as market_analysis_router
+    from .gis_export.router import router as gis_export_router # Added
+except ImportError as e:
+    print(f"Error importing plugin routers: {e}. Ensure plugin files exist and are correct.")
+    valuation_router = None 
+    reporting_router = None
+    market_analysis_router = None
+    gis_export_router = None # Added
+
+all_plugin_routers = APIRouter()
+
+if valuation_router:
+    all_plugin_routers.include_router(valuation_router, prefix="/valuation", tags=["Valuation Services"])
+if reporting_router:
+    all_plugin_routers.include_router(reporting_router, prefix="/reporting", tags=["Reporting Services"])
+if market_analysis_router:
+    all_plugin_routers.include_router(market_analysis_router, prefix="/market-analysis", tags=["Market Analysis Services"])
+if gis_export_router: # Added
+    all_plugin_routers.include_router(gis_export_router, prefix="/gis-export", tags=["GIS Export Services"])
+
+def get_all_plugin_routers_instance():
+    return all_plugin_routers
+```
+
+#### 4. Update `terrafusion_sync/metrics.py`
+
+Add metric definitions for the GIS Export plugin.
+
+```python
+# terrafusion_sync/metrics.py
+from prometheus_client import Counter, Histogram
+
+# --- Valuation Plugin Metrics ---
+# ... (existing valuation metrics) ...
+VALUATION_JOBS_SUBMITTED_TOTAL = Counter('valuation_jobs_submitted_total', '...', ['county_id', 'status_on_submit'])
+VALUATION_JOBS_COMPLETED_TOTAL = Counter('valuation_jobs_completed_total', '...', ['county_id'])
+VALUATION_JOBS_FAILED_TOTAL = Counter('valuation_jobs_failed_total', '...', ['county_id', 'failure_reason'])
+VALUATION_PROCESSING_DURATION_SECONDS = Histogram('valuation_processing_duration_seconds', '...', ['county_id'], buckets=[...])
+
+
+# --- Reporting Plugin Metrics ---
+# ... (existing reporting metrics) ...
+REPORT_JOBS_SUBMITTED_TOTAL = Counter('report_jobs_submitted_total', '...', ['county_id', 'report_type', 'status_on_submit'])
+REPORT_JOBS_COMPLETED_TOTAL = Counter('report_jobs_completed_total', '...', ['county_id', 'report_type'])
+REPORT_JOBS_FAILED_TOTAL = Counter('report_jobs_failed_total', '...', ['county_id', 'report_type', 'failure_reason'])
+REPORT_PROCESSING_DURATION_SECONDS = Histogram('report_processing_duration_seconds', '...', ['county_id', 'report_type'], buckets=[...])
+
+
+# --- Market Analysis Plugin Metrics ---
+# ... (existing market analysis metrics) ...
+MARKET_ANALYSIS_JOBS_SUBMITTED_TOTAL = Counter('market_analysis_jobs_submitted_total', '...', ['county_id', 'analysis_type', 'status_on_submit'])
+MARKET_ANALYSIS_JOBS_COMPLETED_TOTAL = Counter('market_analysis_jobs_completed_total', '...', ['county_id', 'analysis_type'])
+MARKET_ANALYSIS_JOBS_FAILED_TOTAL = Counter('market_analysis_jobs_failed_total', '...', ['county_id', 'analysis_type', 'failure_reason'])
+MARKET_ANALYSIS_PROCESSING_DURATION_SECONDS = Histogram('market_analysis_processing_duration_seconds', '...', ['county_id', 'analysis_type'], buckets=[...])
+
+
+# --- GIS Export Plugin Metrics ---
+GIS_EXPORT_JOBS_SUBMITTED_TOTAL = Counter(
+    'gis_export_jobs_submitted_total',
+    'Total number of GIS export jobs submitted.',
+    ['county_id', 'export_format', 'status_on_submit']
+)
+GIS_EXPORT_JOBS_COMPLETED_TOTAL = Counter(
+    'gis_export_jobs_completed_total',
+    'Total number of GIS export jobs completed successfully.',
+    ['county_id', 'export_format']
+)
+GIS_EXPORT_JOBS_FAILED_TOTAL = Counter(
+    'gis_export_jobs_failed_total',
+    'Total number of GIS export jobs that failed.',
+    ['county_id', 'export_format', 'failure_reason']
+)
+GIS_EXPORT_PROCESSING_DURATION_SECONDS = Histogram(
+    'gis_export_processing_duration_seconds',
+    'Histogram of GIS export job processing time in seconds.',
+    ['county_id', 'export_format'],
+    # GIS exports can be I/O heavy and potentially long
+    buckets=[5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0, 1800.0, 3600.0, float('inf')] 
+)
+```
+*Remember to update `terrafusion_sync/app.py` to import these new metrics from `metrics.py` if it's not already importing everything or if you have specific imports.*
+
+#### 5. Create `tests/integration/test_gis_export_end_to_end.py` (Stub)
+
+```python
+# terrafusion_platform/tests/integration/test_gis_export_end_to_end.py
+import asyncio
+import time
+import pytest
+from fastapi.testclient import TestClient
+import uuid
+
+# Fixtures `sync_client`, `db_session` are expected from conftest.py
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_gis_export_workflow_success(
+    sync_client: TestClient,
+    db_session: asyncio.Future # Actually AsyncSession
+):
+    """
+    Tests the full GIS export workflow: run, poll status, fetch results.
+    """
+    test_county_id = f"GIS_EXPORT_TEST_COUNTY_{uuid.uuid4().hex[:4]}"
+    test_export_format = "GeoJSON"
+    test_layers = ["parcels_basic", "assessment_summary"]
+    test_aoi = {"type": "county_boundary"} # Simplified AOI for test
+    test_parameters = {"include_owner_info": False}
+
+
+    run_payload = {
+        "export_format": test_export_format,
+        "county_id": test_county_id,
+        "area_of_interest": test_aoi,
+        "layers": test_layers,
+        "parameters": test_parameters
+    }
+    print(f"Test GIS Export (Success): Posting to /plugins/v1/gis-export/run with payload: {run_payload}")
+    
+    response = sync_client.post("/plugins/v1/gis-export/run", json=run_payload)
+    
+    assert response.status_code == 202, f"Expected 202 Accepted, got {response.status_code}. Response: {response.text}"
+    job_data = response.json()
+    print(f"Test GIS Export (Success): /run response: {job_data}")
+
+    assert "job_id" in job_data
+    job_id = job_data["job_id"]
+    assert job_data["status"] == "PENDING"
+    assert job_data["export_format"] == test_export_format
+
+    # Poll status
+    current_status = None
+    max_polls = 25 # GIS exports might take a bit longer
+    poll_interval = 1.0 
+    for i in range(max_polls):
+        status_response = sync_client.get(f"/plugins/v1/gis-export/status/{job_id}")
+        assert status_response.status_code == 200
+        status_data = status_response.json()
+        current_status = status_data["status"]
+        print(f"Test GIS Export (Success): Poll {i+1}/{max_polls} - Status for job {job_id}: {current_status}")
+        if current_status == "COMPLETED":
+            break
+        elif current_status == "FAILED":
+            pytest.fail(f"GIS Export job {job_id} FAILED. Message: {status_data.get('message', 'No message')}")
+        await asyncio.sleep(poll_interval)
+    assert current_status == "COMPLETED"
+
+    # Fetch results
+    results_response = sync_client.get(f"/plugins/v1/gis-export/results/{job_id}")
+    assert results_response.status_code == 200
+    results_data = results_response.json()
+    print(f"Test GIS Export (Success): /results response: {results_data}")
+    
+    assert results_data["status"] == "COMPLETED"
+    assert results_data["result"] is not None
+    assert "result_file_location" in results_data["result"]
+    expected_file_name_part = f"{job_id}_{'_'.join(test_layers)}.{test_export_format.lower()}"
+    assert expected_file_name_part in results_data["result"]["result_file_location"]
+    assert results_data["result"]["result_file_size_kb"] == 5120 # From mock
+    assert results_data["result"]["result_record_count"] == 2500 # From mock
+
+    print(f"Test GIS Export (Success): Job {job_id} successfully completed and results verified.")
+
+# Add a test_gis_export_workflow_simulated_failure similar to other plugins
+```
+
+#### 6. Update `.github/workflows/ci.yml` (Conceptual CI Block)
+
+No change needed if your CI `pytest` command already covers all tests in `tests/integration/`.
+
+```yaml
+# Snippet for .github/workflows/ci.yml (within the 'test' job steps)
+      # ... (after Alembic migrations) ...
+      - name: Run Integration Tests (including GIS Export)
+        run: |
+          echo "Running ALL Integration Tests..."
+          pytest tests/integration -v -s -m "integration" 
+        env:
+          TEST_TERRAFUSION_OPERATIONAL_DB_URL: ${{ env.TEST_TERRAFUSION_OPERATIONAL_DB_URL }}
+```
