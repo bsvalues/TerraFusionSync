@@ -35,10 +35,19 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # Import necessary modules without triggering other plugin imports
 from terrafusion_sync.core_models import Base, GisExportJob
 
+# Make our metric class use a custom registry to avoid conflicts
+# Set environment variable before importing any plugins
+os.environ["GIS_EXPORT_USE_CUSTOM_REGISTRY"] = "1"
+
 # Import directly from router module to avoid cross-plugin imports
-import sys, os
+import sys
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'terrafusion_sync/plugins/gis_export'))
 from terrafusion_sync.database import get_async_session
+
+# Now safely import metrics without conflicts
+from terrafusion_sync.plugins.gis_export.metrics import GisExportMetrics
+# Ensure metrics use custom registry
+GisExportMetrics.initialize(use_default_registry=False)
 
 # Directly import our GIS Export router, avoiding other plugin imports
 from terrafusion_sync.plugins.gis_export.router import router as gis_export_router
@@ -94,13 +103,35 @@ app.add_middleware(
 # Include the GIS Export router
 app.include_router(gis_export_router, prefix="/plugins/v1/gis-export", tags=["gis-export"])
 
+# Add metrics endpoint using our custom registry
+@app.get("/metrics", tags=["monitoring"])
+async def metrics():
+    """Expose metrics from our custom registry."""
+    from prometheus_client import generate_latest
+    import prometheus_client
+    
+    # Set content type for Prometheus metrics
+    from fastapi.responses import Response
+    
+    if not GisExportMetrics.registry:
+        return Response(
+            content="# No metrics available - registry not initialized",
+            media_type="text/plain"
+        )
+    
+    return Response(
+        content=generate_latest(GisExportMetrics.registry).decode("utf-8"),
+        media_type="text/plain"
+    )
+
 # Health check endpoint at root
 @app.get("/", tags=["health"])
 async def root():
     return {
         "status": "healthy",
         "service": "simplified_gis_export_api",
-        "message": "GIS Export API is running in standalone mode"
+        "message": "GIS Export API is running in standalone mode",
+        "metrics_url": "/metrics"
     }
 
 # Main entry point
