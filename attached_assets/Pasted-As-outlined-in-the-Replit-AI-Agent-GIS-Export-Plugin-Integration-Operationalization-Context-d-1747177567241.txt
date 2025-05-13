@@ -1,0 +1,38 @@
+As outlined in the "Replit AI Agent: GIS Export Plugin - Integration & Operationalization Context" document (ID: replit_ai_gis_export_context_v1), the very first thing we need to do is:
+
+Step 1: Database Schema Update (Alembic Migration for GisExportJob)
+
+This means ensuring the GisExportJob model is correctly defined and then using Alembic to create the corresponding gis_export_jobs table in your PostgreSQL database.
+
+Here's what you need to do in your terminal:
+
+Verify the GisExportJob Model:
+
+Open your terrafusion_platform/terrafusion_sync/core_models.py file.
+Confirm that the GisExportJob class (as defined in the "TerraFusion - GIS Exports Plugin Scaffold" document, ID terrafusion_gis_export_plugin_scaffold_v1) is present and correctly inherits from the same Base = declarative_base() that your other models use.
+Generate the Alembic Migration Script:
+
+Navigate to your terrafusion_platform/terrafusion_sync/ directory (where your alembic.ini is).
+Ensure your .env file (at the project root terrafusion_platform/.env) has the TERRAFUSION_OPERATIONAL_DB_URL correctly set up for Alembic.
+Run:
+Bash
+
+alembic revision -m "add_gis_export_jobs_table" --autogenerate
+Review the Generated Migration Script:
+
+A new file will be created in terrafusion_sync/alembic_migrations/versions/. Open it.
+Check down_revision: It must point to the revision ID of your previous migration (e.g., the one for market_analysis_jobs).
+Check upgrade(): It should contain op.create_table('gis_export_jobs', ...) with all columns and indexes from your GisExportJob model.
+Check downgrade(): It should correctly drop the table and its indexes.
+Apply the Migration:
+
+Ensure your PostgreSQL database service is running.
+From the terrafusion_platform/terrafusion_sync/ directory, run:
+Bash
+
+alembic upgrade head
+Verify Table Creation in PostgreSQL:
+
+Connect to your PostgreSQL database.
+Confirm that the gis_export_jobs table now exists with the correct structure.
+Once you've completed these Alembic steps, the database schema will be ready for the GIS Export plugin. Let me know when you're done, and we'll move to the next step: fleshing out the plugin logic!
