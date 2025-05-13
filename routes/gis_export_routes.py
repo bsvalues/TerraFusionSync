@@ -27,8 +27,7 @@ def require_auth(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         # Check if user is authenticated
-        # This is a placeholder - implement proper auth check based on your auth system
-        if 'user_id' not in session:
+        if 'username' not in session and 'token' not in session:
             logger.warning(f"Unauthenticated access attempt to {request.path}")
             return jsonify({"error": "Authentication required"}), 401
         return f(*args, **kwargs)
