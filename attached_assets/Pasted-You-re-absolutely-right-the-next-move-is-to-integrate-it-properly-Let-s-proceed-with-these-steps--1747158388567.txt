@@ -1,0 +1,37 @@
+You're absolutely right, the next move is to integrate it properly. Let's proceed with these steps.
+
+I will provide the necessary code updates to:
+
+Ensure the GIS Export plugin's router is correctly registered in terrafusion_sync/plugins/__init__.py.
+Confirm the GIS Export metrics are defined in the central terrafusion_sync/metrics.py.
+Ensure terrafusion_sync/app.py is set up to expose all metrics, including the new GIS ones.
+Scaffold the proxy route in terrafusion_gateway.
+This will effectively "plug in" your GIS Export module.
+TerraFusion - GIS Export Plugin Integration
+May 13, 10:44 AM
+
+Next Steps for You:
+
+Implement these code changes.
+Alembic Migration for GisExportJob:
+Ensure the GisExportJob model is in core_models.py.
+From terrafusion_platform/terrafusion_sync/:
+Bash
+
+alembic revision -m "add_gis_export_jobs_table" --autogenerate
+# Review the generated script carefully
+alembic upgrade head
+Verify the gis_export_jobs table in your PostgreSQL database.
+Restart Services: docker-compose up --build -d (or restart individual services).
+Confirm Metrics Registration:
+After services restart, hit http://localhost:8001/metrics (your terrafusion_sync port).
+Search for gis_export_jobs_submitted_total and other GIS export metrics to ensure they are listed (they will have a value of 0 initially).
+Test Gateway Proxying:
+Make a POST request to the Gateway for GIS export: http://localhost:5000/api/v1/gis-export/run (with appropriate JSON body).
+Check the logs of both the Gateway and Sync service to see the request flow.
+Poll the status and results endpoints via the Gateway.
+Add Grafana Panels: Create new panels in your Grafana dashboard for the gis_export_* metrics.
+Add to CI:
+Ensure your tests/integration/test_gis_export_end_to_end.py (from terrafusion_gis_export_plugin_scaffold_v1) is complete and robust.
+Confirm your CI pipeline (.github/workflows/ci.yml) runs these tests.
+This will fully integrate your GIS Export plugin into the platform, making it testable, observable, and accessible through the gateway.

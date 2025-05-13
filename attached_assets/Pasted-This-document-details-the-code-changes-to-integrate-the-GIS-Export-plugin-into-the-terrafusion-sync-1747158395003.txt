@@ -1,0 +1,246 @@
+This document details the code changes to integrate the GIS Export plugin into the `terrafusion_sync` service and expose its endpoints via the `terrafusion_gateway`.
+
+#### 1. Update `terrafusion_sync/plugins/__init__.py`
+
+Ensure the `gis_export_router` is imported from its correct location (assuming `terrafusion_sync/plugins/gis_export/router.py`) and included in `all_plugin_routers`. The scaffold `terrafusion_gis_export_plugin_scaffold_v1` already has this structure.
+
+```python
+# terrafusion_sync/plugins/__init__.py
+from fastapi import APIRouter
+import logging # Added for logging
+
+logger = logging.getLogger(__name__)
+
+# Import routers from each plugin module
+try:
+    from .valuation import router as valuation_router
+    logger.info("Valuation plugin router imported.")
+except ImportError:
+    logger.warning("Could not import valuation_router.")
+    valuation_router = None
+
+try:
+    from .reporting import router as reporting_router
+    logger.info("Reporting plugin router imported.")
+except ImportError:
+    logger.warning("Could not import reporting_router.")
+    reporting_router = None
+
+try:
+    # Assuming the market_analysis plugin router is in plugins/market_analysis/router.py
+    from .market_analysis.router import router as market_analysis_router
+    logger.info("Market Analysis plugin router imported.")
+except ImportError:
+    logger.warning("Could not import market_analysis_router.")
+    market_analysis_router = None
+
+try:
+    # Assuming the gis_export plugin router is in plugins/gis_export/router.py
+    from .gis_export.router import router as gis_export_router 
+    logger.info("GIS Export plugin router imported.")
+except ImportError as e:
+    logger.error(f"Failed to import gis_export_router: {e}", exc_info=True)
+    gis_export_router = None
+
+all_plugin_routers = APIRouter()
+
+if valuation_router:
+    all_plugin_routers.include_router(valuation_router, prefix="/valuation", tags=["Valuation Services"])
+if reporting_router:
+    all_plugin_routers.include_router(reporting_router, prefix="/reporting", tags=["Reporting Services"])
+if market_analysis_router:
+    all_plugin_routers.include_router(market_analysis_router, prefix="/market-analysis", tags=["Market Analysis Services"])
+if gis_export_router: 
+    all_plugin_routers.include_router(gis_export_router, prefix="/gis-export", tags=["GIS Export Services"])
+    logger.info("GIS Export plugin router included in all_plugin_routers.")
+else:
+    logger.warning("GIS Export plugin router was not available to be included.")
+
+
+def get_all_plugin_routers_instance():
+    return all_plugin_routers
+```
+
+#### 2. Update `terrafusion_sync/metrics.py`
+
+Ensure the GIS Export metrics (as defined in `terrafusion_gis_export_plugin_scaffold_v1`) are present in this central metrics file.
+
+```python
+# terrafusion_sync/metrics.py
+from prometheus_client import Counter, Histogram
+
+# --- Valuation Plugin Metrics ---
+VALUATION_JOBS_SUBMITTED_TOTAL = Counter('valuation_jobs_submitted_total', 'Total valuation jobs submitted.', ['county_id', 'status_on_submit'])
+VALUATION_JOBS_COMPLETED_TOTAL = Counter('valuation_jobs_completed_total', 'Total valuation jobs completed successfully.', ['county_id'])
+VALUATION_JOBS_FAILED_TOTAL = Counter('valuation_jobs_failed_total', 'Total valuation jobs that failed.', ['county_id', 'failure_reason'])
+VALUATION_PROCESSING_DURATION_SECONDS = Histogram('valuation_processing_duration_seconds', 'Histogram of valuation job processing time.', ['county_id'], buckets=[0.1, 0.5, 1, 2.5, 5, 10, 30, 60, float('inf')])
+
+# --- Reporting Plugin Metrics ---
+REPORT_JOBS_SUBMITTED_TOTAL = Counter('report_jobs_submitted_total', 'Total report jobs submitted.', ['county_id', 'report_type', 'status_on_submit'])
+REPORT_JOBS_COMPLETED_TOTAL = Counter('report_jobs_completed_total', 'Total report jobs completed successfully.', ['county_id', 'report_type'])
+REPORT_JOBS_FAILED_TOTAL = Counter('report_jobs_failed_total', 'Total report jobs that failed.', ['county_id', 'report_type', 'failure_reason'])
+REPORT_PROCESSING_DURATION_SECONDS = Histogram('report_processing_duration_seconds', 'Histogram of report job processing time.', ['county_id', 'report_type'], buckets=[0.5, 1, 5, 10, 30, 60, 120, 300, float('inf')])
+
+# --- Market Analysis Plugin Metrics ---
+MARKET_ANALYSIS_JOBS_SUBMITTED_TOTAL = Counter('market_analysis_jobs_submitted_total', 'Total market analysis jobs submitted.', ['county_id', 'analysis_type', 'status_on_submit'])
+MARKET_ANALYSIS_JOBS_COMPLETED_TOTAL = Counter('market_analysis_jobs_completed_total', 'Total market analysis jobs completed successfully.', ['county_id', 'analysis_type'])
+MARKET_ANALYSIS_JOBS_FAILED_TOTAL = Counter('market_analysis_jobs_failed_total', 'Total market analysis jobs that failed.', ['county_id', 'analysis_type', 'failure_reason'])
+MARKET_ANALYSIS_PROCESSING_DURATION_SECONDS = Histogram('market_analysis_processing_duration_seconds', 'Histogram of market analysis job processing time.', ['county_id', 'analysis_type'], buckets=[1, 5, 10, 30, 60, 120, 300, 600, float('inf')])
+
+# --- GIS Export Plugin Metrics ---
+GIS_EXPORT_JOBS_SUBMITTED_TOTAL = Counter(
+    'gis_export_jobs_submitted_total',
+    'Total number of GIS export jobs submitted.',
+    ['county_id', 'export_format', 'status_on_submit']
+)
+GIS_EXPORT_JOBS_COMPLETED_TOTAL = Counter(
+    'gis_export_jobs_completed_total',
+    'Total number of GIS export jobs completed successfully.',
+    ['county_id', 'export_format']
+)
+GIS_EXPORT_JOBS_FAILED_TOTAL = Counter(
+    'gis_export_jobs_failed_total',
+    'Total number of GIS export jobs that failed.',
+    ['county_id', 'export_format', 'failure_reason']
+)
+GIS_EXPORT_PROCESSING_DURATION_SECONDS = Histogram(
+    'gis_export_processing_duration_seconds',
+    'Histogram of GIS export job processing time in seconds.',
+    ['county_id', 'export_format'],
+    buckets=[5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0, 1800.0, 3600.0, float('inf')] 
+)
+
+# Ensure these metrics are imported and used by terrafusion_sync/plugins/gis_export/router.py
+# and that terrafusion_sync/app.py imports them (or all) from this metrics.py file.
+```
+
+#### 3. Update `terrafusion_sync/app.py` (If Necessary)
+
+Ensure `app.py` correctly imports *all* metrics from `metrics.py` if it's not already doing so, so that the `/metrics` endpoint serves them. The existing structure (from `terrafusion_shared_metrics_and_instrumentation_v1`) should already handle this if it imports the `metrics` module's contents.
+
+```python
+# terrafusion_sync/app.py (Conceptual - ensure metrics are broadly imported)
+from fastapi import FastAPI, Response
+import logging
+import os
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+
+# Import all metrics from the shared metrics module
+try:
+    # This attempts to import all names defined in metrics.py
+    # If metrics.py only defines metrics, this is fine.
+    # Otherwise, you might need specific imports or an __all__ in metrics.py
+    from . import metrics as tf_metrics 
+    # Now you can access them via tf_metrics.VALUATION_JOBS_SUBMITTED_TOTAL, etc.
+    # The prometheus_client will find all registered metrics globally when generate_latest() is called.
+    # So, just ensuring they are defined and imported by the plugins is usually enough.
+    logger = logging.getLogger(__name__) # Define logger here if not already
+    logger.info("Successfully imported shared metrics module.")
+except ImportError as e:
+    logger.error(f"Warning: Could not import .metrics module: {e}. Metrics endpoint might be incomplete.", exc_info=True)
+
+# ... (rest of your app.py including plugin router registration) ...
+
+@app.get("/metrics", tags=["Monitoring"])
+async def metrics_endpoint():
+    logger.debug("Prometheus metrics endpoint accessed.")
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+# ... (rest of app.py)
+```
+*Self-correction: The key is that the metrics are defined and then imported and used by the respective plugins. `generate_latest()` from `prometheus_client` typically collects all metrics registered with the default registry, regardless of how they were imported into `app.py` itself, as long as they were instantiated somewhere in the application's context.*
+
+#### 4. Scaffold Gateway Proxy Route for GIS Export
+
+Create `terrafusion_gateway/routes/gis_export_routes.py`:
+
+```python
+# terrafusion_gateway/routes/gis_export_routes.py
+from flask import Blueprint, request, jsonify, current_app
+from functools import wraps 
+
+# Assuming sync_core_client is in ..services/
+from ..services.sync_core_client import sync_core_client 
+
+# Placeholder RBAC decorator (should be moved to middleware/auth.py and be more robust)
+def rbac_required(permission_needed: str): # Replace with your actual RBAC decorator
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            current_app.logger.info(f"RBAC check (simulated): '{permission_needed}' for route {request.path}")
+            # Placeholder: Add actual permission check logic here
+            # from flask import session
+            # if permission_needed not in session.get('permissions', []):
+            #     return jsonify({"error": "Forbidden", "message": "Insufficient permissions"}), 403
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+gis_export_bp = Blueprint('gis_export_external_routes', __name__, url_prefix='/api/v1/gis-export')
+
+@gis_export_bp.route('/run', methods=['POST'])
+@rbac_required('execute_gis_export') 
+def proxy_run_gis_export_job():
+    """Gateway endpoint to proxy GIS export job initiation."""
+    if not request.is_json:
+        current_app.logger.warning("Bad request to /gis-export/run: payload not JSON")
+        return jsonify({"error": "Invalid request format", "message": "Request payload must be JSON."}), 400
+
+    payload = request.get_json()
+    current_app.logger.info(f"Gateway received /api/v1/gis-export/run request: {payload}")
+
+    # Calls POST /gis-export/run in terrafusion_sync (via plugins/v1 prefix)
+    response_data, status_code = sync_core_client.post("/gis-export/run", data=payload) 
+    
+    current_app.logger.info(f"Response from Sync Core (/gis-export/run) forwarded with status {status_code}")
+    return jsonify(response_data), status_code
+
+@gis_export_bp.route('/status/<job_id>', methods=['GET'])
+@rbac_required('view_gis_export_status')
+def proxy_get_gis_export_status(job_id: str):
+    """Gateway endpoint to proxy requests for GIS export job status."""
+    current_app.logger.info(f"Gateway received /api/v1/gis-export/status/{job_id} request")
+    response_data, status_code = sync_core_client.get(f"/gis-export/status/{job_id}")
+    current_app.logger.info(f"Response from Sync Core (/gis-export/status) forwarded with status {status_code}")
+    return jsonify(response_data), status_code
+
+@gis_export_bp.route('/results/<job_id>', methods=['GET'])
+@rbac_required('view_gis_export_results')
+def proxy_get_gis_export_results(job_id: str):
+    """Gateway endpoint to proxy requests for GIS export job results."""
+    current_app.logger.info(f"Gateway received /api/v1/gis-export/results/{job_id} request")
+    response_data, status_code = sync_core_client.get(f"/gis-export/results/{job_id}")
+    current_app.logger.info(f"Response from Sync Core (/gis-export/results) forwarded with status {status_code}")
+    return jsonify(response_data), status_code
+
+# Add other GIS export related proxy routes if needed
+```
+
+#### 5. Update `terrafusion_gateway/main.py` to Register GIS Export Blueprint
+
+```python
+# terrafusion_gateway/main.py (snippet - within create_app function)
+# ...
+# Import blueprints
+from .routes.valuation_routes import valuation_bp
+from .routes.reporting_routes import reporting_bp
+from .routes.gis_export_routes import gis_export_bp # Added
+# ...
+
+def create_app():
+    app = Flask(__name__)
+    # ... (app configuration, logging, metrics hooks as before) ...
+
+    # Register blueprints
+    if valuation_bp:
+        app.register_blueprint(valuation_bp)
+        app.logger.info("Valuation blueprint registered to Gateway.")
+    if reporting_bp:
+        app.register_blueprint(reporting_bp)
+        app.logger.info("Reporting blueprint registered to Gateway.")
+    if gis_export_bp: # Added
+        app.register_blueprint(gis_export_bp)
+        app.logger.info("GIS Export blueprint registered to Gateway.")
+    # ...
+    return app
+```

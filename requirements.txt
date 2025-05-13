@@ -38,3 +38,4 @@ flask-wtf
 pytest
 aiosqlite
 httpx
+aiosqlite

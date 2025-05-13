@@ -1,222 +1,156 @@
 # GIS Export Plugin
 
-The GIS Export plugin provides functionality for exporting geographic data from the TerraFusion platform in various formats suitable for use in GIS applications. This plugin is part of the TerraFusion SyncService and follows the same architectural patterns as other plugins.
+This plugin provides GIS (Geographic Information System) export functionality for the TerraFusion SyncService platform. It allows users to export geographic data in various formats with customizable parameters.
 
 ## Features
 
-- Export property data in multiple GIS formats (GeoJSON, Shapefile, KML)
-- Area of interest filtering (bounding box, polygon)
-- Layer selection for including specific data types
-- Asynchronous job processing with status tracking
-- Support for filtering and listing export jobs
-- Cancellation of in-progress export jobs
+- Export geographic data in multiple formats (GeoJSON, Shapefile, etc.)
+- Define area of interest by coordinates, boundaries, or features
+- Select specific layers for export
+- Customize export parameters
+- Asynchronous job processing
+- Comprehensive job status tracking
+- Job management (list, cancel, results)
 
 ## API Endpoints
 
-### Submit Export Job
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/plugins/v1/gis-export/run` | POST | Submit a new export job |
+| `/plugins/v1/gis-export/status/{job_id}` | GET | Get the status of a specific job |
+| `/plugins/v1/gis-export/list` | GET | List all export jobs |
+| `/plugins/v1/gis-export/cancel/{job_id}` | POST | Cancel a running job |
+| `/plugins/v1/gis-export/health` | GET | Health check endpoint |
+| `/plugins/v1/gis-export/metrics` | GET | Prometheus metrics endpoint |
 
-```
-POST /plugins/v1/gis-export/run
-```
+## Usage
 
-Request body:
-```json
-{
-  "export_format": "GeoJSON",
-  "county_id": "COUNTY01",
-  "area_of_interest": {
-    "type": "bbox",
-    "coordinates": [-120.5, 46.0, -120.0, 46.5]
-  },
-  "layers": ["parcels", "zoning"],
-  "parameters": {
-    "include_assessment_data": true,
-    "simplify_geometries": true
-  }
-}
-```
+### Submit an Export Job
 
-Response:
-```json
-{
-  "job_id": "550e8400-e29b-41d4-a716-446655440000",
-  "export_format": "GeoJSON",
-  "county_id": "COUNTY01",
-  "status": "PENDING",
-  "message": "GIS export job accepted and queued for processing.",
-  "parameters": {
+```python
+import requests
+import json
+
+export_job = {
+    "export_format": "GeoJSON",
+    "county_id": "EXAMPLE_COUNTY",
     "area_of_interest": {
-      "type": "bbox",
-      "coordinates": [-120.5, 46.0, -120.0, 46.5]
+        "type": "bbox",
+        "coordinates": [-120.5, 46.0, -120.0, 46.5]
     },
     "layers": ["parcels", "zoning"],
-    "include_assessment_data": true,
-    "simplify_geometries": true
-  },
-  "created_at": "2025-05-13T12:34:56.789Z",
-  "updated_at": "2025-05-13T12:34:56.789Z",
-  "started_at": null,
-  "completed_at": null
+    "parameters": {
+        "include_assessment_data": True,
+        "simplify_geometries": True
+    }
 }
+
+response = requests.post(
+    "http://localhost:8080/plugins/v1/gis-export/run",
+    json=export_job
+)
+
+job_id = response.json()["job_id"]
+print(f"Job submitted with ID: {job_id}")
 ```
 
 ### Check Job Status
 
-```
-GET /plugins/v1/gis-export/status/{job_id}
-```
+```python
+import requests
 
-Response:
-```json
-{
-  "job_id": "550e8400-e29b-41d4-a716-446655440000",
-  "export_format": "GeoJSON",
-  "county_id": "COUNTY01",
-  "status": "RUNNING",
-  "message": "GIS export job is being processed.",
-  "parameters": { ... },
-  "created_at": "2025-05-13T12:34:56.789Z",
-  "updated_at": "2025-05-13T12:35:00.123Z",
-  "started_at": "2025-05-13T12:35:00.123Z",
-  "completed_at": null
-}
-```
+job_id = "your-job-id"
+response = requests.get(
+    f"http://localhost:8080/plugins/v1/gis-export/status/{job_id}"
+)
 
-### Get Job Results
-
-```
-GET /plugins/v1/gis-export/results/{job_id}
-```
-
-Response:
-```json
-{
-  "job_id": "550e8400-e29b-41d4-a716-446655440000",
-  "export_format": "GeoJSON",
-  "county_id": "COUNTY01",
-  "status": "COMPLETED",
-  "message": "GIS export completed successfully.",
-  "parameters": { ... },
-  "created_at": "2025-05-13T12:34:56.789Z",
-  "updated_at": "2025-05-13T12:36:30.456Z",
-  "started_at": "2025-05-13T12:35:00.123Z",
-  "completed_at": "2025-05-13T12:36:30.456Z",
-  "result": {
-    "result_file_location": "/gis_exports/COUNTY01/550e8400-e29b-41d4-a716-446655440000_parcels_zoning.geojson",
-    "result_file_size_kb": 5120,
-    "result_record_count": 2500
-  }
-}
+status = response.json()
+print(f"Job status: {status['status']}")
+print(f"Message: {status['message']}")
 ```
 
 ### List Jobs
 
-```
-GET /plugins/v1/gis-export/list?county_id=COUNTY01&export_format=GeoJSON&status=COMPLETED&limit=20&offset=0
-```
+```python
+import requests
 
-Response:
-```json
-[
-  {
-    "job_id": "550e8400-e29b-41d4-a716-446655440000",
-    "export_format": "GeoJSON",
-    "county_id": "COUNTY01",
-    "status": "COMPLETED",
-    "message": "GIS export completed successfully.",
-    "parameters": { ... },
-    "created_at": "2025-05-13T12:34:56.789Z",
-    "updated_at": "2025-05-13T12:36:30.456Z",
-    "started_at": "2025-05-13T12:35:00.123Z",
-    "completed_at": "2025-05-13T12:36:30.456Z"
-  },
-  ...
-]
+response = requests.get(
+    "http://localhost:8080/plugins/v1/gis-export/list",
+    params={
+        "county_id": "EXAMPLE_COUNTY",
+        "status": "COMPLETED",
+        "limit": 10
+    }
+)
+
+jobs = response.json()
+print(f"Found {len(jobs)} jobs")
+for job in jobs:
+    print(f"Job {job['job_id']}: {job['status']}")
 ```
 
-### Cancel Job
+### Cancel a Job
 
-```
-POST /plugins/v1/gis-export/cancel/{job_id}
-```
+```python
+import requests
 
-Response:
-```json
-{
-  "job_id": "550e8400-e29b-41d4-a716-446655440000",
-  "export_format": "GeoJSON",
-  "county_id": "COUNTY01",
-  "status": "FAILED",
-  "message": "Job cancelled by user request",
-  "parameters": { ... },
-  "created_at": "2025-05-13T12:34:56.789Z",
-  "updated_at": "2025-05-13T12:35:10.789Z",
-  "started_at": "2025-05-13T12:35:00.123Z",
-  "completed_at": "2025-05-13T12:35:10.789Z"
-}
+job_id = "your-job-id"
+response = requests.post(
+    f"http://localhost:8080/plugins/v1/gis-export/cancel/{job_id}"
+)
+
+result = response.json()
+print(f"Job cancelled: {result['status']}")
 ```
 
-### Health Check
+## Job Statuses
 
-```
-GET /plugins/v1/gis-export/health
-```
-
-Response:
-```json
-{
-  "status": "healthy",
-  "plugin": "gis_export",
-  "version": "1.0.0",
-  "timestamp": "2025-05-13T12:34:56.789Z"
-}
-```
-
-## Export Formats
-
-The plugin supports the following export formats:
-
-- **GeoJSON**: Standard format for representing geographic features with non-spatial attributes
-- **Shapefile**: ESRI format widely used in desktop GIS applications (exported as a ZIP archive)
-- **KML**: Keyhole Markup Language format for use with Google Earth and similar applications
-
-## Layer Types
-
-Available layers include:
-
-- **parcels**: Property parcel boundaries with basic attributes
-- **zoning**: Zoning information for parcels
-- **assessments**: Property assessment data
-- **sales**: Historical sales data
-- **improvements**: Building and improvement data
+- `PENDING`: Job is queued and waiting to be processed
+- `RUNNING`: Job is currently being processed
+- `COMPLETED`: Job has completed successfully
+- `FAILED`: Job has failed
+- `CANCELLED`: Job was cancelled by the user
 
 ## Metrics
 
-The plugin collects the following Prometheus metrics:
+The plugin provides the following Prometheus metrics:
 
-- `gis_export_jobs_submitted_total`: Total number of export jobs submitted
-- `gis_export_jobs_completed_total`: Total number of successful export jobs
-- `gis_export_jobs_failed_total`: Total number of failed export jobs
-- `gis_export_processing_duration_seconds`: Time spent processing export jobs
-- `gis_export_file_size_kb`: Size of exported files in kilobytes
-- `gis_export_record_count`: Number of records in exported files
+- `gis_export_jobs_submitted_total`: Counter for submitted jobs
+- `gis_export_jobs_completed_total`: Counter for completed jobs
+- `gis_export_jobs_failed_total`: Counter for failed jobs
+- `gis_export_processing_duration_seconds`: Histogram for job processing time
+- `gis_export_file_size_kb`: Histogram for exported file sizes
+- `gis_export_record_count`: Histogram for number of records in exports
 
-## Local Development
+All metrics include labels for `county_id` and `export_format` to enable filtering and aggregation.
 
-For testing during development, use the simplified API launcher:
+## Custom Metrics Registry
 
+To avoid conflicts with other plugins, this plugin uses a custom Prometheus registry when the `GIS_EXPORT_USE_CUSTOM_REGISTRY` environment variable is set to `1`. This prevents duplicate metric errors when multiple plugins define metrics with similar names.
+
+### Example:
+
+```python
+from terrafusion_sync.plugins.gis_export.metrics import GisExportMetrics
+
+# Initialize with custom registry
+GisExportMetrics.initialize(use_default_registry=False)
+
+# Track job submission
+GisExportMetrics.jobs_submitted.labels(
+    county_id="EXAMPLE_COUNTY",
+    export_format="GeoJSON",
+    status_on_submit="PENDING"
+).inc()
 ```
-python simplified_gis_export_api.py
-```
 
-This will start a FastAPI server on port 8083 with just the GIS Export endpoints enabled.
+## Architecture
 
-## Testing
+The plugin follows the standard architecture pattern:
 
-Use the included test script to verify functionality:
-
-```
-python run_gis_export_tests.py
-```
-
-This will submit a test export job and verify that it completes successfully.
+- **Model**: Defines the database schema for GIS export jobs
+- **Schema**: Defines the API request/response models
+- **Router**: Handles HTTP requests and routes them to services
+- **Service**: Contains business logic for processing exports
+- **Tasks**: Background processing of export jobs
+- **Metrics**: Prometheus metrics for monitoring

@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 # API settings
 API_BASE_URL = "http://localhost:8083"
-GIS_EXPORT_URL = f"{API_BASE_URL}/gis-export"
+GIS_EXPORT_URL = f"{API_BASE_URL}/plugins/v1/gis-export"
 TEST_TIMEOUT = 30  # seconds
 
 def test_health():
