@@ -2,8 +2,8 @@
 Prometheus metrics for TerraFusion SyncService.
 
 This module defines Prometheus metrics for tracking the performance and health
-of various components of the TerraFusion SyncService, particularly the
-Valuation Plugin.
+of various components of the TerraFusion SyncService, including the
+Valuation Plugin, Reporting Plugin, and GIS Export Plugin.
 """
 import time
 from typing import Callable, Dict, Any
@@ -47,6 +47,53 @@ VALUATION_JOBS_COMPLETED = Counter(
     'terrafusion_valuation_jobs_completed_total',
     'Total number of valuation jobs completed',
     ['county_id', 'valuation_method', 'status']
+)
+
+# === GIS Export Plugin Metrics ===
+
+# Counter for GIS export job submissions
+GIS_EXPORT_JOBS_SUBMITTED_TOTAL = Counter(
+    'gis_export_jobs_submitted_total',
+    'Total number of GIS export jobs submitted.',
+    ['county_id', 'export_format', 'status_on_submit']
+)
+
+# Counter for GIS export job completions
+GIS_EXPORT_JOBS_COMPLETED_TOTAL = Counter(
+    'gis_export_jobs_completed_total',
+    'Total number of GIS export jobs completed successfully.',
+    ['county_id', 'export_format']
+)
+
+# Counter for GIS export job failures
+GIS_EXPORT_JOBS_FAILED_TOTAL = Counter(
+    'gis_export_jobs_failed_total',
+    'Total number of GIS export jobs that failed.',
+    ['county_id', 'export_format', 'failure_reason']
+)
+
+# Histogram for GIS export job processing duration
+GIS_EXPORT_PROCESSING_DURATION_SECONDS = Histogram(
+    'gis_export_processing_duration_seconds',
+    'Histogram of GIS export job processing time in seconds.',
+    ['county_id', 'export_format'],
+    buckets=[5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0, 1800.0, 3600.0, float('inf')]
+)
+
+# Histogram for GIS export file size
+GIS_EXPORT_FILE_SIZE_KB = Histogram(
+    'gis_export_file_size_kb',
+    'Size of exported GIS files in kilobytes.',
+    ['county_id', 'export_format'],
+    buckets=[1, 10, 100, 1000, 10000, 100000, 1000000]
+)
+
+# Histogram for GIS export record count
+GIS_EXPORT_RECORD_COUNT = Histogram(
+    'gis_export_record_count',
+    'Number of records in exported GIS files.',
+    ['county_id', 'export_format'],
+    buckets=[1, 10, 100, 1000, 10000, 100000, 1000000]
 )
 
 # Histogram for valuation job duration
