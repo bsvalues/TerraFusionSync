@@ -36,3 +36,5 @@ prometheus-client
 flask-login
 flask-wtf
 pytest
+aiosqlite
+httpx
