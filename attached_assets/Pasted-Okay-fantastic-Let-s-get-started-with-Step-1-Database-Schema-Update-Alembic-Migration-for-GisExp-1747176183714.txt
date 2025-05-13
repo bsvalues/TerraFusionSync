@@ -1,0 +1,46 @@
+Okay, fantastic! Let's get started with Step 1: Database Schema Update (Alembic Migration for GisExportJob) from the "Replit AI Agent: GIS Export Plugin - Integration & Operationalization Context" document (ID replit_ai_gis_export_context_v1).
+
+Here's what you need to do:
+
+Verify the GisExportJob Model:
+
+Open your terrafusion_platform/terrafusion_sync/core_models.py file.
+Confirm that the GisExportJob class (as defined in the "TerraFusion - GIS Exports Plugin Scaffold" document, ID terrafusion_gis_export_plugin_scaffold_v1) is present.
+Most importantly, ensure it inherits from the same Base = declarative_base() that your other models (PropertyOperational, ValuationJob, ReportJob, MarketAnalysisJob) use. This is crucial for Alembic to detect it.
+Generate the Alembic Migration Script:
+
+Open your terminal.
+Navigate to your terrafusion_platform/terrafusion_sync/ directory (this is where your alembic.ini file should be).
+Make sure your .env file (at the project root terrafusion_platform/.env) has the TERRAFUSION_OPERATIONAL_DB_URL correctly set up, as Alembic's env.py will use it to connect to your database and compare the schema.
+Run the following command:
+Bash
+
+alembic revision -m "add_gis_export_jobs_table" --autogenerate
+This will create a new Python file in your terrafusion_sync/alembic_migrations/versions/ directory. The filename will start with a revision ID followed by _add_gis_export_jobs_table.py.
+Review the Generated Migration Script:
+
+Open the newly generated migration file.
+down_revision: Carefully check this variable. It must point to the revision ID of your previous migration script (e.g., the one that created the market_analysis_jobs table or whichever was the last one applied). If it's incorrect, Alembic won't be able to build the history correctly.
+upgrade() function:
+It should contain op.create_table('gis_export_jobs', ...)
+Verify that all the columns from your GisExportJob model are present with the correct SQLAlchemy types (which translate to SQL types, e.g., sa.String, postgresql.UUID, sa.JSON, sa.DateTime).
+Check for the primary key (job_id).
+Check for any indexes you expect (e.g., on export_format, county_id, status).
+downgrade() function:
+It should contain op.drop_table('gis_export_jobs').
+It should also contain op.drop_index(...) for any indexes created in the upgrade() function.
+If autogenerate missed something or got something slightly wrong (it's good but not always perfect), you can manually edit this script to match your model precisely.
+Apply the Migration to Your Database:
+
+Ensure your PostgreSQL database service is running (e.g., via docker-compose up -d terrafusion_db_operational).
+From the terrafusion_platform/terrafusion_sync/ directory in your terminal, run:
+Bash
+
+alembic upgrade head
+This command executes the upgrade() function in your new migration script, creating the gis_export_jobs table in your database.
+Verify Table Creation in PostgreSQL:
+
+Connect to your PostgreSQL database (the one TERRAFUSION_OPERATIONAL_DB_URL points to) using psql, pgAdmin, DBeaver, or your preferred PostgreSQL client.
+Check that the gis_export_jobs table now exists.
+Inspect its columns, data types, and indexes to ensure they match your GisExportJob model and the migration script.
+Once you've completed these steps, the database schema will be ready for the GIS Export plugin. Let me know how it goes, or if you'd like me to generate an example of what the reviewed Alembic migration script for gis_export_jobs should look like (assuming the GisExportJob model from terrafusion_gis_export_plugin_scaffold_v1 is correct)
