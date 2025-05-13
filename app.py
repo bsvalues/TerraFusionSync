@@ -1922,6 +1922,23 @@ def market_analysis_dashboard():
                           title="Market Analysis Dashboard")
 
 
+@app.route('/gis-export-dashboard')
+@requires_auth
+def gis_export_dashboard():
+    """GIS Export Dashboard for generating and managing geographic data exports."""
+    user = get_current_user()
+    # Get county ID from session or query parameter
+    county_id = request.args.get('county_id', session.get('selected_county', 'DEFAULT_COUNTY'))
+    
+    # Store the selected county in session for future use
+    session['selected_county'] = county_id
+    
+    return render_template('gis_export.html',
+                          user=user,
+                          county_id=county_id,
+                          title="GIS Export Dashboard")
+
+
 @app.route('/dashboard/audit')
 @requires_auth
 def audit_dashboard():
