@@ -30,5 +30,13 @@ try:
 except ImportError as e:
     logger.warning(f"Could not register market analysis plugin: {e}")
 
+# Import and register GIS Export plugin
+try:
+    from .gis_export.router import router as gis_export_router
+    plugins_router.include_router(gis_export_router, prefix="/gis-export", tags=["gis-export"])
+    logger.info("Registered GIS export plugin")
+except ImportError as e:
+    logger.warning(f"Could not register GIS export plugin: {e}")
+
 # Export the main plugins router
 __all__ = ["plugins_router"]
