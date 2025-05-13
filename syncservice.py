@@ -18,6 +18,14 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import APIKeyHeader, HTTPBearer, HTTPAuthorizationCredentials
 
+# Import plugins router
+try:
+    from terrafusion_sync.plugins import plugins_router
+    PLUGINS_AVAILABLE = True
+except ImportError as e:
+    PLUGINS_AVAILABLE = False
+    logging.getLogger(__name__).warning(f"Could not import plugins: {e}")
+
 # Import the safe system monitoring component
 try:
     from manual_fix_system_monitoring import safe_monitor, get_safe_system_info
@@ -48,6 +56,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include plugins router if available
+if PLUGINS_AVAILABLE:
+    app.include_router(plugins_router)
+    logger.info("Successfully included plugins router")
 
 # System monitoring (fallback implementation if SafeSystemMonitor is not available)
 class BasicSystemMonitor:
