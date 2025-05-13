@@ -381,6 +381,28 @@ class MarketAnalysisJob(Base):
     message = Column(Text, nullable=True, comment="Status message or error details")
     
     parameters_json = Column(JSON, nullable=True, comment="JSON object storing parameters for the analysis (e.g., date ranges, property types)")
+
+
+# ==========================================
+# GIS Export Models
+# ==========================================
+
+class GisExportJob(Base):
+    """
+    Represents a GIS data export job, its status, parameters, and output location.
+    """
+    __tablename__ = "gis_export_jobs"
+
+    job_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), comment="Unique ID for the GIS export job")
+    export_format = Column(String(50), index=True, nullable=False, comment="Requested export format (e.g., GeoJSON, Shapefile, KML)")
+    county_id = Column(String(50), index=True, nullable=False, comment="County ID for the data export")
+    area_of_interest_json = Column(JSON, nullable=True, comment="JSON defining the area of interest (e.g., bounding box, polygon WKT/GeoJSON)")
+    layers_json = Column(JSON, nullable=True, comment="JSON array of layer names or types to include in the export")
+    
+    status = Column(String(20), index=True, nullable=False, default="PENDING", comment="e.g., PENDING, RUNNING, COMPLETED, FAILED")
+    message = Column(Text, nullable=True, comment="Status message or error details")
+    
+    parameters_json = Column(JSON, nullable=True, comment="Additional JSON object storing other parameters for the export")
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -389,11 +411,12 @@ class MarketAnalysisJob(Base):
     completed_at = Column(DateTime, nullable=True)
 
     # Result Information
-    result_summary_json = Column(JSON, nullable=True, comment="Summary of the analysis results")
-    result_data_location = Column(String(255), nullable=True, comment="Location/identifier for more detailed result data (e.g., S3 path, table name)")
+    result_file_location = Column(String(255), nullable=True, comment="Location of the generated export file (e.g., S3 path, downloadable link)")
+    result_file_size_kb = Column(Integer, nullable=True)
+    result_record_count = Column(Integer, nullable=True)
 
     def __repr__(self):
-        return f"<MarketAnalysisJob(job_id='{self.job_id}', analysis_type='{self.analysis_type}', county_id='{self.county_id}', status='{self.status}')>"
+        return f"<GisExportJob(job_id='{self.job_id}', export_format='{self.export_format}', county_id='{self.county_id}', status='{self.status}')>"
         
     def to_dict(self) -> Dict[str, Any]:
         """Convert the model to a dictionary for API responses."""
