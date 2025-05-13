@@ -1933,7 +1933,7 @@ def gis_export_dashboard():
     # Store the selected county in session for future use
     session['selected_county'] = county_id
     
-    return render_template('gis_export.html',
+    return render_template('gis_export_dashboard.html',
                           user=user,
                           county_id=county_id,
                           title="GIS Export Dashboard")
