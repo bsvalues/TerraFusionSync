@@ -159,7 +159,8 @@ def test_failed_gis_export_job():
     # Prepare request data with special failure format
     export_data = {
         "county_id": TEST_COUNTY_ID,
-        "export_format": TEST_FAIL_FORMAT,  # Special format that triggers failure
+        "format": TEST_FAIL_FORMAT,  # Special format that triggers failure
+        "username": "test_user",  # Required username field
         "area_of_interest": TEST_AREA_OF_INTEREST,
         "layers": TEST_LAYERS,
         "parameters": TEST_PARAMETERS
@@ -228,7 +229,8 @@ def test_list_gis_export_jobs():
     # Create a job with different format for filtering tests
     export_data = {
         "county_id": TEST_COUNTY_ID,
-        "export_format": "KML",  # Different format
+        "format": "KML",  # Different format
+        "username": "test_user",  # Required username field
         "area_of_interest": TEST_AREA_OF_INTEREST,
         "layers": TEST_LAYERS,
         "parameters": TEST_PARAMETERS
@@ -252,8 +254,8 @@ def test_list_gis_export_jobs():
     data = response.json()
     assert len(data) >= 2
     
-    # Test filtering by export_format
-    response = requests.get(f"{BASE_URL}/list?export_format={TEST_EXPORT_FORMAT}")
+    # Test filtering by format
+    response = requests.get(f"{BASE_URL}/list?format={TEST_EXPORT_FORMAT}")
     assert response.status_code == 200
     data = response.json()
     assert any(item["job_id"] == job_id1 for item in data)
