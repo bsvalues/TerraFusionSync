@@ -33,7 +33,7 @@ def main():
     
     if not args.skip_unit:
         print("Running GIS Export unit tests...")
-        unit_cmd = cmd + ["tests/plugins/test_gis_export.py"]
+        unit_cmd = cmd + ["tests/plugins/test_gis-export.py"]
         try:
             subprocess.run(unit_cmd, check=True)
             print("✅ GIS Export unit tests passed")
@@ -45,7 +45,7 @@ def main():
     
     if not args.skip_integration:
         print("Running GIS Export integration tests...")
-        integration_cmd = cmd + ["tests/plugins/test_gis_export_end_to_end.py"]
+        integration_cmd = cmd + ["tests/plugins/test_gis-export_end_to_end.py"]
         try:
             subprocess.run(integration_cmd, check=True)
             print("✅ GIS Export integration tests passed")

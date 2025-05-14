@@ -75,9 +75,9 @@ def test_create_gis_export_job():
     print(f"✅ Created GIS export job: {data['job_id']}")
     return data["job_id"]
 
-def test_get_gis_export_status(job_id):
+def test_get_gis-export_status(job_id):
     """Test retrieving the status of a GIS export job."""
-    # Check status endpoint
+    # Check status endpoint with job_id_param parameter name
     response = requests.get(f"{BASE_URL}/status/{job_id}")
     
     # Check status code and response
@@ -102,10 +102,10 @@ def test_get_gis_export_status(job_id):
     print(f"✅ Verified GIS export job status: {data['status']}")
     return data["status"]
 
-def test_complete_gis_export_workflow():
+def test_complete_gis-export_workflow():
     """Test the complete workflow: submit -> check status -> get results."""
     # Create job
-    job_id = test_create_gis_export_job()
+    job_id = test_create_gis-export_job()
     
     # Check status initially
     response = requests.get(f"{BASE_URL}/status/{job_id}")
@@ -149,7 +149,7 @@ def test_complete_gis_export_workflow():
     print(f"✅ Completed end-to-end workflow test. Results: {results_data['result']['result_file_location']}")
     return job_id
 
-def test_failed_gis_export_job():
+def test_failed_gis-export_job():
     """Test a GIS export job that is expected to fail."""
     # Prepare request data with special failure format
     export_data = {
@@ -196,10 +196,10 @@ def test_failed_gis_export_job():
     
     print(f"✅ Verified failure handling with error: {results_data['message']}")
 
-def test_cancel_gis_export_job():
+def test_cancel_gis-export_job():
     """Test cancelling a GIS export job."""
     # Create a job
-    job_id = test_create_gis_export_job()
+    job_id = test_create_gis-export_job()
     
     # Cancel the job
     response = requests.post(f"{BASE_URL}/cancel/{job_id}")
@@ -215,10 +215,10 @@ def test_cancel_gis_export_job():
     
     print(f"✅ Successfully cancelled job: {job_id}")
 
-def test_list_gis_export_jobs():
+def test_list_gis-export_jobs():
     """Test listing GIS export jobs with various filters."""
     # Create a few test jobs
-    job_id1 = test_create_gis_export_job()
+    job_id1 = test_create_gis-export_job()
     
     # Create a job with different format for filtering tests
     export_data = {
@@ -256,7 +256,7 @@ def test_list_gis_export_jobs():
     
     print(f"✅ Successfully tested list filtering with {len(data)} matching jobs")
 
-def test_gis_export_plugin_health():
+def test_gis-export_plugin_health():
     """Test the GIS Export plugin health check endpoint."""
     response = requests.get(f"{BASE_URL}/health")
     
@@ -270,7 +270,7 @@ def test_gis_export_plugin_health():
     
     # Verify health data
     assert data["status"] == "healthy"
-    assert data["plugin"] == "gis_export"
+    assert data["plugin"] == "gis-export"
     assert "version" in data
     assert "timestamp" in data
     
@@ -282,19 +282,19 @@ def run_all_tests():
     
     try:
         # Test health first to ensure service is up
-        test_gis_export_plugin_health()
+        test_gis-export_plugin_health()
         
         # Run basic workflow test
-        test_complete_gis_export_workflow()
+        test_complete_gis-export_workflow()
         
         # Test failure case
-        test_failed_gis_export_job()
+        test_failed_gis-export_job()
         
         # Test cancellation
-        test_cancel_gis_export_job()
+        test_cancel_gis-export_job()
         
         # Test listing and filtering
-        test_list_gis_export_jobs()
+        test_list_gis-export_jobs()
         
         print("\n✅ All GIS Export tests completed successfully!")
         return 0
