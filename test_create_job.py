@@ -12,10 +12,17 @@ def test_create_gis_export_job(host="localhost"):
     """Test creating a new GIS export job."""
     base_url = f"http://{host}:8080/plugins/v1/gis-export"
     
-    # Create a new job
+    # Create a new job with all required fields
     job_data = {
         "username": "test_user",
         "format": "shapefile",
+        "county_id": "MONT001",  # Required field
+        "area_of_interest": {
+            "name": "North District",
+            "type": "district",
+            "coordinates": [[-77.2, 39.1], [-77.1, 39.1], [-77.1, 39.2], [-77.2, 39.2], [-77.2, 39.1]]
+        },  # Required field as dictionary
+        "layers": ["parcels", "buildings"],  # Required field
         "properties": ["address", "value", "owner"],
         "query_filters": {"county": "Montgomery"},
         "metadata": {"test_run": True, "priority": "normal"}
@@ -23,7 +30,7 @@ def test_create_gis_export_job(host="localhost"):
     
     try:
         print("Submitting job creation request...")
-        response = requests.post(f"{base_url}/jobs", json=job_data, timeout=10)
+        response = requests.post(f"{base_url}/run", json=job_data, timeout=10)
         print(f"Job creation status code: {response.status_code}")
         print(f"Job creation response: {response.text}")
         
