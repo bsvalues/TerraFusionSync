@@ -13,8 +13,17 @@ from typing import Dict, Any, List, Optional, Union
 
 from fastapi import FastAPI, Depends, HTTPException, status, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field, validator
+
+# Import prometheus_client for metrics
+try:
+    import prometheus_client
+    from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+    PROMETHEUS_AVAILABLE = True
+except ImportError:
+    PROMETHEUS_AVAILABLE = False
+    logger.warning("prometheus_client not available, metrics endpoint will return minimal data")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -28,6 +37,17 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
+
+# System metrics - defined here to avoid duplication
+if PROMETHEUS_AVAILABLE:
+    # Basic system metrics
+    SYSTEM_CPU_USAGE = Gauge('gis_export_system_cpu_percent', 'Current CPU usage percentage')
+    SYSTEM_MEMORY_USAGE = Gauge('gis_export_system_memory_percent', 'Current memory usage percentage')
+    SYSTEM_DISK_USAGE = Gauge('gis_export_system_disk_percent', 'Current disk usage percentage')
+    
+    # API metrics
+    API_REQUESTS_TOTAL = Counter('gis_export_api_requests_total', 'Total API requests', ['endpoint', 'method', 'status'])
+    API_REQUEST_DURATION = Histogram('gis_export_api_request_duration_seconds', 'API request duration in seconds', ['endpoint'])
 
 # Add CORS middleware
 app.add_middleware(
