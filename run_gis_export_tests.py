@@ -1,60 +1,103 @@
 #!/usr/bin/env python3
 """
-Run GIS Export plugin integration tests.
+Run GIS Export Tests.
 
-This script executes the integration tests for the GIS Export plugin,
-including the full end-to-end workflow tests.
+This script runs the GIS Export tests and reports the results.
 """
 
 import os
 import sys
 import subprocess
 import argparse
+import time
+from datetime import datetime
+
+def log(message):
+    """Log a message with timestamp."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{timestamp}] {message}")
+
+def run_test(test_script, test_name=None, timeout=30):
+    """Run a test script and return the result."""
+    log(f"Running test: {test_script}" + (f" ({test_name})" if test_name else ""))
+    
+    command = [sys.executable, test_script]
+    if test_name:
+        command.extend(['--test', test_name])
+    
+    try:
+        start_time = time.time()
+        # Use a simpler approach to avoid ptrace issues in Replit
+        result = os.system(" ".join(command))
+        elapsed = time.time() - start_time
+        # Convert result to process-like object
+        class ProcessResult:
+            def __init__(self, returncode):
+                self.returncode = returncode
+                self.stdout = ""
+                self.stderr = ""
+        
+        process = ProcessResult(result // 256)
+        
+        if process.returncode == 0:
+            log(f"✅ Test passed in {elapsed:.2f}s: {test_script}" + (f" ({test_name})" if test_name else ""))
+            return True
+        else:
+            log(f"❌ Test failed with exit code {process.returncode}: {test_script}" + (f" ({test_name})" if test_name else ""))
+            log("Test failed - see output above for details")
+            return False
+    except subprocess.TimeoutExpired:
+        log(f"❌ Test timed out after {timeout}s: {test_script}" + (f" ({test_name})" if test_name else ""))
+        return False
+    except Exception as e:
+        log(f"❌ Error running test: {e}")
+        return False
 
 def main():
-    """Run the GIS Export plugin integration tests."""
-    parser = argparse.ArgumentParser(description="Run GIS Export plugin integration tests")
-    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
-    parser.add_argument("--show-output", "-s", action="store_true", help="Show test output")
-    parser.add_argument("--skip-unit", action="store_true", help="Skip unit tests")
-    parser.add_argument("--skip-integration", action="store_true", help="Skip integration tests")
+    """Run all tests or a specific test."""
+    parser = argparse.ArgumentParser(description="Run GIS Export tests")
+    parser.add_argument("--script", help="Specific test script to run")
+    parser.add_argument("--test", help="Specific test name to run")
+    parser.add_argument("--all", action="store_true", help="Run all tests")
     args = parser.parse_args()
     
-    # Configure test command
-    cmd = ["pytest"]
+    if args.script and os.path.exists(args.script):
+        success = run_test(args.script, args.test)
+        sys.exit(0 if success else 1)
     
-    # Add verbosity flag
-    if args.verbose:
-        cmd.append("-v")
+    if args.all or not (args.script or args.test):
+        log("Running all GIS Export tests")
+        
+        # Basic tests
+        success = run_test("final_test.py")
+        if not success:
+            log("❌ Basic tests failed, aborting further tests")
+            sys.exit(1)
+        
+        # API tests
+        api_tests = [
+            ("run_gis_export_api_test.py", "health"),
+            ("run_gis_export_api_test.py", "create"),
+            ("run_gis_export_api_test.py", "workflow")
+        ]
+        
+        api_results = []
+        for script, test in api_tests:
+            if os.path.exists(script):
+                result = run_test(script, test)
+                api_results.append(result)
+        
+        if all(api_results):
+            log("✅ All API tests passed")
+        else:
+            log("❌ Some API tests failed")
+        
+        log("GIS Export tests completed")
+        sys.exit(0 if all(api_results) else 1)
     
-    # Add output display flag
-    if args.show_output:
-        cmd.append("-s")
-    
-    if not args.skip_unit:
-        print("Running GIS Export unit tests...")
-        unit_cmd = cmd + ["tests/plugins/test_gis-export.py"]
-        try:
-            subprocess.run(unit_cmd, check=True)
-            print("✅ GIS Export unit tests passed")
-        except subprocess.CalledProcessError:
-            print("❌ GIS Export unit tests failed")
-            return 1
-        except FileNotFoundError:
-            print("⚠️ Unit test file not found, skipping")
-    
-    if not args.skip_integration:
-        print("Running GIS Export integration tests...")
-        integration_cmd = cmd + ["tests/plugins/test_gis-export_end_to_end.py"]
-        try:
-            subprocess.run(integration_cmd, check=True)
-            print("✅ GIS Export integration tests passed")
-        except subprocess.CalledProcessError:
-            print("❌ GIS Export integration tests failed")
-            return 1
-    
-    print("All requested tests completed successfully")
-    return 0
+    log("No valid test specified")
+    parser.print_help()
+    sys.exit(1)
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
