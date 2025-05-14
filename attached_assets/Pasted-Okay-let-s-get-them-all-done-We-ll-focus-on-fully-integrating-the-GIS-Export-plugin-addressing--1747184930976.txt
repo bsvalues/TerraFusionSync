@@ -1,0 +1,35 @@
+Okay, "let's get them all done!" We'll focus on fully integrating the GIS Export plugin, addressing potential timeout issues by ensuring robust background task handling, and then setting the stage for the integration tests.
+
+Phase 1: Solidify the GIS Export Plugin Logic and Integration
+
+This phase will focus on ensuring the terrafusion_sync/plugins/gis_export/router.py is correctly implemented for database interaction in its background task and that it's properly registered with the main terrafusion_sync application.
+
+I'll update the GIS Export plugin scaffold (ID: terrafusion_gis_export_plugin_scaffold_v1) with a more robust version of router.py.
+
+Key Refinements in terrafusion_sync/plugins/gis_export/router.py:
+
+Robust Session Handling in Background Task:
+The _process_gis_export_job (renamed from _simulate_gis_export_processing for clarity) now explicitly uses async with AsyncSessionFactory() as db: to get a new database session. This AsyncSessionFactory is imported from connectors.postgres and should be the globally configured one. This is crucial for background tasks to operate independently of the request-response cycle's session.
+Error handling within the background task attempts to update the job status to FAILED in the database.
+Clearer Logging: Added more specific logging.
+Pydantic Model Usage: Uses model_validate() for converting SQLAlchemy ORM objects to Pydantic response models, which is the Pydantic v2 way.
+Parameter Reconstruction for Response: The /status and /results endpoints now reconstruct the parameters dictionary for the Pydantic response model from the individual JSON fields stored in the database (area_of_interest_json, layers_json, parameters_json). This keeps the API response consistent with the request structure.
+Metric Instrumentation: Assumes Prometheus metrics are correctly imported and used.
+Next Steps for You (to operationalize these changes):
+
+Apply Code Changes: Update your terrafusion_sync/plugins/gis_export/router.py with the refined code above. Ensure terrafusion_sync/connectors/postgres.py correctly defines and exports AsyncSessionFactory.
+Alembic Migration (Crucial - if not already perfect):
+You mentioned the table exists. Double-check its schema against the GisExportJob model (especially area_of_interest_json, layers_json, parameters_json, result_file_location, result_file_size_kb, result_record_count).
+If there are discrepancies, generate and apply an Alembic migration to alter the table:
+Bash
+
+# In terrafusion_sync/
+alembic revision -m "align_gis_export_jobs_table_with_model" --autogenerate
+# Review the script, then:
+alembic upgrade head
+Restart Services: docker-compose up --build -d (or restart terrafusion_sync if running directly).
+Run Integration Tests:
+Focus on tests/integration/test_gis_export_end_to_end.py (from terrafusion_gis_export_plugin_scaffold_v1).
+Execute: pytest tests/integration/test_gis_export_end_to_end.py -v -s
+These tests will now interact with the database-backed background task. Debug any issues until they pass. The timeout issues you mentioned earlier might be related to how the background task was handling sessions or if the simulated work was too long for test client timeouts. The refined background task session handling should help.
+Once these integration tests are passing with the database-backed GIS Export plugin, it will be at the same level of completion as your other plugins!
