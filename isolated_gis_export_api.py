@@ -708,6 +708,16 @@ async def health_check():
         "time": datetime.now(timezone.utc).isoformat()
     }
 
+@app.get("/plugins/v1/gis-export/health")
+async def plugin_health_check():
+    """Plugin health check endpoint."""
+    return {
+        "status": "healthy",
+        "plugin": "gis_export",
+        "version": "1.0.0",
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
 @app.get("/metrics")
 async def metrics():
     """
