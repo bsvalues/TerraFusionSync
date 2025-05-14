@@ -9,7 +9,7 @@ import uuid
 import logging
 import json
 from datetime import datetime
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional, Tuple, Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -48,8 +48,11 @@ class GisExportService:
             The created GisExportJob instance
             
         Raises:
-            ValueError: If export format is not supported for the county
+            ValueError: If export format is not supported for the county or if db is None
         """
+        if db is None:
+            raise ValueError("Database session is required")
+            
         # Validate export format against county configuration
         county_config = get_county_config()
         if not county_config.validate_export_format(county_id, export_format):
@@ -128,7 +131,13 @@ class GisExportService:
             
         Returns:
             The updated GisExportJob instance or None if not found
+            
+        Raises:
+            ValueError: If db is None
         """
+        if db is None:
+            raise ValueError("Database session is required")
+            
         # Prepare update values
         values = {"status": status, "updated_at": datetime.utcnow()}
         
@@ -194,7 +203,13 @@ class GisExportService:
             
         Returns:
             List of GisExportJob instances
+            
+        Raises:
+            ValueError: If db is None
         """
+        if db is None:
+            raise ValueError("Database session is required")
+            
         # Build query conditions
         conditions = []
         
@@ -223,7 +238,7 @@ class GisExportService:
         
         # Execute query
         result = await db.execute(stmt)
-        jobs = result.scalars().all()
+        jobs = list(result.scalars().all())  # Convert to list explicitly
         
         logger.info(f"Retrieved {len(jobs)} GIS export jobs")
         
@@ -254,19 +269,15 @@ class GisExportService:
             return None
         
         # Check if job can be cancelled
-        if job.status in ["COMPLETED", "FAILED", "CANCELLED"]:
+        # String comparison for status to avoid ColumnElement.__bool__ issues
+        if str(job.status) in ["COMPLETED", "FAILED", "CANCELLED"]:
             logger.warning(f"Cannot cancel GIS export job {job_id}: Job is already {job.status}")
             raise ValueError(f"Cannot cancel job that is already {job.status}")
         
         # Update job status to CANCELLING or CANCELLED
-        if job.status == "RUNNING":
-            # For running jobs, set to CANCELLING first
-            new_status = "CANCELLING"
-            message = "Job cancellation requested"
-        else:
-            # For pending jobs, cancel immediately
-            new_status = "CANCELLED"
-            message = "Job cancelled before processing started"
+        # String comparison for status to avoid ColumnElement.__bool__ issues
+        new_status = "CANCELLING" if str(job.status) == "RUNNING" else "CANCELLED"
+        message = "Job cancellation requested" if str(job.status) == "RUNNING" else "Job cancelled before processing started"
         
         # Update the job
         return await cls.update_job_status(
