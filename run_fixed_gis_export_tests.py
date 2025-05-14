@@ -10,56 +10,115 @@ import os
 import sys
 import subprocess
 import argparse
+import logging
+from datetime import datetime
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger("gis_export_tests")
+
+def run_tests(test_file=None, verbose=False, test_marker=None):
+    """
+    Run the GIS Export plugin tests using pytest.
+    
+    Args:
+        test_file: Optional specific test file to run
+        verbose: Whether to run tests in verbose mode
+        test_marker: Optional test marker to run only specific tests
+        
+    Returns:
+        int: 0 if tests passed, non-zero otherwise
+    """
+    # Build pytest command
+    command = ["python", "-m", "pytest"]
+    
+    # Add verbosity flags
+    if verbose:
+        command.extend(["-xvs"])
+    else:
+        command.extend(["-v"])
+    
+    # Add test marker if specified
+    if test_marker:
+        command.append(f"-m {test_marker}")
+    
+    # Add test file(s)
+    if test_file:
+        # If a specific file is provided, run just that file
+        command.append(test_file)
+    else:
+        # Otherwise, run the fixed test file
+        command.append("tests/plugins/fixed_test_gis_export_end_to_end.py")
+    
+    # Log the command
+    logger.info(f"Running: {' '.join(command)}")
+    
+    try:
+        # Run the tests and capture the output
+        process = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False
+        )
+        
+        # Print the output
+        print("\n--- Test Output ---")
+        print(process.stdout)
+        
+        if process.stderr:
+            print("\n--- Error Output ---")
+            print(process.stderr)
+        
+        if process.returncode == 0:
+            logger.info("GIS Export tests passed successfully!")
+        else:
+            logger.error(f"GIS Export tests failed with return code {process.returncode}")
+        
+        return process.returncode
+    except Exception as e:
+        logger.error(f"Failed to run tests: {e}")
+        return 1
 
 def main():
-    """Run the fixed GIS Export plugin integration tests."""
-    parser = argparse.ArgumentParser(description="Run fixed GIS Export plugin integration tests")
-    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
-    parser.add_argument("--show-output", "-s", action="store_true", help="Show test output")
-    parser.add_argument("--skip-integration", action="store_true", help="Skip integration tests")
-    parser.add_argument("--use-component", action="store_true", help="Use component tests instead of pytest")
-    parser.add_argument("--host", default="localhost", help="Host where SyncService is running")
+    """Main function."""
+    parser = argparse.ArgumentParser(description="Run GIS Export plugin integration tests")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Run tests in verbose mode")
+    parser.add_argument("--file", "-f", help="Specific test file to run")
+    parser.add_argument("--marker", "-m", help="Run tests with specific marker (e.g., integration)")
     args = parser.parse_args()
     
-    # Set up environment variable for SyncService URL if using component tests
-    if args.use_component:
-        os.environ["SYNC_SERVICE_URL"] = f"http://{args.host}:8080"
+    logger.info("Starting GIS Export plugin tests")
     
-    if args.use_component:
-        print("Running component tests for GIS Export...")
-        cmd = ["python", "test_gis_export_component.py", f"--host={args.host}"]
-        try:
-            subprocess.run(cmd, check=True)
-            print("✅ GIS Export component tests passed")
-            return 0
-        except subprocess.CalledProcessError:
-            print("❌ GIS Export component tests failed")
-            return 1
+    # Record start time
+    start_time = datetime.now()
+    
+    # Run the tests
+    result = run_tests(
+        test_file=args.file,
+        verbose=args.verbose,
+        test_marker=args.marker
+    )
+    
+    # Record end time and calculate duration
+    end_time = datetime.now()
+    duration = (end_time - start_time).total_seconds()
+    
+    # Print summary
+    if result == 0:
+        logger.info(f"All tests passed in {duration:.2f} seconds!")
     else:
-        # Configure pytest command
-        cmd = ["pytest"]
-        
-        # Add verbosity flag
-        if args.verbose:
-            cmd.append("-v")
-        
-        # Add output display flag
-        if args.show_output:
-            cmd.append("-s")
-        
-        if not args.skip_integration:
-            print("Running fixed GIS Export integration tests...")
-            # Use the fixed test file
-            integration_cmd = cmd + ["tests/plugins/fixed_test_gis_export_end_to_end.py"]
-            try:
-                subprocess.run(integration_cmd, check=True)
-                print("✅ Fixed GIS Export integration tests passed")
-            except subprocess.CalledProcessError:
-                print("❌ Fixed GIS Export integration tests failed")
-                return 1
-        
-        print("All requested tests completed successfully")
-        return 0
+        logger.error(f"Tests failed after {duration:.2f} seconds!")
+    
+    # Exit with the test result code
+    sys.exit(result)
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
