@@ -1,0 +1,119 @@
+TerraFusion Platform: Operational Implementation Plan
+Based on: "TerraFusion Platform: Detailed Development Plan & Roadmap (v1.1)"
+Context: This plan operationalizes the immediate priorities, focusing on Phase 1, and integrates the strategy for the functionality demonstrated in the uploaded Sync Admin Dashboard files.
+
+Phase 1: Solidify Core Backend Plugins & Gateway Security (Immediate Focus)
+This phase is about bringing all four foundational backend plugins (Valuation, Reporting, Market Analysis, GIS Export) to a consistent state of "battle-readiness" (DB-backed, tested, observable via CI and Grafana) and implementing the MVP for API Gateway security.
+
+1. Finalize GIS Export Plugin (Immediate Priority - Target: ~May 21, 2025)
+
+Objective: Ensure the GIS Export plugin is fully integrated, tested, and observable.
+
+Current Status (as per your updates):
+
+GisExportJob model and Alembic migration are applied; gis_export_jobs table exists.
+
+Isolated API is functional and uses the database.
+
+Frontend dashboard template structure is good.
+
+Actionable Next Steps for YOU (or the Replit AI Agent):
+
+Complete & Run End-to-End Integration Tests:
+
+Finalize tests/integration/test_gis_export_end_to_end.py (from scaffold terrafusion_gis_export_integration_test_final_v1).
+
+Ensure tests cover the full /run -> /status -> /results workflow (success & simulated failure) using sync_client and db_session fixtures.
+
+Execute locally: pytest tests/integration/test_gis_export_end_to_end.py -v -s. Iterate until all tests pass.
+
+CI Pipeline Integration:
+
+Commit finalized plugin code & tests.
+
+Verify GitHub Actions CI runs GIS Export tests successfully (green build).
+
+Grafana Dashboard Verification/Update:
+
+Add/verify panels for GIS Export metrics (e.g., gis_export_jobs_submitted_total, gis_export_processing_duration_seconds).
+
+Trigger test jobs and confirm metrics populate in Grafana.
+
+Plugin Logic Refinement (Simulated to Placeholder Real):
+
+Enhance _simulate_gis_export_processing in terrafusion_sync/plugins/gis_export/router.py.
+
+Add placeholder interactions with PropertyOperational (e.g., log a count of properties for county_id).
+
+Simulate file creation (log filename) and update result_file_location in the GisExportJob DB record.
+
+2. Implement Gateway Security - MVP (Target: May 28, 2025)
+
+Objective: Secure all terrafusion_gateway API endpoints with foundational JWT-based authentication and basic RBAC.
+
+Actionable Next Steps for YOU (or the Replit AI Agent):
+
+Authentication Mechanism (JWT):
+
+Implement JWT generation on a new /auth/login endpoint in terrafusion_gateway/routes/auth_routes.py. For MVP, validate credentials against mock users (can be adapted from the rbac_auth.py USER_DB or county_configs/.../users.json).
+
+Create middleware in terrafusion_gateway/middleware/auth.py to validate JWTs from the Authorization: Bearer <token> header on protected routes. Store validated user identity (e.g., user_id, roles, permissions) in flask.g or flask.session.
+
+RBAC Implementation:
+
+Refine the rbac_required decorator (e.g., in terrafusion_gateway/middleware/auth.py).
+
+The decorator should extract user roles/permissions from the validated JWT (or session).
+
+Initially, map these roles/permissions based on data loaded from county_configs/<county>/rbac/<county>_users.json.
+
+Apply this decorator to all plugin proxy routes in the Gateway (Valuation, Reporting, Market Analysis, GIS Export), defining appropriate permissions for each action (e.g., execute_valuation, view_report_status).
+
+Testing: Write unit and integration tests for the Gateway's authentication and RBAC mechanisms.
+
+3. Implement Actual Plugin Logic (Core Domain Processing - Iterative, starting with Valuation)
+
+Objective: Replace simulated processing in plugin background tasks with initial real-world data processing logic.
+
+Actionable Next Steps for YOU (or the Replit AI Agent) - Valuation Plugin (Target for MVP Real Logic: June 7, 2025):
+
+Data Fetching: In terrafusion_sync/plugins/valuation/router.py's _run_actual_valuation_process, implement SQLAlchemy queries to fetch subject property and potential comparables from the properties_operational table based on county_id and basic criteria.
+
+AVM Stub: Implement a very basic comparable sales adjustment logic or a placeholder function that simulates calling an external AVM.
+
+Result Storage: Populate estimated_value, valuation_method_used, comparables_used_json, etc., in the valuation_jobs table with actual (even if simplified) data.
+
+Update Tests: Refine tests/integration/test_valuation_end_to_end.py to assert against these more realistic outputs.
+
+Subsequent Plugins: Apply the same approach sequentially to Reporting, Market Analysis, and GIS Export plugins. For GIS Export, this means integrating actual GIS data processing (e.g., using GeoPandas, Fiona to query PropertyOperational geometry and generate a GeoJSON file).
+
+4. Frontend Hook-Up Sweep (Target: May 19, 2025 - Review Feasibility, may shift post-Gateway Security)
+
+Objective: Ensure basic frontend components can make API calls to the (soon-to-be-secured) gateway and receive valid responses.
+
+Actionable Next Steps for YOU (or the Replit AI Agent, or Frontend Team):
+
+Identify key API endpoints in terrafusion_gateway that the initial frontend views (e.g., for Valuation, Reporting) will consume.
+
+In the conceptual frontend application (e.g., in terra_fusion_frontends/), implement basic API client logic to call these endpoints.
+
+If Gateway Security MVP is in place, ensure the frontend can handle the JWT authentication flow (e.g., store token after login, send it in Authorization header).
+
+Verify that basic data requests from the frontend to the gateway return expected (even if mock or simulated from plugins) data and not 404s or unhandled auth errors.
+
+Phase 2 & 3: Data Ecosystem, UI, Advanced Features, & Polish (As per PM Report v1.1)
+This operational plan focuses on getting Phase 1 solidified. The detailed tasks for Phase 2 (Data Ingestion, Specialized DBs, Robust Task Queuing, UI Development, SDK) and Phase 3 (Advanced AI/ML, User Management, Archiving, Full Docs, Cloud Hardening) from the "TerraFusion Platform: Detailed Development Plan & Roadmap (v1.1)" remain the long-term guide.
+
+Integrating Functionality from the Standalone "Sync Admin Dashboard":
+
+As per the review (ID: pm_review_and_uploaded_files_analysis_v2), the functionality for manual file uploads, staging, and approvals will be re-architected.
+
+Timing: This should be prioritized after the Gateway Security MVP (Phase 1, Task 2) is complete and a foundational pattern for frontend applications is established (likely during early Phase 2).
+
+Implementation:
+
+Backend: A new file_ingestion_plugin in terrafusion_sync using PostgreSQL tables (e.g., manual_file_uploads, manual_upload_audit_log) managed by Alembic.
+
+Frontend: A new "Manual Data Operations Dashboard" application in terra_fusion_frontends/ consuming APIs via the secured terrafusion_gateway.
+
+This focused plan should provide clear direction for the immediate future. The highest priority is to get the GIS Export plugin fully tested and integrated into CI/Observability, then immediately pivot to implementing the Gateway Security MVP.
