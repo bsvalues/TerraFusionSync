@@ -669,7 +669,7 @@ async def list_jobs(
     logger.info(f"Listed {len(paginated_jobs)} GIS export jobs from memory storage (fallback)")
     return paginated_jobs
 
-@app.delete("/plugins/v1/gis-export/cancel/{job_id}", response_model=GisExportJobBase)
+@app.post("/plugins/v1/gis-export/cancel/{job_id}", response_model=GisExportJobBase)
 async def cancel_job(job_id: int):
     """Cancel a GIS export job."""
     if job_id not in EXPORT_JOBS:
@@ -717,6 +717,128 @@ async def plugin_health_check():
         "version": "1.0.0",
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
+
+@app.get("/plugins/v1/gis-export/results/{job_id_param}")
+async def get_export_job_results(job_id_param: str):
+    """
+    Get the results of a completed GIS export job.
+    
+    Args:
+        job_id_param: The job ID
+        
+    Returns:
+        The job results with download information
+    """
+    logger.info(f"Fetching results for GIS export job: {job_id_param}")
+    
+    try:
+        # Try database first if available
+        if async_session_factory:
+            async with managed_db_session() as session:
+                if session is None:
+                    raise ValueError("Database session not available")
+                
+                # Use SQLAlchemy text for raw SQL
+                from sqlalchemy.sql import text
+                
+                query = text("SELECT * FROM gis_export_jobs WHERE job_id = :job_id")
+                result = await session.execute(query, {"job_id": job_id_param})
+                job_row = result.mappings().first()
+                
+                if not job_row:
+                    return JSONResponse(
+                        status_code=404,
+                        content={"detail": f"GIS export job '{job_id_param}' not found"}
+                    )
+                
+                # Build response
+                job_data = {
+                    "job_id": job_row["job_id"],
+                    "county_id": job_row["county_id"],
+                    "export_format": job_row["export_format"],
+                    "status": job_row["status"],
+                    "message": job_row["message"],
+                    "created_at": job_row["created_at"],
+                    "started_at": job_row["started_at"],
+                    "completed_at": job_row["completed_at"],
+                    "updated_at": job_row["updated_at"],
+                    "parameters": {}
+                }
+                
+                # Add area of interest and layers to parameters
+                job_data["parameters"] = {
+                    "area_of_interest": job_row["area_of_interest_json"],
+                    "layers": job_row["layers_json"]
+                }
+                
+                # Add additional parameters if available
+                if job_row["parameters_json"]:
+                    job_data["parameters"].update(job_row["parameters_json"])
+                
+                # Add result information if job is completed
+                result_data = None
+                if job_row["status"] == "COMPLETED":
+                    result_data = {
+                        "result_file_location": job_row["result_file_location"],
+                        "result_file_size_kb": job_row["result_file_size_kb"],
+                        "result_record_count": job_row["result_record_count"]
+                    }
+                
+                # Return combined response
+                return {
+                    **job_data,
+                    "result": result_data
+                }
+                
+        # Fallback to in-memory storage
+        # For in-memory storage, convert UUID to integer for backward compatibility
+        memory_job_id = int(job_id_param.split("-")[0], 16) % 10000
+        
+        # Get the job
+        job = EXPORT_JOBS.get(memory_job_id)
+        if not job:
+            return JSONResponse(
+                status_code=404,
+                content={"detail": f"GIS export job '{job_id_param}' not found"}
+            )
+        
+        # Build response
+        job_data = {
+            "job_id": job["job_id"],
+            "county_id": job["county_id"],
+            "export_format": job["export_format"],
+            "status": job["status"],
+            "message": job["message"],
+            "created_at": job["created_at"],
+            "started_at": job.get("started_at"),
+            "completed_at": job.get("completed_at"),
+            "parameters": {
+                "area_of_interest": job.get("area_of_interest"),
+                "layers": job.get("layers", [])
+            }
+        }
+        
+        # Add result information if job is completed
+        result_data = None
+        if job["status"] == "COMPLETED":
+            result_data = {
+                "result_file_location": job.get("download_url"),
+                "result_file_size_kb": 5120,  # Simulated size
+                "result_record_count": 2500   # Simulated count
+            }
+        
+        # Return combined response
+        return {
+            **job_data,
+            "result": result_data
+        }
+        
+    except Exception as e:
+        logger.error(f"Error retrieving GIS export job results: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Failed to retrieve job results: {str(e)}"}
+        )
 
 @app.get("/metrics")
 async def metrics():
