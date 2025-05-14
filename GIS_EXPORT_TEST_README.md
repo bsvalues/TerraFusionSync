@@ -16,6 +16,21 @@ The GIS Export plugin allows users to export geographic data in various formats.
 
 ## Running the Tests
 
+### Test Runner
+
+For convenience, we've included a test runner script that can run individual tests or all tests:
+
+```bash
+# Run all tests
+python run_gis_export_tests.py --all
+
+# Run a specific test script
+python run_gis_export_tests.py --script final_test.py
+
+# Run a specific test in a script
+python run_gis_export_tests.py --script run_gis_export_api_test.py --test health
+```
+
 ### Quick Test
 
 For a quick check of basic functionality:

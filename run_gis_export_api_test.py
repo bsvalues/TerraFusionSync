@@ -160,6 +160,7 @@ def test_end_to_end_workflow(base_url):
     
     # Step 2: Monitor job status
     max_retries = 10
+    status = None
     for i in range(max_retries):
         print(f"\nChecking job status (attempt {i+1}/{max_retries})...")
         status = test_job_status(base_url, job_id)
@@ -199,20 +200,24 @@ def main():
     
     # Run the specified test
     if args.test == "health":
-        result = test_health_check(base_url)
+        test_result = test_health_check(base_url)
     elif args.test == "create":
-        result = test_create_job(base_url) is not None
+        test_result = test_create_job(base_url) is not None
     elif args.test == "workflow":
         # Run complete workflow
-        result = test_end_to_end_workflow(base_url)
+        test_result = test_end_to_end_workflow(base_url)
+    else:
+        print(f"Unknown test: {args.test}")
+        sys.exit(1)
     
     # Print summary
-    if result:
+    if test_result:
         print("\n✅ All tests passed successfully!")
     else:
         print("\n❌ Tests failed")
-    
-    sys.exit(0 if result else 1)
+        
+    # Return result for exit code
+    sys.exit(0 if test_result else 1)
 
 if __name__ == "__main__":
     main()
