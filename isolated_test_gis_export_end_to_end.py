@@ -260,6 +260,10 @@ def test_gis_export_plugin_health():
     """Test the GIS Export plugin health check endpoint."""
     response = requests.get(f"{BASE_URL}/health")
     
+    # Debug output
+    print(f"Health check status code: {response.status_code}")
+    print(f"Health check response: {response.text}")
+    
     # Check status code and response
     assert response.status_code == 200
     data = response.json()
@@ -317,7 +321,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     # Update base URL if needed
-    BASE_URL = f"http://{args.host}:{args.port}/plugins/v1/gis_export"
+    BASE_URL = f"http://{args.host}:{args.port}/plugins/v1/gis-export"
     
     # Run the tests
     sys.exit(run_all_tests())
