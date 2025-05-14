@@ -1,0 +1,100 @@
+# county_configs/benton_wa/mappings/benton_wa_mappings.yaml
+# Conceptual Data Mapping for Benton County (PACS -> TerraFusion Operational DB)
+
+# This file defines how fields from the legacy CAMA system (e.g., PACS)
+# for Benton County map to the TerraFusion canonical schema (e.g., properties_operational table).
+
+# --- General Mapping Configuration ---
+source_system_type: "PACS_SQL_SERVER"
+target_schema_version: "1.1"
+county_id_default: "benton_wa" # Used if source data doesn't explicitly provide it for a record
+
+# --- Table Mappings ---
+table_mappings:
+  - source_table_name: "vwPropertyMaster" # Example view or table in legacy PACS
+    target_table_name: "properties_operational" # Target table in TerraFusion PostgreSQL
+    # Optional: SQL query to select specific data from source_table_name if not a direct table map
+    # source_query: "SELECT PARID, LEGALDESC, SITUSADDR, ... FROM vwPropertyMaster WHERE IsActive = 1"
+    primary_key_source_fields: ["PARID"] # Fields forming the unique key in the source
+    primary_key_target_fields: ["property_id"] # Corresponding field in the target
+
+    field_map:
+      - source: "PARID"
+        target: "property_id"
+        type: "string"
+        required: true
+        # transformations:
+        #   - type: "strip_whitespace"
+        #   - type: "to_upper"
+      - source: "CNTYID" # Assuming county ID might be in source, otherwise use county_id_default
+        target: "county_id"
+        type: "string"
+        required: true
+        default_from_config: "county_id_default"
+      - source: "SitusFullAddress"
+        target: "situs_address_full"
+        type: "string"
+      - source: "SitusStreetNumber"
+        target: "situs_street_number"
+        type: "string"
+      - source: "SitusStreetName"
+        target: "situs_street_name"
+        type: "string"
+      # ... (many more field mappings) ...
+      - source: "YearBuilt"
+        target: "year_built"
+        type: "integer"
+        # transformations:
+        #   - type: "to_int_or_null" # Handle potential non-integer values gracefully
+      - source: "AssessedValueTotal"
+        target: "current_assessed_value_total"
+        type: "float"
+        # transformations:
+        #   - type: "to_float_or_null"
+      - source: "LastSaleDate"
+        target: "last_sale_date"
+        type: "datetime"
+        # transformations:
+        #   - type: "parse_date"
+        #     format: "%Y%m%d" # Example source date format
+      - source: "LegacyPropertyClass"
+        target: "property_class"
+        type: "string"
+        # transformations:
+        #   - type: "value_map"
+        #     map_source: "property_class_value_map.json" # External file for complex value mappings
+        #     default: "UNKNOWN"
+
+  - source_table_name: "vwImprovementDetails"
+    target_table_name: "improvement_details_operational" # Assumes this model/table exists
+    primary_key_source_fields: ["PARID", "ImprvSeq"]
+    foreign_keys:
+      - source_fields: ["PARID"]
+        target_table: "properties_operational"
+        target_fields: ["property_id"]
+    field_map:
+      - source: "PARID"
+        target: "property_id_fk" # Foreign key column in improvement_details_operational
+        type: "string"
+        required: true
+      - source: "ImprvSeq"
+        target: "improvement_sequence_number"
+        type: "integer"
+      - source: "ImprovementType"
+        target: "improvement_type_code"
+        type: "string"
+      # ... (other improvement fields)
+
+# --- Value Mappings (Optional - can be separate files or embedded) ---
+# value_maps:
+#   property_class_map:
+#     "R10": "Single Family Residential"
+#     "C20": "Commercial Office"
+#     "A05": "Agricultural Cropland"
+
+# --- Transformation Definitions (Conceptual) ---
+# transformations_library:
+#   strip_whitespace: "value.strip() if value else None"
+#   to_upper: "value.upper() if value else None"
+#   to_int_or_null: "int(value) if value and str(value).isdigit() else None"
+#   parse_date_format_Ymd: "datetime.strptime(value, '%Y%m%d') if value else None"

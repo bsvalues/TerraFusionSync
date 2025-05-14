@@ -1,39 +1,87 @@
 """
 TerraFusion SyncService - GIS Export Plugin - Schemas
 
-This module defines the Pydantic models/schemas for the GIS Export plugin.
-These schemas are used for request validation, response serialization, and API documentation.
+This module defines Pydantic models used for data validation and serialization
+in the GIS Export plugin API.
 """
 
-from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any, List
-import uuid
-import datetime
+from typing import Dict, List, Any, Optional
+from datetime import datetime
+from pydantic import BaseModel, Field, validator
+import json
 
 class GisExportRunRequest(BaseModel):
-    export_format: str = Field(..., example="GeoJSON", description="Desired output format (e.g., GeoJSON, Shapefile, KML).")
-    county_id: str = Field(..., example="COUNTY01")
-    area_of_interest: Optional[Dict[str, Any]] = Field(None, example={"type": "bbox", "coordinates": [-120.5, 46.0, -120.0, 46.5]}, description="Defines the spatial extent.")
-    layers: List[str] = Field(..., example=["parcels", "zoning"], description="List of data layers to include.")
-    parameters: Optional[Dict[str, Any]] = Field(None, example={"include_assessment_data": True}, description="Additional export parameters.")
+    """Schema for running a GIS export job."""
+    
+    county_id: str = Field(..., description="ID of the county")
+    format: str = Field(..., description="Export format (GeoJSON, Shapefile, KML, etc)")
+    username: str = Field(..., description="Username of the person requesting the export")
+    area_of_interest: Dict[str, Any] = Field(
+        ..., 
+        description="GeoJSON object defining the area of interest"
+    )
+    layers: List[str] = Field(..., description="List of layers to include in the export")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None, 
+        description="Additional parameters for the export (e.g., simplify_tolerance, coordinate_system)"
+    )
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "county_id": "benton_wa",
+                "format": "GeoJSON",
+                "username": "county_user",
+                "area_of_interest": {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [-122.48, 37.78],
+                        [-122.48, 37.80],
+                        [-122.46, 37.80],
+                        [-122.46, 37.78],
+                        [-122.48, 37.78]
+                    ]]
+                },
+                "layers": ["parcels", "buildings", "zoning"],
+                "parameters": {
+                    "include_attributes": True,
+                    "simplify_tolerance": 0.0001,
+                    "coordinate_system": "EPSG:4326"
+                }
+            }
+        }
 
 class GisExportJobStatusResponse(BaseModel):
-    job_id: str
-    export_format: str
-    county_id: str
-    status: str
-    message: Optional[str] = None
-    parameters: Optional[Dict[str, Any]] = None # Includes AOI and layers for reference
-    created_at: datetime.datetime
-    updated_at: datetime.datetime
-    started_at: Optional[datetime.datetime] = None
-    completed_at: Optional[datetime.datetime] = None
+    """Schema for GIS export job status response."""
+    
+    job_id: str = Field(..., description="Unique ID of the export job")
+    county_id: str = Field(..., description="ID of the county")
+    export_format: str = Field(..., description="Export format")
+    status: str = Field(..., description="Current status of the job")
+    message: Optional[str] = Field(None, description="Status message or error details")
+    parameters: Dict[str, Any] = Field({}, description="Export parameters")
+    created_at: datetime = Field(..., description="When the job was created")
+    updated_at: datetime = Field(..., description="When the job was last updated")
+    started_at: Optional[datetime] = Field(None, description="When processing started")
+    completed_at: Optional[datetime] = Field(None, description="When processing completed")
 
 class GisExportResultData(BaseModel):
-    result_file_location: Optional[str] = None # URL or path to the exported file
-    result_file_size_kb: Optional[int] = None
-    result_record_count: Optional[int] = None
-    # Add other relevant result metadata
+    """Schema for GIS export result data."""
+    
+    file_location: Optional[str] = Field(None, description="URL or path to the export file")
+    file_size_kb: Optional[int] = Field(None, description="Size of the export file in KB")
+    record_count: Optional[int] = Field(None, description="Number of records in the export")
+    data: Optional[Dict[str, Any]] = Field(None, description="Inline GeoJSON data if applicable")
 
-class GisExportJobResultResponse(GisExportJobStatusResponse):
-    result: Optional[GisExportResultData] = None
+class GisExportJobResultResponse(BaseModel):
+    """Schema for GIS export job result response."""
+    
+    job_id: str = Field(..., description="Unique ID of the export job")
+    county_id: str = Field(..., description="ID of the county")
+    export_format: str = Field(..., description="Export format")
+    status: str = Field(..., description="Current status of the job")
+    message: Optional[str] = Field(None, description="Status message or error details")
+    parameters: Dict[str, Any] = Field({}, description="Export parameters")
+    created_at: datetime = Field(..., description="When the job was created")
+    completed_at: Optional[datetime] = Field(None, description="When processing completed")
+    result: Optional[GisExportResultData] = Field(None, description="Export result data")

@@ -1,419 +1,290 @@
 """
-TerraFusion SyncService - GIS Export Plugin - Service
+TerraFusion SyncService - GIS Export Plugin - Service Layer
 
-This module contains the core business logic for GIS data export operations.
-It is responsible for processing export requests, generating GIS data files,
-and managing the export job lifecycle.
+This module provides service layer functionality for the GIS Export plugin,
+handling business logic and database operations.
 """
 
-import logging
 import uuid
+import logging
 import json
-import datetime
-import time
-import asyncio
+from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import update, and_
 
-from terrafusion_sync.core_models import GisExportJob, PropertyOperational
-from .metrics import (
-    GIS_EXPORT_JOBS_COMPLETED_TOTAL,
-    GIS_EXPORT_JOBS_FAILED_TOTAL,
-    GIS_EXPORT_PROCESSING_DURATION_SECONDS,
-    GIS_EXPORT_FILE_SIZE_KB,
-    GIS_EXPORT_RECORD_COUNT
-)
+from terrafusion_sync.core_models import GisExportJob
+from terrafusion_sync.plugins.gis_export.county_config import get_county_config
 
 logger = logging.getLogger(__name__)
 
 class GisExportService:
-    """Service class for GIS export operations."""
+    """Service class for GIS Export operations."""
 
-    @staticmethod
+    @classmethod
     async def create_export_job(
+        cls,
         export_format: str,
         county_id: str,
-        area_of_interest: Optional[Dict[str, Any]],
+        area_of_interest: Dict[str, Any],
         layers: List[str],
-        parameters: Optional[Dict[str, Any]],
-        db: AsyncSession
+        parameters: Optional[Dict[str, Any]] = None,
+        db: AsyncSession = None
     ) -> GisExportJob:
         """
-        Create a new GIS export job and store it in the database.
+        Create a new GIS export job.
         
         Args:
-            export_format: The format to export (GeoJSON, Shapefile, KML, etc.)
-            county_id: County identifier
-            area_of_interest: Spatial area definition (e.g., bounding box, polygon)
-            layers: List of data layers to include
-            parameters: Additional export parameters
+            export_format: Format of the export (e.g., GeoJSON, Shapefile, KML)
+            county_id: ID of the county
+            area_of_interest: GeoJSON object defining the area of interest
+            layers: List of layers to export
+            parameters: Additional parameters for the export
             db: Database session
             
         Returns:
-            GisExportJob: The created job
+            The created GisExportJob instance
+            
+        Raises:
+            ValueError: If export format is not supported for the county
         """
-        job_id = str(uuid.uuid4())
+        # Validate export format against county configuration
+        county_config = get_county_config()
+        if not county_config.validate_export_format(county_id, export_format):
+            valid_formats = county_config.get_available_formats(county_id)
+            raise ValueError(
+                f"Export format '{export_format}' is not supported for county '{county_id}'. "
+                f"Supported formats are: {', '.join(valid_formats)}"
+            )
+        
+        # Create the new job
         new_job = GisExportJob(
-            job_id=job_id,
+            job_id=str(uuid.uuid4()),
             export_format=export_format,
             county_id=county_id,
             area_of_interest_json=area_of_interest,
             layers_json=layers,
-            parameters_json=parameters,
+            parameters_json=parameters or {},
             status="PENDING",
-            message="GIS export job accepted and queued for processing.",
-            created_at=datetime.datetime.utcnow(),
-            updated_at=datetime.datetime.utcnow()
+            message="Job created and pending processing",
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
         )
         
+        # Save to database
         db.add(new_job)
         await db.commit()
         await db.refresh(new_job)
         
-        logger.info(f"Created GIS export job {job_id} for {county_id} in {export_format} format")
+        logger.info(f"Created GIS export job {new_job.job_id} for county {county_id} in format {export_format}")
+        
         return new_job
-
-    @staticmethod
-    async def get_job_by_id(job_id: str, db: AsyncSession) -> Optional[GisExportJob]:
+    
+    @classmethod
+    async def get_job_by_id(cls, job_id: str, db: AsyncSession) -> Optional[GisExportJob]:
         """
-        Retrieve a GIS export job by its ID.
+        Get a GIS export job by ID.
         
         Args:
-            job_id: The job ID to find
+            job_id: ID of the job to retrieve
             db: Database session
             
         Returns:
-            Optional[GisExportJob]: The job if found, None otherwise
+            The GisExportJob instance or None if not found
         """
-        result = await db.execute(select(GisExportJob).where(GisExportJob.job_id == job_id))
-        return result.scalars().first()
-
-    @staticmethod
-    async def list_jobs(
-        county_id: Optional[str] = None,
-        export_format: Optional[str] = None,
-        status: Optional[str] = None,
-        limit: int = 20,
-        offset: int = 0,
-        db: AsyncSession
-    ) -> List[GisExportJob]:
-        """
-        List GIS export jobs with optional filtering.
+        stmt = select(GisExportJob).where(GisExportJob.job_id == job_id)
+        result = await db.execute(stmt)
+        job = result.scalars().first()
         
-        Args:
-            county_id: Filter by county ID
-            export_format: Filter by export format
-            status: Filter by status
-            limit: Maximum number of jobs to return
-            offset: Number of jobs to skip
-            db: Database session
-            
-        Returns:
-            List[GisExportJob]: List of matching jobs
-        """
-        query = select(GisExportJob).order_by(GisExportJob.created_at.desc())
+        if not job:
+            logger.warning(f"GIS export job {job_id} not found")
         
-        if county_id:
-            query = query.where(GisExportJob.county_id == county_id)
-        
-        if export_format:
-            query = query.where(GisExportJob.export_format == export_format)
-        
-        if status:
-            query = query.where(GisExportJob.status == status)
-        
-        query = query.limit(limit).offset(offset)
-        result = await db.execute(query)
-        return result.scalars().all()
-
-    @staticmethod
+        return job
+    
+    @classmethod
     async def update_job_status(
-        job_id: str,
-        status: str,
-        message: str,
-        db: AsyncSession
+        cls, 
+        job_id: str, 
+        status: str, 
+        message: Optional[str] = None,
+        result_file_location: Optional[str] = None,
+        result_file_size_kb: Optional[int] = None,
+        result_record_count: Optional[int] = None,
+        db: AsyncSession = None
     ) -> Optional[GisExportJob]:
         """
         Update the status of a GIS export job.
         
         Args:
-            job_id: The job ID to update
-            status: New status value
-            message: Status message
+            job_id: ID of the job to update
+            status: New status of the job
+            message: Optional status message
+            result_file_location: Optional location of the result file
+            result_file_size_kb: Optional size of the result file in KB
+            result_record_count: Optional count of records in the result
             db: Database session
             
         Returns:
-            Optional[GisExportJob]: Updated job if found, None otherwise
+            The updated GisExportJob instance or None if not found
         """
-        result = await db.execute(
+        # Prepare update values
+        values = {"status": status, "updated_at": datetime.utcnow()}
+        
+        # Add optional fields if provided
+        if message is not None:
+            values["message"] = message
+        
+        if result_file_location is not None:
+            values["result_file_location"] = result_file_location
+        
+        if result_file_size_kb is not None:
+            values["result_file_size_kb"] = result_file_size_kb
+        
+        if result_record_count is not None:
+            values["result_record_count"] = result_record_count
+        
+        # Update timestamps based on status
+        if status == "RUNNING":
+            values["started_at"] = datetime.utcnow()
+        
+        if status in ["COMPLETED", "FAILED", "CANCELLED"]:
+            values["completed_at"] = datetime.utcnow()
+        
+        # Update in database
+        stmt = (
             update(GisExportJob)
             .where(GisExportJob.job_id == job_id)
-            .values(
-                status=status,
-                message=message,
-                updated_at=datetime.datetime.utcnow()
-            )
+            .values(**values)
             .returning(GisExportJob)
         )
         
-        await db.commit()
+        result = await db.execute(stmt)
         updated_job = result.scalars().first()
         
-        if updated_job:
-            logger.info(f"Updated job {job_id} status to {status}: {message}")
-        else:
-            logger.warning(f"Failed to update job {job_id} - not found")
-            
+        if not updated_job:
+            logger.warning(f"Failed to update GIS export job {job_id}: Job not found")
+            return None
+        
+        await db.commit()
+        
+        logger.info(f"Updated GIS export job {job_id} status to {status}")
+        
         return updated_job
-
-    @staticmethod
-    async def mark_job_running(
-        job_id: str,
-        db: AsyncSession
-    ) -> Optional[GisExportJob]:
+    
+    @classmethod
+    async def list_jobs(
+        cls,
+        county_id: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+        db: AsyncSession = None
+    ) -> List[GisExportJob]:
         """
-        Mark a job as running and record the start time.
+        List GIS export jobs with optional filtering.
         
         Args:
-            job_id: The job ID to update
+            county_id: Optional county ID to filter by
+            status: Optional status to filter by
+            limit: Maximum number of jobs to return
+            offset: Offset for pagination
             db: Database session
             
         Returns:
-            Optional[GisExportJob]: Updated job if found, None otherwise
+            List of GisExportJob instances
         """
-        now = datetime.datetime.utcnow()
-        result = await db.execute(
-            update(GisExportJob)
-            .where(GisExportJob.job_id == job_id)
-            .values(
-                status="RUNNING",
-                message="GIS export job is being processed.",
-                started_at=now,
-                updated_at=now
+        # Build query conditions
+        conditions = []
+        
+        if county_id:
+            conditions.append(GisExportJob.county_id == county_id)
+        
+        if status:
+            conditions.append(GisExportJob.status == status)
+        
+        # Create base query
+        if conditions:
+            stmt = (
+                select(GisExportJob)
+                .where(and_(*conditions))
+                .order_by(GisExportJob.created_at.desc())
+                .limit(limit)
+                .offset(offset)
             )
-            .returning(GisExportJob)
+        else:
+            stmt = (
+                select(GisExportJob)
+                .order_by(GisExportJob.created_at.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+        
+        # Execute query
+        result = await db.execute(stmt)
+        jobs = result.scalars().all()
+        
+        logger.info(f"Retrieved {len(jobs)} GIS export jobs")
+        
+        return jobs
+    
+    @classmethod
+    async def cancel_job(cls, job_id: str, db: AsyncSession) -> Optional[GisExportJob]:
+        """
+        Cancel a running or pending GIS export job.
+        
+        Args:
+            job_id: ID of the job to cancel
+            db: Database session
+            
+        Returns:
+            The updated GisExportJob instance or None if not found or cannot be cancelled
+            
+        Raises:
+            ValueError: If the job is already completed, failed, or cancelled
+        """
+        # Get the job first
+        stmt = select(GisExportJob).where(GisExportJob.job_id == job_id)
+        result = await db.execute(stmt)
+        job = result.scalars().first()
+        
+        if not job:
+            logger.warning(f"Cannot cancel GIS export job {job_id}: Job not found")
+            return None
+        
+        # Check if job can be cancelled
+        if job.status in ["COMPLETED", "FAILED", "CANCELLED"]:
+            logger.warning(f"Cannot cancel GIS export job {job_id}: Job is already {job.status}")
+            raise ValueError(f"Cannot cancel job that is already {job.status}")
+        
+        # Update job status to CANCELLING or CANCELLED
+        if job.status == "RUNNING":
+            # For running jobs, set to CANCELLING first
+            new_status = "CANCELLING"
+            message = "Job cancellation requested"
+        else:
+            # For pending jobs, cancel immediately
+            new_status = "CANCELLED"
+            message = "Job cancelled before processing started"
+        
+        # Update the job
+        return await cls.update_job_status(
+            job_id=job_id,
+            status=new_status,
+            message=message,
+            db=db
         )
-        
-        await db.commit()
-        updated_job = result.scalars().first()
-        
-        if updated_job:
-            logger.info(f"Marked job {job_id} as RUNNING")
-        else:
-            logger.warning(f"Failed to mark job {job_id} as RUNNING - not found")
-            
-        return updated_job
-
-    @staticmethod
-    async def mark_job_completed(
-        job_id: str,
-        result_file_location: str,
-        result_file_size_kb: int,
-        result_record_count: int,
-        db: AsyncSession
-    ) -> Optional[GisExportJob]:
+    
+    @classmethod
+    def get_default_export_parameters(cls, county_id: str) -> Dict[str, Any]:
         """
-        Mark a job as completed and store result information.
+        Get default export parameters for a county.
         
         Args:
-            job_id: The job ID to update
-            result_file_location: Where the export file is stored
-            result_file_size_kb: Size of the exported file in KB
-            result_record_count: Number of records in the export
-            db: Database session
+            county_id: ID of the county
             
         Returns:
-            Optional[GisExportJob]: Updated job if found, None otherwise
+            Dictionary of default parameters
         """
-        now = datetime.datetime.utcnow()
-        result = await db.execute(
-            update(GisExportJob)
-            .where(GisExportJob.job_id == job_id)
-            .values(
-                status="COMPLETED",
-                message="GIS export completed successfully.",
-                completed_at=now,
-                updated_at=now,
-                result_file_location=result_file_location,
-                result_file_size_kb=result_file_size_kb,
-                result_record_count=result_record_count
-            )
-            .returning(GisExportJob)
-        )
-        
-        await db.commit()
-        updated_job = result.scalars().first()
-        
-        if updated_job:
-            logger.info(f"Marked job {job_id} as COMPLETED with file at {result_file_location}")
-            
-            # Update metrics
-            GIS_EXPORT_JOBS_COMPLETED_TOTAL.labels(
-                county_id=updated_job.county_id, 
-                export_format=updated_job.export_format
-            ).inc()
-            
-            GIS_EXPORT_FILE_SIZE_KB.labels(
-                county_id=updated_job.county_id, 
-                export_format=updated_job.export_format
-            ).observe(result_file_size_kb)
-            
-            GIS_EXPORT_RECORD_COUNT.labels(
-                county_id=updated_job.county_id, 
-                export_format=updated_job.export_format
-            ).observe(result_record_count)
-            
-        else:
-            logger.warning(f"Failed to mark job {job_id} as COMPLETED - not found")
-            
-        return updated_job
-
-    @staticmethod
-    async def mark_job_failed(
-        job_id: str,
-        error_message: str,
-        db: AsyncSession,
-        failure_reason: str = "processing_error"
-    ) -> Optional[GisExportJob]:
-        """
-        Mark a job as failed with an error message.
-        
-        Args:
-            job_id: The job ID to update
-            error_message: Descriptive error message
-            db: Database session
-            failure_reason: Category of failure for metrics
-            
-        Returns:
-            Optional[GisExportJob]: Updated job if found, None otherwise
-        """
-        now = datetime.datetime.utcnow()
-        result = await db.execute(
-            update(GisExportJob)
-            .where(GisExportJob.job_id == job_id)
-            .values(
-                status="FAILED",
-                message=f"GIS export failed: {error_message}",
-                completed_at=now,
-                updated_at=now
-            )
-            .returning(GisExportJob)
-        )
-        
-        await db.commit()
-        updated_job = result.scalars().first()
-        
-        if updated_job:
-            logger.error(f"Marked job {job_id} as FAILED: {error_message}")
-            
-            # Update metrics
-            GIS_EXPORT_JOBS_FAILED_TOTAL.labels(
-                county_id=updated_job.county_id, 
-                export_format=updated_job.export_format, 
-                failure_reason=failure_reason
-            ).inc()
-            
-        else:
-            logger.warning(f"Failed to mark job {job_id} as FAILED - not found")
-            
-        return updated_job
-
-    @staticmethod
-    async def process_gis_export(
-        job: GisExportJob,
-        db: AsyncSession
-    ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
-        """
-        Process a GIS export job to generate data files.
-        
-        This is the core function that performs the actual GIS data export.
-        It would typically:
-        1. Retrieve property data based on the area of interest
-        2. Filter for the requested layers
-        3. Transform the data to the requested format
-        4. Write the file and return metadata
-        
-        Args:
-            job: The job to process
-            db: Database session
-            
-        Returns:
-            Tuple[bool, str, Optional[Dict]]: Success flag, message, and result data
-        """
-        logger.info(f"Processing GIS export job {job.job_id} [{job.export_format}]")
-        
-        # Record start time for metrics
-        start_time = time.monotonic()
-        
-        try:
-            # Extract job parameters
-            export_format = job.export_format
-            county_id = job.county_id
-            area_of_interest = job.area_of_interest_json
-            layers = job.layers_json if job.layers_json else []
-            parameters = job.parameters_json if job.parameters_json else {}
-            
-            # Mark job as running
-            await GisExportService.mark_job_running(job.job_id, db)
-            
-            # In a real implementation, this would:
-            # 1. Execute spatial queries based on area_of_interest
-            # 2. Apply layer filtering
-            # 3. Format data according to export_format
-            # 4. Generate/store the output file(s)
-            
-            # The demo implementation simply waits and returns simulated data
-            await asyncio.sleep(5)  # Simulate processing time
-            
-            # Simulated failure scenario for testing
-            if export_format == "FAIL_FORMAT_SIM":
-                raise ValueError("Simulated failure for testing purposes")
-            
-            # Calculate simulated file path and metadata
-            file_path = f"/gis_exports/{county_id}/{job.job_id}_{'_'.join(layers)}.{export_format.lower().replace('shapefile','zip')}"
-            file_size_kb = 5120  # Simulated
-            record_count = 2500  # Simulated
-            
-            # Mark job as completed
-            await GisExportService.mark_job_completed(
-                job.job_id,
-                file_path,
-                file_size_kb,
-                record_count,
-                db
-            )
-            
-            # Record processing time
-            processing_time = time.monotonic() - start_time
-            GIS_EXPORT_PROCESSING_DURATION_SECONDS.labels(
-                county_id=county_id,
-                export_format=export_format
-            ).observe(processing_time)
-            
-            logger.info(f"GIS export job {job.job_id} completed in {processing_time:.2f}s")
-            
-            # Return success result
-            return (True, "Export completed successfully", {
-                "file_path": file_path,
-                "file_size_kb": file_size_kb,
-                "record_count": record_count
-            })
-            
-        except Exception as e:
-            error_msg = f"Error processing GIS export: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            
-            # Mark job as failed
-            await GisExportService.mark_job_failed(job.job_id, str(e), db)
-            
-            # Record processing time for failed job too
-            processing_time = time.monotonic() - start_time
-            GIS_EXPORT_PROCESSING_DURATION_SECONDS.labels(
-                county_id=job.county_id,
-                export_format=job.export_format
-            ).observe(processing_time)
-            
-            # Return failure result
-            return (False, error_msg, None)
+        return get_county_config().get_default_parameters(county_id)
