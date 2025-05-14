@@ -1,0 +1,46 @@
+Okay, we've reviewed the comprehensive "TerraFusion Platform: Detailed Development Plan & Roadmap (v1.1)" (ID: terrafusion_platform_development_plan_v1) and the analysis of the uploaded Sync Admin Dashboard files (ID: pm_review_and_uploaded_files_analysis_v2).
+
+The immediate priority, as outlined in the roadmap, is to:
+Phase 1, Task 1: Finalize GIS Export Plugin
+
+You've already made significant progress on this:
+
+The GisExportJob model is in core_models.py.
+The Alembic migration for gis_export_jobs has been created and applied, and the table structure is verified.
+An isolated version of the GIS Export API was working and then enhanced to use the database.
+The agent reported fixing issues to ensure the main SyncService uses the correct, database-aware GIS Export plugin.
+The critical next step is to complete and thoroughly run the end-to-end integration tests for the GIS Export plugin to ensure it's fully operational within the main platform.
+
+Your Next Action:
+
+Locate or Finalize the Integration Test File:
+
+This is likely tests/integration/test_gis_export_end_to_end.py (as scaffolded in terrafusion_gis_export_plugin_scaffold_v1 and refined in terrafusion_gis_export_integration_test_final_v1).
+Ensure this test file uses the sync_client and db_session fixtures from your conftest.py and covers the full /run -> /status -> /results workflow for both success and simulated failure scenarios.
+Ensure Your Test Environment is Ready:
+
+Your test PostgreSQL database (defined by TEST_TERRAFUSION_OPERATIONAL_DB_URL in your .env file) must be running.
+The pg_engine fixture in conftest.py will handle running Alembic migrations to ensure the gis_export_jobs table (and all other tables) are present in this test database.
+All Python test dependencies (pytest, pytest-asyncio, httpx, etc.) must be installed in your environment.
+Run the GIS Export Integration Tests Locally:
+
+Navigate to your terrafusion_platform/ root directory in your terminal.
+Execute the specific test file:
+Bash
+
+pytest tests/integration/test_gis_export_end_to_end.py -v -s
+(Adjust the filename if yours is different, e.g., test_gis_export_plugin.py).
+The -v flag gives verbose output, and -s shows your print() statements, which can be helpful for debugging.
+What to look for:
+
+The tests should run without errors related to database schema or connectivity.
+The tests should pass, verifying that the GIS Export plugin correctly:
+Creates GisExportJob records in the database.
+Updates their status during the (simulated) background processing.
+Allows retrieval of status and results via the API.
+Pay attention to any timeout issues you might have encountered previously. The refined background task logic (using AsyncSessionFactory correctly) should help, but test client timeouts or the duration of asyncio.sleep() in the simulation might still need adjustment if tests are flaky.
+Once these local integration tests for the GIS Export plugin are consistently passing, the next steps will be:
+
+Ensuring they pass in your CI pipeline.
+Adding/verifying the Grafana dashboard panels for GIS Export metrics.
+Let me know how the local test run goes!

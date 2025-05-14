@@ -1,0 +1,29 @@
+# TerraFusion Platform Azure Requirements
+# These packages are required for Azure deployment in addition to the base requirements
+
+# Azure Integration
+opencensus-ext-azure==1.1.9
+opencensus-ext-flask==0.8.2
+opencensus-ext-fastapi==0.1.0
+opencensus-ext-requests==0.8.0
+azure-identity==1.12.0
+azure-keyvault-secrets==4.6.0
+azure-mgmt-monitor==5.0.0
+
+# Web Server
+gunicorn==20.1.0
+uvicorn[standard]==0.20.0
+
+# Database
+asyncpg==0.27.0
+psycopg2-binary==2.9.5
+
+# Core libraries (ensure these are up-to-date)
+flask==2.2.3
+fastapi==0.95.0
+sqlalchemy==2.0.9
+httpx==0.23.3
+pydantic==1.10.7
+
+# Ensure these are also in your base requirements.txt file
+# and add any other dependencies specific to your project
