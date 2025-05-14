@@ -200,8 +200,8 @@ def validate_export_request(request: Dict[str, Any]) -> bool:
 
 def simulate_export_job(request: Dict[str, Any]) -> Dict[str, Any]:
     """Simulate processing an export job"""
-    county_id = request.get("county_id")
-    export_format = request.get("format")
+    county_id = request.get("county_id", "unknown")
+    export_format = request.get("format", "unknown")
     
     # Generate a simulated job result
     job_id = f"job_{datetime.now().strftime('%Y%m%d%H%M%S')}"
@@ -211,8 +211,9 @@ def simulate_export_job(request: Dict[str, Any]) -> Dict[str, Any]:
         status = "COMPLETED"
         message = "Export completed successfully"
         
-        # Simulate file generation
-        file_location = f"https://storage.terrafusion.com/{county_id}/exports/{job_id}.{export_format.lower()}"
+        # Simulate file generation - ensure format is a string
+        file_extension = export_format.lower() if isinstance(export_format, str) else "unknown"
+        file_location = f"https://storage.terrafusion.com/{county_id}/exports/{job_id}.{file_extension}"
         file_size_kb = len(request.get("layers", [])) * 1000  # 1MB per layer
         record_count = len(request.get("layers", [])) * 500  # 500 records per layer
     else:

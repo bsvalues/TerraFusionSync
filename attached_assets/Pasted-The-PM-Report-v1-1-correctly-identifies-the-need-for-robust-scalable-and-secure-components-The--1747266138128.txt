@@ -1,0 +1,82 @@
+The PM Report (v1.1) correctly identifies the need for robust, scalable, and secure components. The standalone Sync Admin Dashboard, while functional, needs to be re-architected to integrate seamlessly into this vision.
+
+Key Differences & Integration Path:
+
+Feature
+
+Standalone Sync Admin Dashboard (Uploaded)
+
+Target TerraFusion Platform Integration
+
+Backend Logic
+
+Self-contained FastAPI app
+
+New file_ingestion_plugin within terrafusion_sync (FastAPI)
+
+User Interface
+
+Server-side HTML (Python f-strings)
+
+New dedicated frontend application in terra_fusion_frontends/ (e.g., React), consuming Gateway APIs.
+
+Data Storage
+
+Local CSV files
+
+PostgreSQL tables (e.g., manual_file_uploads, manual_upload_audit_log), managed by Alembic.
+
+Authentication
+
+Hardcoded Bearer tokens & users
+
+Via terrafusion_gateway using platform-wide auth (JWT MVP, then potentially Azure AD).
+
+Authorization
+
+Hardcoded roles/permissions in Python
+
+Centralized RBAC enforced by terrafusion_gateway, based on roles/permissions defined in platform config (e.g., county_configs/.../users.json or DB).
+
+Data Processing
+
+Direct CSV manipulation
+
+Approved files trigger data pipelines within terrafusion_sync (e.g., bulk_load_pipeline.py) to integrate data into properties_operational.
+
+Observability
+
+None explicitly defined
+
+Instrumented with Prometheus metrics (and/or Azure App Insights) via terrafusion_sync and visualized in Grafana (or Azure Portal).
+
+Strategic Fit & Prioritization:
+
+The functionality of the Sync Admin Dashboard (manual uploads, approvals) is crucial for administrative tasks and certain data onboarding scenarios.
+
+As per the PM Report (v1.1), the development of this integrated "Manual Data Operations Dashboard" and its backend file_ingestion_plugin should be scheduled after the "Gateway Security MVP Implementation" (Target: May 28, 2025). This is because it relies on a secure and role-governed API layer provided by the Gateway.
+
+This feature would fit well into a release following "Platform v0.5 - Staging Ready with Initial End-to-End Flows" (Target: July 12, 2025).
+
+The existing Python code and TerraFusionSync_UserGuide.pdf serve as excellent requirements and a functional prototype for this future integrated module.
+
+4. Path Forward
+The PM Report (v1.1) outlines a clear path. The immediate priorities remain:
+
+Finalize GIS Export Plugin (Phase 1, Task 1 of PM Report v1.1):
+
+Complete and ensure its end-to-end integration tests pass locally and in CI.
+
+Verify its metrics are appearing in your observability stack (Grafana/Azure Monitor).
+
+Refine its simulated logic to placeholder real interactions.
+
+Implement Gateway Security - MVP (Phase 1, Task 2 of PM Report v1.1):
+
+Implement JWT-based authentication and foundational RBAC in terrafusion_gateway.
+
+Implement Actual Plugin Logic (Phase 1, Task 3 of PM Report v1.1):
+
+Begin replacing simulated processing in the background tasks of all existing plugins (Valuation, Reporting, Market Analysis, GIS Export) with initial real-world data processing logic, starting with the Valuation plugin.
+
+The functionality of the uploaded Sync Admin Dashboard will be a valuable addition to the platform once these foundational elements are further solidified. The current files provide a strong reference for user stories and functional requirements for that future integration work.

@@ -1,142 +1,181 @@
-# TerraFusion GIS Export Plugin Test Guide
+# GIS Export Plugin Testing Guide
+
+This guide explains how to test the GIS Export plugin functionality, including county-specific configuration integration, API endpoints, and job processing.
 
 ## Overview
 
-This document provides comprehensive instructions for testing the GIS Export plugin functionality in the TerraFusion platform. These tests validate the end-to-end workflow from job submission to result retrieval, ensuring the plugin meets County requirements for geospatial data exports.
+The GIS Export plugin in the TerraFusion Platform allows county users to export geospatial data in various formats with county-specific configurations. This guide covers testing the different components of the plugin.
 
 ## Prerequisites
 
-- PostgreSQL database configured with connection details in `.env` file or environment variables
-- Python 3.11+ with required dependencies installed
-- TerraFusion SyncService running (either via workflow or directly)
+Ensure that your environment is properly set up:
 
-## Test Types
+1. Database is initialized with GIS export tables
+2. County configuration files are in place under `county_configs/`
+3. TerraFusion SyncService is running
+4. TerraFusion API Gateway is running
 
-The GIS Export plugin can be tested at different levels:
+## County Configuration Testing
 
-1. **Unit Tests**: Test individual components in isolation
-2. **Integration Tests**: Test API endpoints and database interactions
-3. **End-to-End Tests**: Test the complete workflow from job submission to completion
+### Standalone Configuration Test
 
-## Running the Tests
-
-### Using the Fixed Test Runner (Recommended)
-
-The `run_fixed_gis_export_tests.py` script provides a robust way to run the enhanced GIS Export tests:
+The standalone configuration test validates that county-specific settings are properly loaded and applied:
 
 ```bash
-# Run all GIS Export tests
-python run_fixed_gis_export_tests.py
-
-# Run with verbose output
-python run_fixed_gis_export_tests.py --verbose
-
-# Run specific test file
-python run_fixed_gis_export_tests.py --file tests/plugins/fixed_test_gis_export_end_to_end.py
-
-# Run tests with specific marker
-python run_fixed_gis_export_tests.py --marker integration
+python test_gis_export_county_config_standalone.py
 ```
 
-### Quick Health Check Test
+This test verifies:
+- Available export formats per county
+- Format validation against county-allowed formats
+- Default coordinate systems and parameters
+- Maximum export area limits
 
-For a quick verification that the GIS Export API is operational:
+### County Configuration Demo
+
+To see a visual demonstration of how county configurations work with export requests:
 
 ```bash
-python final_test.py
+python demo_gis_export_county_config.py
 ```
 
-This script tests:
-- Health check endpoint (/plugins/v1/gis-export/health)
-- Job creation endpoint (/plugins/v1/gis-export/run)
+This demo shows:
+- The configuration for multiple counties
+- Validation of export formats against county settings
+- Application of default parameters
+- Error handling for unsupported formats
 
-### Direct Testing with pytest
+## API Endpoint Testing
 
-You can also run the tests directly with pytest:
+To test the API endpoints directly, ensure the SyncService is running, then try:
+
+### Health Check
 
 ```bash
-# Run fixed integration tests
-python -m pytest tests/plugins/fixed_test_gis_export_end_to_end.py -v
-
-# Run all GIS Export tests
-python -m pytest tests/plugins/*gis_export* -v
+curl -X GET http://0.0.0.0:8080/plugins/v1/gis-export/health
 ```
 
-## Known Issues
+Expected response: `{"status": "healthy", "timestamp": "2025-05-14T12:00:00Z"}`
 
-### Database Connection Issue
+### Available Formats for County
 
-**Symptom**: The `/plugins/v1/gis-export/results/{job_id}` endpoint returns a 500 error with:
+```bash
+curl -X GET http://0.0.0.0:8080/plugins/v1/gis-export/formats/benton_wa
 ```
-Failed to retrieve job results: connect() got an unexpected keyword argument 'sslmode'
+
+Expected response: `{"formats": ["GeoJSON", "Shapefile", "KML"]}`
+
+### Default Parameters for County
+
+```bash
+curl -X GET http://0.0.0.0:8080/plugins/v1/gis-export/defaults/benton_wa
 ```
 
-**Cause**: This is a known issue in the test environment related to PostgreSQL connection parameters.
+Expected response: 
+```json
+{
+  "parameters": {
+    "simplify_tolerance": 0.0001,
+    "include_attributes": true,
+    "coordinate_system": "EPSG:4326"
+  }
+}
+```
 
-**Solution**: The fixed tests handle this error gracefully by skipping the result verification when this error occurs. In production, with proper database configuration, this error will not occur.
+### Submit Export Job
 
-### Endpoint Format
+```bash
+curl -X POST http://0.0.0.0:8080/plugins/v1/gis-export/run \
+  -H "Content-Type: application/json" \
+  -d '{
+    "county_id": "benton_wa",
+    "format": "GeoJSON",
+    "username": "county_user",
+    "area_of_interest": {
+      "type": "Polygon",
+      "coordinates": [[
+        [-119.48, 46.21],
+        [-119.48, 46.26],
+        [-119.42, 46.26],
+        [-119.42, 46.21],
+        [-119.48, 46.21]
+      ]]
+    },
+    "layers": ["parcels", "zoning"],
+    "parameters": {
+      "simplify_tolerance": 0.0001,
+      "include_attributes": true
+    }
+  }'
+```
 
-Note that the correct endpoint format uses dashes, not underscores. For example:
-- Correct: `/plugins/v1/gis-export/health`
-- Incorrect: `/plugins/v1/gis_export/health`
+Expected response: `{"job_id": "...", "status": "PENDING"}`
 
-## Test Data
+### Check Job Status
 
-The tests use the following test data:
+```bash
+curl -X GET http://0.0.0.0:8080/plugins/v1/gis-export/status/{job_id}
+```
 
-- **County ID**: `TEST_COUNTY`
-- **Export Format**: `GeoJSON` (also tests `Shapefile` and `KML`)
-- **Area of Interest**: A polygon in the San Francisco area
-- **Layers**: `parcels`, `buildings`, `zoning`
+Expected response: `{"status": "COMPLETED", "message": "Export completed successfully"}`
 
-## Test Cases
+## End-to-End Testing
 
-The integration tests cover the following scenarios:
+For comprehensive end-to-end testing, run:
 
+```bash
+python run_gis_export_tests.py
+```
+
+This script runs a series of tests including:
 1. Health check endpoint
-2. Creating a GIS export job
-3. Checking job status
-4. Complete workflow from job creation to completion
-5. Testing job failure scenarios
-6. Cancelling jobs
-7. Listing and filtering jobs
+2. County configuration integration
+3. Format validation
+4. Job submission
+5. Job status checking
+6. Results retrieval
 
-## CI/CD Integration
+## Testing with Different Counties
 
-The tests are configured to run in CI environments using GitHub Actions. The workflow is defined in:
-`.github/workflows/gis-export-tests.yml`
+To verify that the system works with different county configurations:
 
-This ensures the GIS Export plugin is automatically tested with every code change.
+1. Create test configurations for multiple counties:
+   ```
+   county_configs/benton_wa/benton_wa_config.json
+   county_configs/clark_wa/clark_wa_config.json
+   county_configs/king_wa/king_wa_config.json
+   ```
 
-## Azure Environment Testing
+2. Run the demo with different county IDs:
+   ```bash
+   python demo_gis_export_county_config.py
+   ```
 
-For testing in the Azure environment, use the following steps:
+3. Test API endpoints with different county IDs:
+   ```bash
+   curl -X GET http://0.0.0.0:8080/plugins/v1/gis-export/formats/clark_wa
+   curl -X GET http://0.0.0.0:8080/plugins/v1/gis-export/defaults/king_wa
+   ```
 
-1. Deploy to Azure using the provided scripts
-2. Configure the database connection string in Azure App Settings
-3. Run the tests against the Azure environment by setting the `BASE_URL` environment variable:
+## Troubleshooting
+
+If tests fail, check the following:
+
+1. **Service Connection**: Ensure SyncService is running on the expected port
+2. **Database Connection**: Verify database connectivity
+3. **County Configuration**: Check that county configuration files exist and have the correct format
+4. **Format Validation**: Verify that the requested export format is in the county's allowed formats list
+5. **CORS Issues**: For browser-based testing, ensure CORS headers are properly set
+
+## Metrics Verification
+
+To verify that metrics are being collected:
 
 ```bash
-export BASE_URL=https://your-azure-webapp.azurewebsites.net
-python run_fixed_gis_export_tests.py
+curl -X GET http://0.0.0.0:8080/metrics
 ```
 
-## Debugging
-
-If you encounter issues:
-
-1. Check that the SyncService is running: `curl http://localhost:8080/health`
-2. Verify database connectivity
-3. Check application logs for error messages
-4. Ensure all dependencies are installed
-
-## Adding New Tests
-
-When adding new tests, follow these guidelines:
-
-1. Use the async/await pattern for database operations
-2. Include proper cleanup in test fixtures
-3. Handle the known database connectivity issue as shown in existing tests
-4. Use appropriate assertions with descriptive messages
-5. Follow naming conventions for test functions
+Look for GIS Export-specific metrics such as:
+- `gis_export_jobs_submitted_total`
+- `gis_export_jobs_completed_total`
+- `gis_export_processing_duration_seconds`
