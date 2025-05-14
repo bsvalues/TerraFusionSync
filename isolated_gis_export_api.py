@@ -510,11 +510,11 @@ async def get_job_status(job_id_param: int):
             logger.error(f"Error getting GIS export job from database: {e}", exc_info=True)
     
     # Fallback to in-memory storage
-    if job_id not in EXPORT_JOBS:
+    if job_id_param not in EXPORT_JOBS:
         raise HTTPException(status_code=404, detail="Job not found")
     
-    logger.info(f"Retrieved GIS export job {job_id} from memory storage (fallback)")
-    return EXPORT_JOBS[job_id]
+    logger.info(f"Retrieved GIS export job {job_id_param} from memory storage (fallback)")
+    return EXPORT_JOBS[job_id_param]
 
 @app.get("/plugins/v1/gis-export/list", response_model=List[GisExportJobBase])
 async def list_jobs(
@@ -528,8 +528,10 @@ async def list_jobs(
     # Try to use the database if available
     if async_session_factory:
         try:
-            async with get_db_session() as session:
-                if not session:
+            from sqlalchemy.sql import text
+            
+            async with managed_db_session() as session:
+                if session is None:
                     raise ValueError("Database session not available")
                 
                 # Build a dynamic SQL query based on filters
@@ -566,8 +568,9 @@ async def list_jobs(
                 params["limit"] = limit
                 params["offset"] = offset
                 
-                # Execute the query
-                result = await session.execute(base_query, params)
+                # Execute the query with SQLAlchemy text
+                query = text(base_query)
+                result = await session.execute(query, params)
                 db_jobs = result.mappings().all()
                 
                 # Transform database results to response model format
