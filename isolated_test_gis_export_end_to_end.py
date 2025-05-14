@@ -44,7 +44,7 @@ TEST_PARAMETERS = {
 }
 
 # Base URL for the SyncService API
-BASE_URL = "http://localhost:8080/plugins/v1/gis_export"
+BASE_URL = "http://localhost:8080/plugins/v1/gis-export"
 
 def test_create_gis_export_job():
     """Test creating a new GIS export job."""
