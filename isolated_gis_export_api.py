@@ -11,6 +11,10 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, List, Optional, Union
 
+# Configure logging first
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 from fastapi import FastAPI, Depends, HTTPException, status, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -21,13 +25,10 @@ try:
     import prometheus_client
     from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
     PROMETHEUS_AVAILABLE = True
+    logger.info("Prometheus client imported successfully")
 except ImportError:
     PROMETHEUS_AVAILABLE = False
     logger.warning("prometheus_client not available, metrics endpoint will return minimal data")
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 # Create FastAPI application
 app = FastAPI(
@@ -57,6 +58,36 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add request metrics middleware if Prometheus is available
+@app.middleware("http")
+async def metrics_middleware(request: Request, call_next):
+    """Middleware to collect request metrics."""
+    start_time = time.time()
+    
+    # Get endpoint path and method
+    endpoint = request.url.path
+    method = request.method
+    
+    response = await call_next(request)
+    
+    # Skip metrics for metrics endpoint to avoid circular reference
+    if endpoint != "/metrics" and PROMETHEUS_AVAILABLE:
+        try:
+            # Record request duration
+            duration = time.time() - start_time
+            API_REQUEST_DURATION.labels(endpoint=endpoint).observe(duration)
+            
+            # Record request count with status
+            API_REQUESTS_TOTAL.labels(
+                endpoint=endpoint,
+                method=method,
+                status=response.status_code
+            ).inc()
+        except Exception as e:
+            logger.error(f"Error recording metrics: {e}")
+    
+    return response
 
 # Define models
 class GisExportRequest(BaseModel):
@@ -676,6 +707,58 @@ async def health_check():
         "version": "0.1.0",
         "time": datetime.now(timezone.utc).isoformat()
     }
+
+@app.get("/metrics")
+async def metrics():
+    """
+    Prometheus metrics endpoint.
+    
+    Returns metrics data in Prometheus exposition format for monitoring systems.
+    Includes system metrics (CPU, memory, disk) and application-specific metrics.
+    """
+    if PROMETHEUS_AVAILABLE:
+        try:
+            import psutil
+            
+            # Update system metrics
+            SYSTEM_CPU_USAGE.set(psutil.cpu_percent())
+            SYSTEM_MEMORY_USAGE.set(psutil.virtual_memory().percent)
+            SYSTEM_DISK_USAGE.set(psutil.disk_usage('/').percent)
+            
+            # Generate prometheus metrics response
+            return Response(
+                content=generate_latest(),
+                media_type=CONTENT_TYPE_LATEST
+            )
+        except Exception as e:
+            logger.error(f"Error generating metrics: {e}")
+            return JSONResponse(
+                status_code=500,
+                content={"error": "Failed to generate metrics", "detail": str(e)}
+            )
+    else:
+        # Fallback for when prometheus_client is not available
+        import psutil
+        
+        cpu_percent = psutil.cpu_percent()
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        
+        # Return simple JSON metrics
+        return {
+            "system": {
+                "cpu_usage": cpu_percent,
+                "memory_usage": memory.percent,
+                "disk_usage": disk.percent,
+                "memory_available_mb": memory.available // (1024 * 1024),
+                "disk_free_gb": disk.free // (1024 * 1024 * 1024)
+            },
+            "application": {
+                "version": "0.1.0",
+                "service": "TerraFusion GIS Export Service",
+                "time": datetime.now(timezone.utc).isoformat()
+            }
+        }
 
 if __name__ == "__main__":
     import uvicorn
