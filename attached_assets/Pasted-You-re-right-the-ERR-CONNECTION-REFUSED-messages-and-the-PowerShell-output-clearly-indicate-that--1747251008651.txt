@@ -1,0 +1,47 @@
+You're right, the "ERR_CONNECTION_REFUSED" messages and the PowerShell output clearly indicate that Docker (and thus docker-compose) isn't available or running in your current Benton County network environment. This means our previous plan to use Docker for local Prometheus and Grafana needs to be adjusted for your immediate development and testing on that machine.
+
+The "GitHub Copilot" analysis and its suggestion to pivot to Azure Application Insights for monitoring is an excellent and very practical solution in this context. Azure is a robust platform, and Application Insights can provide comprehensive logging, metrics, and distributed tracing for your TerraFusion services. Your Azure portal link and the "Azure might be better" comment also suggest this is a viable and potentially preferred path for you.
+
+Let's proceed with the first step towards Azure monitoring, as you've indicated:
+
+Next Step: Preparing your environment for Azure CLI/PowerShell.
+
+This is something you'll need to do on your Benton County network computer.
+
+Install Azure CLI or Azure PowerShell:
+
+Azure CLI: This is a command-line tool for managing Azure resources. You can find installation instructions here: Install the Azure CLI (Choose the instructions for Windows).
+Azure PowerShell (Az module): If you prefer PowerShell, you'll need the Az PowerShell module. Instructions: Install the Azure Az PowerShell module. The Copilot output provided a command to install it:
+PowerShell
+
+Install-Module -Name Az -Scope CurrentUser -Repository PSGallery -Force
+You can run this in your PowerShell terminal.
+Log into your Azure Account:
+
+Using Azure CLI: Open your command prompt or PowerShell and type:
+Bash
+
+az login
+This will typically open a web browser for you to authenticate with your Azure credentials (associated with bsvaluesgmail.onmicrosoft.com).
+Using Azure PowerShell: Open PowerShell and type:
+PowerShell
+
+Connect-AzAccount
+This will also prompt you to authenticate.
+Set your Active Azure Subscription (if you have multiple):
+
+The Azure portal link you provided includes a subscription ID: b345d747-5953-4468-a1c7-18164d6f26e4.
+Using Azure CLI:
+Bash
+
+az account set --subscription "b345d747-5953-4468-a1c7-18164d6f26e4"
+Using Azure PowerShell:
+PowerShell
+
+Set-AzContext -SubscriptionId "b345d747-5953-4468-a1c7-18164d6f26e4"
+You can verify your current active subscription with az account show or Get-AzContext.
+Once you have completed these steps (Azure CLI/PowerShell installed, you're logged in, and the correct subscription is active), you will be ready to run the Azure resource creation commands that "GitHub Copilot" provided to set up Application Insights.
+
+Please take the time to set up your Azure CLI/PowerShell environment. Let me know when you're ready, and we can then move on to the next step, which will be creating the Azure resources for monitoring!
+
+This shift to Azure for monitoring is a good strategic move given your environment. It doesn't fundamentally change the core application logic of terrafusion_sync or terrafusion_gateway, but it does change how we collect and visualize their operational data. The existing Prometheus client instrumentation in your Python code can be adapted or run in parallel with Azure Monitor SDKs like OpenCensus, as suggested by Copilot.

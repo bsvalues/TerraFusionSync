@@ -1,0 +1,41 @@
+name: Deploy to Azure
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v2
+      
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.9'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install opencensus-ext-azure opencensus-ext-flask opencensus-ext-fastapi
+        
+    - name: Run tests
+      run: |
+        pytest tests/
+
+    - name: Deploy to Azure Web App
+      uses: azure/webapps-deploy@v2
+      with:
+        app-name: 'TerraFusionGateway'
+        slot-name: 'production'
+        publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+        package: .
+        
+    - name: Post-deployment health check
+      run: |
+        sleep 30  # Wait for deployment to stabilize
+        curl -sSf https://terrafusiongateway.azurewebsites.net/api/status || exit 1

@@ -1,0 +1,47 @@
+{
+  "apiGateway": {
+    "appName": "TerraFusionGateway",
+    "command": "gunicorn --bind=0.0.0.0:$PORT --workers=4 --timeout=120 app_azure:app",
+    "appSettings": {
+      "SCM_DO_BUILD_DURING_DEPLOYMENT": "true",
+      "WEBSITE_RUN_FROM_PACKAGE": "1",
+      "PYTHON_ENABLE_WORKER_EXTENSIONS": "1",
+      "PYTHONPATH": "/home/site/wwwroot"
+    },
+    "connectionStrings": {
+      "DATABASE_URL": {
+        "type": "PostgreSQL",
+        "value": "postgresql://{username}@{hostname}:{port}/{database}?sslmode=require"
+      }
+    }
+  },
+  "syncService": {
+    "appName": "TerraFusionSyncService",
+    "command": "uvicorn syncservice_azure:app --host=0.0.0.0 --port=$PORT --workers=4",
+    "appSettings": {
+      "SCM_DO_BUILD_DURING_DEPLOYMENT": "true",
+      "WEBSITE_RUN_FROM_PACKAGE": "1",
+      "PYTHON_ENABLE_WORKER_EXTENSIONS": "1",
+      "PYTHONPATH": "/home/site/wwwroot"
+    },
+    "connectionStrings": {
+      "DATABASE_URL": {
+        "type": "PostgreSQL",
+        "value": "postgresql://{username}@{hostname}:{port}/{database}?sslmode=require"
+      }
+    }
+  },
+  "applicationConfiguration": {
+    "SESSION_SECRET": "{generated-secret}",
+    "PYTHONPATH": "/home/site/wwwroot",
+    "SYNC_SERVICE_URL": "https://{syncservice-hostname}.azurewebsites.net",
+    "AZURE_INSTRUMENTATION": "true",
+    "LOGGING_LEVEL": "INFO",
+    "API_GATEWAY_URL": "https://{apigateway-hostname}.azurewebsites.net"
+  },
+  "azureServices": {
+    "insightsName": "TerraFusionInsights",
+    "databaseServer": "terrafusion-db",
+    "databaseName": "terrafusiondb"
+  }
+}
