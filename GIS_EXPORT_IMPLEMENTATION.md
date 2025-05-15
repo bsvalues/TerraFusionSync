@@ -163,6 +163,29 @@ Different export formats produce files with different characteristics:
 | GeoPackage | 0.9x | OGC standard format for multiple datasets |
 | GeoTIFF | 2.5x | Raster data with spatial reference |
 
+## Integration with Gateway Security MVP
+
+The GIS Export plugin implementation is now complete with isolated metrics, comprehensive testing, and realistic processing simulation. The next phase of development will focus on the Gateway Security MVP:
+
+1. **Role-Based Access Control Implementation**
+   - Integrate RBAC permissions specifically for GIS Export operations
+   - Required permissions: `run_gis_export`, `view_gis_export_status`, `view_gis_export_results`
+   - Apply permission checks in plugin router endpoints
+
+2. **User Authentication Flow**
+   - Enhance token validation to include GIS Export-specific permissions
+   - Implement credential passing between Gateway and SyncService for GIS operations
+
+3. **Audit Trail Enhancements**
+   - Extend audit logging for GIS Export operations
+   - Record user identity, permissions, and operation details
+   - Implement searchable audit history for compliance purposes
+
+4. **County-Specific Access Controls**
+   - Restrict GIS Export operations based on user's county assignments
+   - Apply county-level permission validation for layer access
+   - Implement request validation against county configuration rules
+
 ## County Configuration Integration
 
 The GIS Export plugin integrates with county-specific configurations to:
