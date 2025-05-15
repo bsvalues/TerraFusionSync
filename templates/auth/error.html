@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}Error - TerraFusion Platform{% endblock %}
+
+{% block head %}
+<style>
+    .error-container {
+        max-width: 600px;
+        margin: 4rem auto;
+        padding: 2rem;
+        background-color: #fff;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        text-align: center;
+    }
+    
+    .error-icon {
+        font-size: 4rem;
+        color: #ff3b30;
+        margin-bottom: 1.5rem;
+    }
+    
+    .error-title {
+        font-size: 1.8rem;
+        margin-bottom: 1rem;
+        color: #ff3b30;
+    }
+    
+    .error-message {
+        font-size: 1.1rem;
+        margin-bottom: 2rem;
+        color: #555;
+        line-height: 1.5;
+    }
+    
+    .error-code {
+        display: inline-block;
+        background-color: #f8f8f8;
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        font-family: monospace;
+        margin-bottom: 2rem;
+    }
+    
+    .error-actions {
+        margin-top: 2rem;
+    }
+    
+    .error-btn {
+        display: inline-block;
+        background-color: var(--primary-color);
+        color: white;
+        border: none;
+        border-radius: 4px;
+        padding: 0.75rem 1.5rem;
+        font-size: 1rem;
+        font-weight: 500;
+        text-decoration: none;
+        cursor: pointer;
+        transition: background-color 0.2s;
+        margin: 0 0.5rem;
+    }
+    
+    .error-btn:hover {
+        background-color: var(--primary-dark);
+    }
+    
+    .error-btn.secondary {
+        background-color: #e0e0e0;
+        color: #333;
+    }
+    
+    .error-btn.secondary:hover {
+        background-color: #d0d0d0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="error-container">
+    <div class="error-icon">⚠️</div>
+    
+    <h1 class="error-title">{{ title | default('Access Denied') }}</h1>
+    
+    <p class="error-message">{{ message | default('You do not have permission to access this resource. If you believe this is an error, please contact your administrator.') }}</p>
+    
+    {% if error_code %}
+    <div class="error-code">Error Code: {{ error_code }}</div>
+    {% endif %}
+    
+    <div class="error-actions">
+        <a href="{{ back_url | default(url_for('index')) }}" class="error-btn secondary">Go Back</a>
+        <a href="{{ url_for('auth.login') }}" class="error-btn">Login</a>
+    </div>
+</div>
+{% endblock %}

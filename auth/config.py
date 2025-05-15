@@ -1,89 +1,127 @@
 """
 TerraFusion Platform - Authentication Configuration
 
-This module provides configuration settings for the authentication system,
-including JWT secret key, token lifetimes, and other security settings.
+This module contains configuration settings for the TerraFusion Platform authentication system.
 """
-
 import os
-import secrets
-from datetime import timedelta
+from typing import Dict, List
 
-# JWT Secret Key (used for signing tokens)
-# In production, set this in environment variable JWT_SECRET_KEY
-JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', secrets.token_hex(32))
-
-# JWT Token Settings
-JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=1)  # 1 hour
-JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)  # 30 days
-
-# JWT Algorithm
+# JWT Configuration
+JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'super-secret-development-key')
+JWT_ACCESS_TOKEN_EXPIRES = 3600  # 1 hour in seconds
+JWT_REFRESH_TOKEN_EXPIRES = 2592000  # 30 days in seconds
 JWT_ALGORITHM = 'HS256'
 
-# Token prefix for Authorization header
-TOKEN_PREFIX = 'Bearer'
+# Authentication Configuration
+AUTH_REDIRECT_PARAM = 'next'  # Query parameter for redirect after login
 
-# RBAC Configuration
-ROLE_PERMISSIONS = {
-    'Admin': ['*'],  # Wildcard for all permissions
-    'ITAdmin': [
-        'manage_users',
-        'manage_counties',
-        'manage_sync_pairs',
-        'view_audit_logs',
-        'run_sync_operations',
-        'view_metrics',
-        'run_gis_export',
-        'view_gis_export_status',
-        'view_gis_export_results',
-        'manage_system_config'
-    ],
-    'Assessor': [
-        'manage_sync_pairs',
-        'run_sync_operations',
-        'view_metrics',
-        'run_gis_export',
-        'view_gis_export_status',
-        'view_gis_export_results'
-    ],
-    'Staff': [
-        'view_sync_pairs',
-        'view_metrics',
-        'run_gis_export',
-        'view_gis_export_status',
-        'view_gis_export_results'
-    ],
-    'Auditor': [
-        'view_audit_logs',
-        'view_metrics',
-        'view_gis_export_status',
-        'view_gis_export_results'
-    ]
+# LDAP Configuration
+LDAP_ENABLED = False  # Set to True to enable LDAP authentication in production
+LDAP_SERVER = os.environ.get('LDAP_SERVER', 'ldap.example.com')
+LDAP_PORT = int(os.environ.get('LDAP_PORT', 389))
+LDAP_USE_SSL = os.environ.get('LDAP_USE_SSL', 'false').lower() == 'true'
+LDAP_BIND_DN = os.environ.get('LDAP_BIND_DN', 'cn=service-account,dc=example,dc=com')
+LDAP_BIND_PASSWORD = os.environ.get('LDAP_BIND_PASSWORD', 'service-account-password')
+LDAP_BASE_DN = os.environ.get('LDAP_BASE_DN', 'dc=example,dc=com')
+LDAP_USER_FILTER = os.environ.get('LDAP_USER_FILTER', '(&(objectClass=person)(sAMAccountName={username}))')
+LDAP_GROUP_FILTER = os.environ.get('LDAP_GROUP_FILTER', '(&(objectClass=group)(member={user_dn}))')
+
+# Roles
+ROLE_ADMIN = 'Admin'
+ROLE_ASSESSOR = 'Assessor'
+ROLE_STAFF = 'Staff'
+ROLE_AUDITOR = 'Auditor'
+
+# Permissions for each role
+DEFAULT_PERMISSIONS = [
+    'view_county_info',
+    'view_dashboard',
+]
+
+ADMIN_PERMISSIONS = [
+    'manage_users',
+    'manage_counties',
+    'manage_roles',
+    'view_audit_logs',
+    'view_system_metrics',
+    'manage_system_settings',
+    'run_system_tasks',
+    'view_all_counties',
+    'run_all_exports',
+    'admin_dashboard',
+    # Plugin-specific permissions
+    'run_sync_job',
+    'view_sync_job_status',
+    'manage_sync_job',
+    'run_valuation',
+    'view_valuation_status',
+    'run_reporting',
+    'view_reporting_status',
+    'view_reporting_results',
+    'run_market_analysis',
+    'view_market_analysis_status',
+    'view_market_analysis_results',
+    'run_gis_export',
+    'view_gis_export_status',
+    'view_gis_export_results',
+]
+
+ASSESSOR_PERMISSIONS = [
+    'manage_county_settings',
+    'view_county_metrics',
+    'run_county_exports',
+    'assessor_dashboard',
+    # Plugin-specific permissions
+    'run_sync_job',
+    'view_sync_job_status',
+    'run_valuation',
+    'view_valuation_status',
+    'run_reporting',
+    'view_reporting_status',
+    'view_reporting_results',
+    'run_market_analysis',
+    'view_market_analysis_status',
+    'view_market_analysis_results',
+    'run_gis_export',
+    'view_gis_export_status',
+    'view_gis_export_results',
+]
+
+STAFF_PERMISSIONS = [
+    'view_county_metrics',
+    'run_basic_exports',
+    'staff_dashboard',
+    # Plugin-specific permissions
+    'view_sync_job_status',
+    'view_valuation_status',
+    'view_reporting_status',
+    'view_reporting_results',
+    'view_market_analysis_status',
+    'view_market_analysis_results',
+    'run_gis_export',
+    'view_gis_export_status',
+    'view_gis_export_results',
+]
+
+AUDITOR_PERMISSIONS = [
+    'view_county_metrics',
+    'view_audit_reports',
+    'auditor_dashboard',
+    # Plugin-specific permissions
+    'view_sync_job_status',
+    'view_valuation_status',
+    'view_reporting_status',
+    'view_reporting_results',
+    'view_market_analysis_status',
+    'view_market_analysis_results',
+    'view_gis_export_status',
+    'view_gis_export_results',
+]
+
+# Map roles to permissions
+ROLE_PERMISSIONS: Dict[str, List[str]] = {
+    ROLE_ADMIN: DEFAULT_PERMISSIONS + ADMIN_PERMISSIONS,
+    ROLE_ASSESSOR: DEFAULT_PERMISSIONS + ASSESSOR_PERMISSIONS,
+    ROLE_STAFF: DEFAULT_PERMISSIONS + STAFF_PERMISSIONS,
+    ROLE_AUDITOR: DEFAULT_PERMISSIONS + AUDITOR_PERMISSIONS,
 }
-
-# Authentication Behavior
-LOGIN_ATTEMPTS_LIMIT = 5  # Maximum failed login attempts before lockout
-LOGIN_LOCKOUT_MINUTES = 15  # Lockout duration after exceeding attempts
-
-# Session Configuration
-SESSION_TYPE = 'filesystem'
-SESSION_PERMANENT = True
-PERMANENT_SESSION_LIFETIME = timedelta(days=1)
-SESSION_FILE_DIR = os.environ.get('SESSION_FILE_DIR', './flask_session')
-SESSION_KEY_PREFIX = 'tf_'
-
-# Cookie Settings
-SESSION_COOKIE_SECURE = True  # Only send cookies over HTTPS
-SESSION_COOKIE_HTTPONLY = True  # Prevent JavaScript access to cookies
-SESSION_COOKIE_SAMESITE = 'Lax'  # CSRF protection
-
-# Password Policy
-PASSWORD_MIN_LENGTH = 10
-PASSWORD_REQUIRE_UPPERCASE = True
-PASSWORD_REQUIRE_LOWERCASE = True
-PASSWORD_REQUIRE_NUMBERS = True
-PASSWORD_REQUIRE_SPECIAL_CHARS = True
-
-# API Security
-CORS_ALLOW_ORIGINS = os.environ.get('CORS_ALLOW_ORIGINS', '*').split(',')
-RATE_LIMIT_DEFAULT = '100/hour'  # Default rate limit for API endpoints

@@ -4,11 +4,10 @@ TerraFusion Platform - JWT Token Utilities
 This module provides JWT token generation, validation, and management
 functions for the TerraFusion Platform authentication system.
 """
-
+import datetime
 import logging
 import time
-from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional, Union, Set
+from typing import Dict, Any, List, Optional, Set, Union
 
 import jwt
 
@@ -17,33 +16,28 @@ from auth.config import (
     JWT_ACCESS_TOKEN_EXPIRES, JWT_REFRESH_TOKEN_EXPIRES
 )
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
-# In-memory token blacklist (replace with database in production)
-_token_blacklist: Set[str] = set()
-_blacklist_expiry: Dict[str, float] = {}
+# In-memory token blacklist for development
+# In production, use Redis or a database
+TOKEN_BLACKLIST: Set[str] = set()
+BLACKLIST_EXPIRY: Dict[str, int] = {}
+
 
 def clean_expired_blacklist_tokens():
     """
     Remove expired tokens from the blacklist to prevent memory leaks.
     This should be called periodically.
     """
-    global _token_blacklist, _blacklist_expiry
-    
-    current_time = time.time()
-    expired_tokens = [
-        token for token, expiry in _blacklist_expiry.items()
-        if expiry < current_time
-    ]
+    current_time = int(time.time())
+    expired_tokens = [token for token, expiry in BLACKLIST_EXPIRY.items() if expiry < current_time]
     
     for token in expired_tokens:
-        if token in _token_blacklist:
-            _token_blacklist.remove(token)
-        if token in _blacklist_expiry:
-            del _blacklist_expiry[token]
+        TOKEN_BLACKLIST.discard(token)
+        BLACKLIST_EXPIRY.pop(token, None)
     
-    logger.debug(f"Cleaned {len(expired_tokens)} expired tokens from blacklist")
+    if expired_tokens:
+        logger.info(f"Cleaned {len(expired_tokens)} expired tokens from blacklist")
 
 
 def create_access_token(
@@ -68,36 +62,36 @@ def create_access_token(
     Returns:
         JWT token string
     """
-    now = datetime.utcnow()
-    expires = now + JWT_ACCESS_TOKEN_EXPIRES
+    now = datetime.datetime.utcnow()
+    expiry = now + datetime.timedelta(seconds=JWT_ACCESS_TOKEN_EXPIRES)
     
-    # Base claims
-    claims = {
-        'iat': now,
-        'exp': expires,
+    # Create payload
+    payload = {
         'sub': str(user_id),
         'username': username,
         'role': role,
         'permissions': permissions,
-        'type': 'access'
+        'type': 'access',
+        'iat': now,
+        'exp': expiry
     }
     
     # Add county IDs if provided
     if county_ids:
-        claims['county_ids'] = county_ids
+        payload['county_ids'] = county_ids
     
-    # Add additional claims if provided
+    # Add any additional claims
     if additional_claims:
-        claims.update(additional_claims)
+        payload.update(additional_claims)
     
-    # Generate and return the token
-    try:
-        token = jwt.encode(claims, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
-        logger.debug(f"Created access token for user {username} (role: {role})")
-        return token
-    except Exception as e:
-        logger.error(f"Failed to create access token: {str(e)}")
-        raise
+    # Create token
+    token = jwt.encode(
+        payload,
+        JWT_SECRET_KEY,
+        algorithm=JWT_ALGORITHM
+    )
+    
+    return token
 
 
 def create_refresh_token(
@@ -118,31 +112,31 @@ def create_refresh_token(
     Returns:
         JWT refresh token string
     """
-    now = datetime.utcnow()
-    expires = now + JWT_REFRESH_TOKEN_EXPIRES
+    now = datetime.datetime.utcnow()
+    expiry = now + datetime.timedelta(seconds=JWT_REFRESH_TOKEN_EXPIRES)
     
-    # Base claims
-    claims = {
-        'iat': now,
-        'exp': expires,
+    # Create payload
+    payload = {
         'sub': str(user_id),
         'username': username,
         'role': role,
-        'type': 'refresh'
+        'type': 'refresh',
+        'iat': now,
+        'exp': expiry
     }
     
-    # Add additional claims if provided
+    # Add any additional claims
     if additional_claims:
-        claims.update(additional_claims)
+        payload.update(additional_claims)
     
-    # Generate and return the token
-    try:
-        token = jwt.encode(claims, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
-        logger.debug(f"Created refresh token for user {username}")
-        return token
-    except Exception as e:
-        logger.error(f"Failed to create refresh token: {str(e)}")
-        raise
+    # Create token
+    token = jwt.encode(
+        payload,
+        JWT_SECRET_KEY,
+        algorithm=JWT_ALGORITHM
+    )
+    
+    return token
 
 
 def decode_token(token: str) -> Dict[str, Any]:
@@ -158,27 +152,26 @@ def decode_token(token: str) -> Dict[str, Any]:
     Raises:
         jwt.InvalidTokenError: If the token is invalid or expired
     """
+    # Check if token is blacklisted
+    if token in TOKEN_BLACKLIST:
+        logger.warning("Attempt to use blacklisted token")
+        raise jwt.InvalidTokenError("Token is blacklisted")
+    
     try:
-        # Check if token is blacklisted
-        if token in _token_blacklist:
-            logger.warning("Attempt to use blacklisted token")
-            raise jwt.InvalidTokenError("Token has been revoked")
+        # Decode and validate token
+        payload = jwt.decode(
+            token,
+            JWT_SECRET_KEY,
+            algorithms=[JWT_ALGORITHM]
+        )
         
-        # Decode the token
-        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
         return payload
-    
     except jwt.ExpiredSignatureError:
-        logger.warning("Expired token detected")
+        logger.warning("Expired token")
         raise
-    
     except jwt.InvalidTokenError as e:
         logger.warning(f"Invalid token: {str(e)}")
         raise
-    
-    except Exception as e:
-        logger.error(f"Error decoding token: {str(e)}")
-        raise jwt.InvalidTokenError(f"Error decoding token: {str(e)}")
 
 
 def blacklist_token(token: str) -> bool:
@@ -192,24 +185,24 @@ def blacklist_token(token: str) -> bool:
         True if the token was blacklisted, False otherwise
     """
     try:
-        # Decode without verification to get the expiry
-        payload = jwt.decode(token, options={"verify_signature": False})
+        # Get token expiration time
+        payload = jwt.decode(
+            token,
+            JWT_SECRET_KEY,
+            algorithms=[JWT_ALGORITHM]
+        )
         
-        # Add to blacklist
-        _token_blacklist.add(token)
+        # Add token to blacklist
+        TOKEN_BLACKLIST.add(token)
         
-        # Store the expiry time for cleanup
+        # Store expiration time to clean up later
         if 'exp' in payload:
-            _blacklist_expiry[token] = payload['exp']
-        else:
-            # If no expiry, store for 24 hours
-            _blacklist_expiry[token] = time.time() + 86400
+            BLACKLIST_EXPIRY[token] = payload['exp']
         
-        logger.info(f"Token for user {payload.get('username', 'unknown')} blacklisted")
+        logger.info(f"Token blacklisted for user {payload.get('username')}")
         return True
-    
     except Exception as e:
-        logger.error(f"Failed to blacklist token: {str(e)}")
+        logger.warning(f"Failed to blacklist token: {str(e)}")
         return False
 
 
@@ -224,14 +217,13 @@ def validate_permissions(token_payload: Dict[str, Any], required_permissions: Li
     Returns:
         True if the token has all required permissions, False otherwise
     """
-    # Get user permissions from token
     user_permissions = token_payload.get('permissions', [])
     
-    # Admin with wildcard permission has access to everything
-    if '*' in user_permissions:
+    # Admin role has implicit access to everything
+    if token_payload.get('role') == 'Admin':
         return True
     
-    # Check if user has all required permissions
+    # Check if the user has all required permissions
     return all(perm in user_permissions for perm in required_permissions)
 
 
@@ -246,12 +238,16 @@ def validate_county_access(token_payload: Dict[str, Any], county_id: str) -> boo
     Returns:
         True if the token grants access to the county, False otherwise
     """
-    # Get counties user has access to from token
-    user_counties = token_payload.get('county_ids', [])
+    # Get county IDs from token
+    county_ids = token_payload.get('county_ids', [])
     
-    # Wildcard for all counties
-    if '*' in user_counties:
+    # Admin role has implicit access to all counties
+    if token_payload.get('role') == 'Admin':
         return True
     
-    # Check if user has access to the specific county
-    return county_id in user_counties
+    # Wildcard access
+    if '*' in county_ids:
+        return True
+    
+    # Check specific access
+    return county_id in county_ids
