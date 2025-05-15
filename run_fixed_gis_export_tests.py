@@ -122,7 +122,7 @@ def create_test_job():
         
         response_data = job_response.json()
         job_id = response_data.get("job_id")
-        logger.info(f"Created job with ID: {job_id}")
+        logger.info(f"Created job with ID: {job_id} (type: {type(job_id).__name__})")
         
         # Record in isolated metrics
         metrics_data = {
@@ -160,7 +160,7 @@ def wait_for_job_completion(job_id, timeout_seconds=30):
     while time.time() - start_time < timeout_seconds:
         try:
             status_response = requests.get(
-                f"{SYNC_SERVICE_URL}/plugins/v1/gis-export/jobs/{job_id}/status"
+                f"{SYNC_SERVICE_URL}/plugins/v1/gis-export/status/{job_id}"
             )
             
             if status_response.status_code != 200:

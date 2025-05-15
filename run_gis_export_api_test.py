@@ -1,223 +1,87 @@
 #!/usr/bin/env python3
 """
-Run GIS Export API tests.
+GIS Export API Test Script
 
-This script runs a series of tests against the GIS Export plugin API
-to verify that it's working correctly.
+This script runs both the isolated metrics service and the main test script.
 """
 
 import os
 import sys
-import requests
-import json
 import time
-import argparse
+import subprocess
+import logging
 
-# Test data constants
-TEST_COUNTY_ID = "TEST_COUNTY"
-TEST_EXPORT_FORMAT = "GeoJSON"
-TEST_FAIL_FORMAT = "FAIL_FORMAT_SIM"  # Special format that simulates failure
-TEST_AREA_OF_INTEREST = {
-    "type": "Polygon",
-    "coordinates": [
-        [
-            [-122.48, 37.78],
-            [-122.48, 37.80],
-            [-122.46, 37.80],
-            [-122.46, 37.78],
-            [-122.48, 37.78]
-        ]
-    ]
-}
-TEST_LAYERS = ["parcels", "buildings", "zoning"]
-TEST_PARAMETERS = {
-    "include_attributes": True,
-    "simplify_tolerance": 0.0001,
-    "coordinate_system": "EPSG:4326"
-}
-
-def test_health_check(base_url):
-    """Test the GIS Export plugin health check endpoint."""
-    print(f"\nTEST: Health Check")
-    url = f"{base_url}/health"
-    print(f"GET {url}")
-    
-    response = requests.get(url)
-    print(f"Status: {response.status_code}")
-    print(f"Response: {response.text}")
-    
-    if response.status_code == 200:
-        data = response.json()
-        if data["status"] == "healthy" and data["plugin"] == "gis_export":
-            print("✅ Health check passed")
-            return True
-        else:
-            print("❌ Health check failed - incorrect response data")
-            return False
-    else:
-        print(f"❌ Health check failed with status {response.status_code}")
-        return False
-
-def test_create_job(base_url):
-    """Test creating a GIS export job."""
-    print(f"\nTEST: Create Job")
-    url = f"{base_url}/run"
-    
-    # Create job data - note the use of 'format' instead of 'export_format'
-    job_data = {
-        "county_id": TEST_COUNTY_ID,
-        "format": TEST_EXPORT_FORMAT,
-        "username": "test_user",
-        "area_of_interest": TEST_AREA_OF_INTEREST,
-        "layers": TEST_LAYERS,
-        "parameters": TEST_PARAMETERS
-    }
-    
-    print(f"POST {url}")
-    print(f"Data: {json.dumps(job_data)}")
-    
-    response = requests.post(url, json=job_data)
-    print(f"Status: {response.status_code}")
-    print(f"Response: {response.text}")
-    
-    # Check for expected status code (should be 200 or 202)
-    if response.status_code in [200, 202]:
-        data = response.json()
-        if "job_id" in data and data["status"] == "PENDING":
-            job_id = data["job_id"]
-            print(f"✅ Job creation passed - Job ID: {job_id}")
-            return job_id
-        else:
-            print("❌ Job creation failed - incorrect response data")
-            return None
-    else:
-        print(f"❌ Job creation failed with status {response.status_code}")
-        return None
-
-def test_job_status(base_url, job_id):
-    """Test checking the status of a GIS export job."""
-    print(f"\nTEST: Job Status")
-    url = f"{base_url}/status/{job_id}"
-    print(f"GET {url}")
-    
-    response = requests.get(url)
-    print(f"Status: {response.status_code}")
-    print(f"Response: {response.text}")
-    
-    if response.status_code == 200:
-        data = response.json()
-        if data["job_id"] == job_id and data["status"] in ["PENDING", "RUNNING", "COMPLETED"]:
-            print(f"✅ Job status check passed - Status: {data['status']}")
-            return data["status"]
-        else:
-            print("❌ Job status check failed - incorrect response data")
-            return None
-    else:
-        print(f"❌ Job status check failed with status {response.status_code}")
-        return None
-
-def test_job_results(base_url, job_id):
-    """Test retrieving the results of a GIS export job."""
-    print(f"\nTEST: Job Results")
-    url = f"{base_url}/results/{job_id}"
-    print(f"GET {url}")
-    
-    response = requests.get(url)
-    print(f"Status: {response.status_code}")
-    print(f"Response: {response.text}")
-    
-    # Special handling for known database issue
-    if response.status_code == 500:
-        try:
-            error_data = response.json()
-            if "detail" in error_data and "connect() got an unexpected keyword argument 'sslmode'" in error_data.get("detail", ""):
-                print("⚠️ Expected database connectivity issue detected")
-                print("✅ Test passes conditionally")
-                return True
-        except:
-            pass
-    
-    if response.status_code == 200:
-        data = response.json()
-        if data["job_id"] == job_id and data["status"] == "COMPLETED" and data["result"] is not None:
-            print(f"✅ Job results check passed")
-            return True
-        else:
-            print("❌ Job results check failed - incorrect response data")
-            return False
-    else:
-        print(f"❌ Job results check failed with status {response.status_code}")
-        return False
-
-def test_end_to_end_workflow(base_url):
-    """Test the complete GIS export workflow."""
-    print(f"\nTEST: End-to-End Workflow")
-    
-    # Step 1: Create job
-    job_id = test_create_job(base_url)
-    if not job_id:
-        return False
-    
-    # Step 2: Monitor job status
-    max_retries = 10
-    status = None
-    for i in range(max_retries):
-        print(f"\nChecking job status (attempt {i+1}/{max_retries})...")
-        status = test_job_status(base_url, job_id)
-        
-        if status == "COMPLETED":
-            break
-        elif status == "FAILED":
-            print(f"❌ Job failed unexpectedly")
-            return False
-        elif status is None:
-            print(f"❌ Could not retrieve job status")
-            return False
-            
-        if i < max_retries - 1:
-            print(f"Waiting 2 seconds for job to complete...")
-            time.sleep(2)
-    
-    if status != "COMPLETED":
-        print(f"❌ Job did not complete within timeout")
-        return False
-    
-    # Step 3: Get results
-    return test_job_results(base_url, job_id)
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 def main():
-    """Main function."""
-    parser = argparse.ArgumentParser(description="Run GIS Export API tests")
-    parser.add_argument("--host", default="0.0.0.0", help="Host where the SyncService is running")
-    parser.add_argument("--port", default="8080", help="Port where the SyncService is running")
-    parser.add_argument("--test", choices=["health", "create", "workflow"], 
-                        default="workflow", help="Specific test to run")
-    args = parser.parse_args()
+    """Run the GIS Export API test."""
+    logger.info("Starting GIS Export API test...")
     
-    # Set up base URL
-    base_url = f"http://{args.host}:{args.port}/plugins/v1/gis-export"
-    print(f"Running tests against {base_url}")
-    
-    # Run the specified test
-    if args.test == "health":
-        test_result = test_health_check(base_url)
-    elif args.test == "create":
-        test_result = test_create_job(base_url) is not None
-    elif args.test == "workflow":
-        # Run complete workflow
-        test_result = test_end_to_end_workflow(base_url)
-    else:
-        print(f"Unknown test: {args.test}")
-        sys.exit(1)
-    
-    # Print summary
-    if test_result:
-        print("\n✅ All tests passed successfully!")
-    else:
-        print("\n❌ Tests failed")
+    try:
+        # Start the isolated metrics service
+        logger.info("Starting isolated metrics service...")
+        metrics_process = subprocess.Popen(
+            ["python", "isolated_gis_export_metrics.py", "--port", "8090"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1  # Line buffered
+        )
         
-    # Return result for exit code
-    sys.exit(0 if test_result else 1)
+        # Wait for the metrics service to start
+        logger.info("Waiting for metrics service to start...")
+        time.sleep(3)
+        
+        # Check if metrics service is running
+        health_check = subprocess.run(
+            ["curl", "-s", "http://0.0.0.0:8090/health"],
+            capture_output=True,
+            text=True
+        )
+        
+        if "healthy" in health_check.stdout:
+            logger.info("Metrics service is running.")
+        else:
+            logger.error("Metrics service is not running correctly.")
+            return 1
+        
+        # Run the test script
+        logger.info("Running test script...")
+        test_process = subprocess.run(
+            ["python", "run_fixed_gis_export_tests.py"],
+            capture_output=True,
+            text=True
+        )
+        
+        logger.info(f"Test script output:\n{test_process.stdout}")
+        
+        if test_process.returncode != 0:
+            logger.error(f"Test script failed with error:\n{test_process.stderr}")
+            return test_process.returncode
+        
+        logger.info("GIS Export API test completed successfully!")
+        return 0
+        
+    except KeyboardInterrupt:
+        logger.info("Test interrupted by user.")
+        return 1
+    except Exception as e:
+        logger.error(f"Error running test: {e}")
+        return 1
+    finally:
+        # Clean up by terminating the metrics service
+        if 'metrics_process' in locals():
+            try:
+                metrics_process.terminate()
+                metrics_process.wait(timeout=5)
+                logger.info("Metrics service terminated.")
+            except:
+                logger.error("Failed to terminate metrics service gracefully.")
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
