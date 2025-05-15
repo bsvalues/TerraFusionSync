@@ -1,256 +1,344 @@
 """
 TerraFusion Platform - Authentication Decorators
 
-This module provides decorators for securing routes and APIs with authentication and authorization.
+This module provides decorators for authentication and authorization.
 """
 import logging
-from functools import wraps
-from typing import Callable, Union, List, Optional, Dict, Any, cast
+import functools
+from typing import Callable, Any, Dict, List, Optional, Union, TypeVar, cast
 
-from flask import request, redirect, url_for, session, jsonify, g, current_app
-from werkzeug.local import LocalProxy
+from flask import request, g, abort, jsonify, current_app
 
-from auth.jwt_utils import get_token_from_header, verify_token
-from auth.config import ROLE_PERMISSIONS
+from auth.jwt_utils import get_current_user_from_token
+from auth.config import has_permission, can_perform_action
+from auth.audit import log_access_denied
 
 logger = logging.getLogger(__name__)
 
-def jwt_required(f: Callable) -> Callable:
-    """
-    Decorator to require a valid JWT token for API routes.
-    
-    This decorator extracts the JWT token from the Authorization header,
-    verifies it, and makes the payload available in request.token_payload.
-    
-    If the token is invalid, returns a 401 Unauthorized response.
-    """
-    @wraps(f)
-    def decorated(*args: Any, **kwargs: Any) -> Any:
-        # Get the token from the Authorization header
-        auth_header = request.headers.get('Authorization')
-        success, token, error = get_token_from_header(auth_header)
-        
-        if not success:
-            logger.warning(f"JWT authentication failed: {error}")
-            return jsonify({"error": "Authentication required", "message": error}), 401
-        
-        # Verify the token
-        success, payload, error = verify_token(token)
-        
-        if not success:
-            logger.warning(f"JWT verification failed: {error}")
-            return jsonify({"error": "Invalid token", "message": error}), 401
-        
-        # Store token payload in request
-        g.token_payload = payload
-        
-        # Store user identity for easy access
-        g.current_user = {
-            "user_id": payload.get("sub"),
-            "username": payload.get("username"),
-            "role": payload.get("role"),
-            "county_ids": payload.get("county_ids", [])
-        }
-        
-        logger.debug(f"JWT authentication successful for user {g.current_user['username']}")
-        return f(*args, **kwargs)
-    
-    return decorated
+F = TypeVar('F', bound=Callable[..., Any])
 
-def session_required(f: Callable) -> Callable:
+def jwt_required(f: F) -> F:
     """
-    Decorator to require a valid session for web routes.
-    
-    This decorator checks if the user is logged in via session,
-    redirects to login page if not.
-    """
-    @wraps(f)
-    def decorated(*args: Any, **kwargs: Any) -> Any:
-        # Check if user is logged in via session
-        if 'user_id' not in session:
-            logger.info("Session authentication failed: User not logged in")
-            return redirect(url_for('auth.login', next=request.path))
-        
-        # Store user identity for easy access
-        g.current_user = {
-            "user_id": session.get("user_id"),
-            "username": session.get("username"),
-            "role": session.get("role"),
-            "county_ids": session.get("county_ids", [])
-        }
-        
-        logger.debug(f"Session authentication successful for user {g.current_user.get('username')}")
-        return f(*args, **kwargs)
-    
-    return decorated
-
-def role_required(role: str) -> Callable:
-    """
-    Decorator factory to require a specific role for routes.
-    
-    This decorator checks if the user has the specified role,
-    returning a 403 Forbidden response if not.
+    Decorator to require a valid JWT token.
     
     Args:
-        role: Required role (e.g., 'ITAdmin', 'Assessor', 'Staff')
+        f: The function to decorate
+        
+    Returns:
+        Decorated function
     """
-    def decorator(f: Callable) -> Callable:
-        @wraps(f)
-        def decorated(*args: Any, **kwargs: Any) -> Any:
-            # Get current user from g object
+    @functools.wraps(f)
+    def decorated_function(*args: Any, **kwargs: Any) -> Any:
+        # Get the current user from the token
+        current_user = get_current_user_from_token()
+        
+        if not current_user:
+            logger.warning("JWT required but no valid token provided")
+            abort(401, "Authentication required")
+        
+        # Store the current user in Flask's g object
+        g.current_user = current_user
+        
+        return f(*args, **kwargs)
+    
+    return cast(F, decorated_function)
+
+def role_required(role: Union[str, List[str]]) -> Callable[[F], F]:
+    """
+    Decorator to require a specific role or one of several roles.
+    
+    Args:
+        role: Role name or list of role names
+        
+    Returns:
+        Decorator function
+    """
+    def decorator(f: F) -> F:
+        @functools.wraps(f)
+        def decorated_function(*args: Any, **kwargs: Any) -> Any:
+            # Get the current user from g
             current_user = getattr(g, 'current_user', None)
             
             if not current_user:
-                logger.warning("Role check failed: No authenticated user")
-                return handle_authorization_error("Authentication required")
-            
-            user_role = current_user.get('role')
+                logger.warning("Role required but no authenticated user")
+                abort(401, "Authentication required")
             
             # Check if the user has the required role
-            if user_role != role and user_role != 'ITAdmin':  # ITAdmin has access to everything
-                logger.warning(f"Role check failed: User {current_user.get('username')} with role {user_role} attempted to access resource requiring role {role}")
-                return handle_authorization_error(f"Role '{role}' required")
+            user_role = current_user.get('role')
+            required_roles = [role] if isinstance(role, str) else role
             
-            logger.debug(f"Role check successful for user {current_user.get('username')} with role {user_role}")
+            if user_role not in required_roles:
+                user_id = current_user.get('user_id')
+                username = current_user.get('username')
+                
+                log_access_denied(
+                    user_id=user_id,
+                    username=username,
+                    resource_type="role",
+                    resource_id=str(role),
+                    reason=f"User does not have required role(s): {', '.join(required_roles)}"
+                )
+                
+                logger.warning(f"User {username} (role {user_role}) does not have required role(s): {', '.join(required_roles)}")
+                abort(403, f"Insufficient permissions. Required role(s): {', '.join(required_roles)}")
+            
             return f(*args, **kwargs)
         
-        return decorated
+        return cast(F, decorated_function)
     
     return decorator
 
-def permission_required(permission: Union[str, List[str]]) -> Callable:
+def permission_required(permission: Union[str, List[str]]) -> Callable[[F], F]:
     """
-    Decorator factory to require specific permissions for routes.
-    
-    This decorator checks if the user has the specified permission(s),
-    returning a 403 Forbidden response if not.
+    Decorator to require a specific permission or one of several permissions.
     
     Args:
-        permission: Required permission or list of permissions
+        permission: Permission name or list of permission names
+        
+    Returns:
+        Decorator function
     """
-    def decorator(f: Callable) -> Callable:
-        @wraps(f)
-        def decorated(*args: Any, **kwargs: Any) -> Any:
-            # Get current user from g object
+    def decorator(f: F) -> F:
+        @functools.wraps(f)
+        def decorated_function(*args: Any, **kwargs: Any) -> Any:
+            # Get the current user from g
             current_user = getattr(g, 'current_user', None)
             
             if not current_user:
-                logger.warning("Permission check failed: No authenticated user")
-                return handle_authorization_error("Authentication required")
+                logger.warning("Permission required but no authenticated user")
+                abort(401, "Authentication required")
             
+            # Check if the user has the required permission
             user_role = current_user.get('role')
-            
-            # ITAdmin role has all permissions
-            if user_role == 'ITAdmin':
-                return f(*args, **kwargs)
-            
-            # Get permissions for the user's role
-            role_perms = ROLE_PERMISSIONS.get(user_role, [])
-            
-            # Convert single permission to list for consistent handling
             required_permissions = [permission] if isinstance(permission, str) else permission
             
-            # Check if the user has all the required permissions
+            has_any_permission = False
             for perm in required_permissions:
-                if perm not in role_perms and '*' not in role_perms:
-                    logger.warning(f"Permission check failed: User {current_user.get('username')} with role {user_role} lacks permission {perm}")
-                    return handle_authorization_error(f"Permission '{perm}' required")
+                if has_permission(user_role, perm):
+                    has_any_permission = True
+                    break
             
-            logger.debug(f"Permission check successful for user {current_user.get('username')} with role {user_role}")
+            if not has_any_permission:
+                user_id = current_user.get('user_id')
+                username = current_user.get('username')
+                
+                log_access_denied(
+                    user_id=user_id,
+                    username=username,
+                    resource_type="permission",
+                    resource_id=str(permission),
+                    reason=f"User does not have required permission(s): {', '.join(required_permissions)}"
+                )
+                
+                logger.warning(f"User {username} (role {user_role}) does not have required permission(s): {', '.join(required_permissions)}")
+                abort(403, f"Insufficient permissions. Required permission(s): {', '.join(required_permissions)}")
+            
             return f(*args, **kwargs)
         
-        return decorated
+        return cast(F, decorated_function)
     
     return decorator
 
-def county_access_required(county_id_param: str = 'county_id') -> Callable:
+def county_access_required(county_id_param: str = 'county_id') -> Callable[[F], F]:
     """
-    Decorator factory to require access to a specific county.
-    
-    This decorator checks if the user has access to the county specified
-    in the route parameter or request data, returning a 403 Forbidden response if not.
+    Decorator to require access to a specific county.
     
     Args:
-        county_id_param: Name of the route parameter or request field containing the county ID
+        county_id_param: Name of the parameter containing the county ID
+        
+    Returns:
+        Decorator function
     """
-    def decorator(f: Callable) -> Callable:
-        @wraps(f)
-        def decorated(*args: Any, **kwargs: Any) -> Any:
-            # Get current user from g object
+    def decorator(f: F) -> F:
+        @functools.wraps(f)
+        def decorated_function(*args: Any, **kwargs: Any) -> Any:
+            # Get the current user from g
             current_user = getattr(g, 'current_user', None)
             
             if not current_user:
-                logger.warning("County access check failed: No authenticated user")
-                return handle_authorization_error("Authentication required")
+                logger.warning("County access required but no authenticated user")
+                abort(401, "Authentication required")
             
-            # Get the county ID from route params, query params, or request data
+            # Get the county ID from parameters or JSON body
             county_id = None
             
+            # First try to get from URL parameters
             if county_id_param in kwargs:
-                county_id = kwargs.get(county_id_param)
-            elif request.method == 'GET' and county_id_param in request.args:
-                county_id = request.args.get(county_id_param)
-            elif request.is_json and county_id_param in request.json:
-                county_id = request.json.get(county_id_param)
-            elif request.form and county_id_param in request.form:
-                county_id = request.form.get(county_id_param)
-                
-            if not county_id:
-                logger.warning(f"County access check failed: No county ID found in parameter {county_id_param}")
-                return handle_authorization_error(f"County ID is required")
+                county_id = kwargs[county_id_param]
             
-            user_role = current_user.get('role')
+            # Then try to get from request body
+            if county_id is None and request.is_json:
+                county_id = request.json.get(county_id_param)
+            
+            # Then try to get from form data
+            if county_id is None and request.form:
+                county_id = request.form.get(county_id_param)
+            
+            # Then try to get from query string
+            if county_id is None:
+                county_id = request.args.get(county_id_param)
+            
+            if county_id is None:
+                logger.warning(f"County access required but {county_id_param} not found in request")
+                abort(400, f"County ID ({county_id_param}) is required")
+            
+            # Check if the user has access to the county
             user_county_ids = current_user.get('county_ids', [])
             
-            # ITAdmin role has access to all counties
-            if user_role == 'ITAdmin':
+            # ITAdmin can access all counties
+            if current_user.get('role') == 'ITAdmin':
                 return f(*args, **kwargs)
             
-            # Check if the user has access to the specified county
-            if county_id not in user_county_ids and '*' not in user_county_ids:
-                logger.warning(f"County access check failed: User {current_user.get('username')} attempted to access county {county_id} without permission")
-                return handle_authorization_error(f"Access to county '{county_id}' is not authorized")
+            # Otherwise, check the county list
+            if not user_county_ids or county_id not in user_county_ids:
+                user_id = current_user.get('user_id')
+                username = current_user.get('username')
+                
+                log_access_denied(
+                    user_id=user_id,
+                    username=username,
+                    resource_type="county",
+                    resource_id=county_id,
+                    reason=f"User does not have access to county: {county_id}"
+                )
+                
+                logger.warning(f"User {username} does not have access to county: {county_id}")
+                abort(403, f"You do not have access to county: {county_id}")
             
-            logger.debug(f"County access check successful for user {current_user.get('username')} accessing county {county_id}")
             return f(*args, **kwargs)
         
-        return decorated
+        return cast(F, decorated_function)
     
     return decorator
 
-def handle_authorization_error(message: str) -> Any:
+def resource_action_required(resource: str, action: str) -> Callable[[F], F]:
     """
-    Handle authorization errors based on request type.
-    
-    For API requests, returns a JSON 403 Forbidden response.
-    For HTML requests, redirects to the unauthorized page.
+    Decorator to require permission to perform an action on a resource.
     
     Args:
-        message: Error message
-    
+        resource: Resource name
+        action: Action name
+        
     Returns:
-        Either a JSON response or redirect
+        Decorator function
     """
-    # Check if request wants JSON
-    if request.headers.get('Accept', '').startswith('application/json') or request.is_json:
-        return jsonify({"error": "Forbidden", "message": message}), 403
+    def decorator(f: F) -> F:
+        @functools.wraps(f)
+        def decorated_function(*args: Any, **kwargs: Any) -> Any:
+            # Get the current user from g
+            current_user = getattr(g, 'current_user', None)
+            
+            if not current_user:
+                logger.warning("Resource action required but no authenticated user")
+                abort(401, "Authentication required")
+            
+            # Check if the user can perform the action
+            user_role = current_user.get('role')
+            
+            if not can_perform_action(user_role, resource, action):
+                user_id = current_user.get('user_id')
+                username = current_user.get('username')
+                
+                log_access_denied(
+                    user_id=user_id,
+                    username=username,
+                    resource_type=resource,
+                    resource_id=None,
+                    reason=f"User cannot perform action '{action}' on resource '{resource}'"
+                )
+                
+                logger.warning(f"User {username} (role {user_role}) cannot perform action '{action}' on resource '{resource}'")
+                abort(403, f"Insufficient permissions to perform {action} on {resource}")
+            
+            return f(*args, **kwargs)
+        
+        return cast(F, decorated_function)
     
-    # For HTML requests, redirect to the login page or unauthorized page
-    if 'user_id' in session:
-        # User is logged in but doesn't have permission
-        return redirect(url_for('auth.unauthorized', message=message))
-    else:
-        # User is not logged in
-        return redirect(url_for('auth.login', next=request.path))
+    return decorator
 
-def get_current_user() -> Optional[Dict[str, Any]]:
+def rate_limit(limit: int, period: int) -> Callable[[F], F]:
     """
-    Get the current authenticated user.
+    Decorator to apply rate limiting to a route.
     
+    Args:
+        limit: Maximum number of requests
+        period: Time period in seconds
+        
     Returns:
-        Dictionary with user data or None if not authenticated
+        Decorator function
     """
-    return getattr(g, 'current_user', None)
+    def decorator(f: F) -> F:
+        @functools.wraps(f)
+        def decorated_function(*args: Any, **kwargs: Any) -> Any:
+            # Get the client's IP address
+            ip_address = request.remote_addr or 'unknown'
+            
+            # Check if rate limiting is enabled
+            if not hasattr(current_app, 'rate_limiter'):
+                logger.warning("Rate limiting is not configured")
+                return f(*args, **kwargs)
+            
+            # Check if the client has exceeded the rate limit
+            rate_limiter = current_app.rate_limiter
+            key = f"{request.path}:{ip_address}"
+            
+            if not rate_limiter.is_allowed(key, limit, period):
+                user_id = None
+                username = None
+                
+                # If user is authenticated, get their details
+                current_user = getattr(g, 'current_user', None)
+                if current_user:
+                    user_id = current_user.get('user_id')
+                    username = current_user.get('username')
+                
+                log_access_denied(
+                    user_id=user_id,
+                    username=username,
+                    resource_type="rate_limit",
+                    resource_id=request.path,
+                    reason=f"Rate limit exceeded: {limit} requests per {period} seconds"
+                )
+                
+                logger.warning(f"Rate limit exceeded for {ip_address} on {request.path}")
+                
+                response = jsonify({
+                    "error": "Too Many Requests",
+                    "message": f"Rate limit exceeded: {limit} requests per {period} seconds"
+                })
+                response.status_code = 429
+                retry_after = rate_limiter.get_retry_after(key, period)
+                if retry_after > 0:
+                    response.headers['Retry-After'] = str(retry_after)
+                
+                return response
+            
+            return f(*args, **kwargs)
+        
+        return cast(F, decorated_function)
+    
+    return decorator
 
-# Create a proxy for easier access to the current user
-current_user = cast(Dict[str, Any], LocalProxy(get_current_user))
+def add_security_headers(f: F) -> F:
+    """
+    Decorator to add security headers to responses.
+    
+    Args:
+        f: The function to decorate
+        
+    Returns:
+        Decorated function
+    """
+    @functools.wraps(f)
+    def decorated_function(*args: Any, **kwargs: Any) -> Any:
+        response = f(*args, **kwargs)
+        
+        # Add security headers from config
+        from auth.config import SECURITY_HEADERS
+        
+        for header, value in SECURITY_HEADERS.items():
+            response.headers[header] = value
+        
+        return response
+    
+    return cast(F, decorated_function)
