@@ -43,7 +43,9 @@ async def run_test():
     try:
         # Test 1: Simple area
         print_section("Test: Simple Area Export")
-        await test_simple_area()
+        simple_result = await test_simple_area()
+        print("\nSimple Export Results:")
+        print_result("geojson", simple_result['time'], simple_result['size'], simple_result['count'])
         
         # Test 2: Format comparison
         print_section("Test: Format Comparison")

@@ -76,7 +76,12 @@ async def test_simple_area():
     logger.info(f"Simple test completed in {processing_time:.2f}s")
     logger.info(f"Result: {file_size_kb}KB, {record_count} records, {result_location}")
     
-    return True
+    return {
+        "time": processing_time,
+        "size": file_size_kb,
+        "count": record_count,
+        "location": result_location
+    }
 
 async def test_format_comparisons():
     """Test different formats."""
@@ -110,7 +115,7 @@ async def test_format_comparisons():
     for fmt, data in results.items():
         logger.info(f"{fmt:<10}: {data['time']:.2f}s, {data['size']} KB, {data['count']} records")
     
-    return True
+    return results
 
 async def main():
     """Run quick tests."""
