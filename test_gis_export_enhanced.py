@@ -210,7 +210,7 @@ async def test_export_with_simple_area():
     start_time = datetime.now()
     logger.info(f"Starting simple export at {start_time}")
     
-    result_location, file_size_kb, record_count = await _simulate_gis_export_processing(
+    result_location, file_size_kb, record_count = await simulate_gis_export_processing(
         county_id, export_format, area_of_interest, layers, parameters
     )
     
@@ -261,7 +261,7 @@ async def test_export_with_complex_area():
     start_time = datetime.now()
     logger.info(f"Starting complex export at {start_time}")
     
-    result_location, file_size_kb, record_count = await _simulate_gis_export_processing(
+    result_location, file_size_kb, record_count = await simulate_gis_export_processing(
         county_id, export_format, area_of_interest, layers, parameters
     )
     
@@ -311,7 +311,7 @@ async def test_export_with_different_formats():
         logger.info(f"Testing export format: {export_format}")
         
         start_time = datetime.now()
-        result_location, file_size_kb, record_count = await _simulate_gis_export_processing(
+        result_location, file_size_kb, record_count = await simulate_gis_export_processing(
             county_id, export_format, area_of_interest, layers, parameters
         )
         processing_time = (datetime.now() - start_time).total_seconds()
@@ -370,7 +370,7 @@ async def test_export_with_simplification():
         parameters = {"coordinate_system": "EPSG:4326", "simplify_tolerance": tolerance}
         
         start_time = datetime.now()
-        result_location, file_size_kb, record_count = await _simulate_gis_export_processing(
+        result_location, file_size_kb, record_count = await simulate_gis_export_processing(
             county_id, export_format, area_of_interest, layers, parameters
         )
         processing_time = (datetime.now() - start_time).total_seconds()

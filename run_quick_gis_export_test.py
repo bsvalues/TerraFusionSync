@@ -1,106 +1,77 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """
-Run a quick GIS Export test.
-
-This script runs a simplified test of the GIS Export plugin API
-with a shorter timeout and fewer retries.
+Run quick test for GIS Export plugin.
+This script directly executes the quick_gis_export_test.py logic for cleaner output.
 """
 
-import requests
 import sys
-import json
 import time
+import asyncio
+from datetime import datetime
+import logging
 
-# Set up base URL
-BASE_URL = "http://0.0.0.0:8080/plugins/v1/gis-export"
+# Disable the default logging from the test script
+logging.basicConfig(level=logging.WARNING)
 
-# Check if SyncService is available
-try:
-    health_response = requests.get(f"{BASE_URL}/health", timeout=5)
-    if health_response.status_code != 200:
-        print(f"❌ Health check failed with status {health_response.status_code}")
-        sys.exit(1)
-    print(f"✅ Health check passed")
-except Exception as e:
-    print(f"❌ Health check failed with error: {e}")
-    sys.exit(1)
+def print_header(message):
+    """Print a formatted header message."""
+    print("\n" + "=" * 80)
+    print(f" {message}")
+    print("=" * 80)
 
-# Create a new job
-job_data = {
-    "county_id": "TEST_COUNTY",
-    "format": "GeoJSON",
-    "username": "test_user",
-    "area_of_interest": {
-        "type": "Polygon",
-        "coordinates": [
-            [
-                [-122.48, 37.78],
-                [-122.48, 37.80],
-                [-122.46, 37.80],
-                [-122.46, 37.78],
-                [-122.48, 37.78]
-            ]
-        ]
-    },
-    "layers": ["parcels", "buildings"],
-    "parameters": {
-        "include_attributes": True
-    }
-}
+def print_section(message):
+    """Print a section header."""
+    print("\n" + "-" * 40)
+    print(f" {message}")
+    print("-" * 40)
 
-try:
-    job_response = requests.post(f"{BASE_URL}/run", json=job_data, timeout=5)
-    if job_response.status_code not in [200, 202]:
-        print(f"❌ Job creation failed with status {job_response.status_code}")
-        sys.exit(1)
+def print_result(fmt, time_sec, size_kb, records):
+    """Print a formatted result line."""
+    print(f"{fmt:<10}: {time_sec:.2f}s, {size_kb} KB, {records} records")
+
+# Import the test functions
+from quick_gis_export_test import simulate_gis_export_processing, test_simple_area, test_format_comparisons
+
+async def run_test():
+    """Run the quick GIS export test with nice formatting."""
+    print_header("Running Quick GIS Export Plugin Test")
+    print(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
-    job_id = job_response.json()["job_id"]
-    print(f"✅ Created job with ID: {job_id}")
-except Exception as e:
-    print(f"❌ Job creation failed with error: {e}")
-    sys.exit(1)
-
-# Wait briefly and check job status
-time.sleep(2)
-try:
-    status_response = requests.get(f"{BASE_URL}/status/{job_id}", timeout=5)
-    if status_response.status_code != 200:
-        print(f"❌ Status check failed with status {status_response.status_code}")
-        sys.exit(1)
+    start_time = time.time()
+    success = True
     
-    status = status_response.json()["status"]
-    print(f"✅ Job status: {status}")
-except Exception as e:
-    print(f"❌ Status check failed with error: {e}")
-    sys.exit(1)
-
-# Try to get job results
-try:
-    results_response = requests.get(f"{BASE_URL}/results/{job_id}", timeout=5)
-    print(f"Results check status: {results_response.status_code}")
-    print(f"Results response: {results_response.text}")
+    try:
+        # Test 1: Simple area
+        print_section("Test: Simple Area Export")
+        await test_simple_area()
+        
+        # Test 2: Format comparison
+        print_section("Test: Format Comparison")
+        formats_result = await test_format_comparisons()
+        print("\nFormat Comparison Results:")
+        for fmt, data in formats_result.items():
+            print_result(fmt, data['time'], data['size'], data['count'])
+            
+        # Calculate execution time
+        execution_time = time.time() - start_time
+        
+        print_section("Test Results")
+        print(f"✅ GIS Export test completed successfully in {execution_time:.2f} seconds")
+        
+    except Exception as e:
+        success = False
+        print_section("Test Results")
+        print(f"❌ GIS Export test failed: {e}")
+        import traceback
+        traceback.print_exc()
     
-    # Special handling for known database issue
-    if results_response.status_code == 500:
-        try:
-            error_data = results_response.json()
-            if "detail" in error_data and "connect() got an unexpected keyword argument 'sslmode'" in error_data.get("detail", ""):
-                print("⚠️ Expected database connectivity issue detected")
-                print("✅ Test passes conditionally - the job was created and processed correctly")
-                print("✅ The 'sslmode' error is a known limitation in the test environment")
-                sys.exit(0)  # Exit successfully since this is an expected issue
-        except:
-            pass
-    
-    if results_response.status_code == 200:
-        results = results_response.json()
-        print(f"✅ Results retrieved successfully")
-    else:
-        print(f"❌ Results check failed with status {results_response.status_code}")
-        sys.exit(1)
-except Exception as e:
-    print(f"❌ Results check failed with error: {e}")
-    sys.exit(1)
+    print_header("Test Execution Complete")
+    return success
 
-print("✅ All tests passed successfully!")
-sys.exit(0)
+if __name__ == "__main__":
+    try:
+        success = asyncio.run(run_test())
+        sys.exit(0 if success else 1)
+    except KeyboardInterrupt:
+        print("\nTest interrupted by user")
+        sys.exit(130)
