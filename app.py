@@ -360,8 +360,29 @@ try:
     else:
         logger.warning("County RBAC not available")
 except ImportError:
-    logger.warning("Auth module not available, using fallback authentication")
-    # Fallback auth initialization would go here
+    logger.warning("Apps auth module not available, using TerraFusion Gateway Security")
+    # Register our Authentication module
+    try:
+        # Import our authentication modules
+        from auth import auth_bp
+        from auth.error_handlers import error_bp
+        
+        # Register the authentication blueprints
+        app.register_blueprint(auth_bp)
+        app.register_blueprint(error_bp)
+        
+        # Import our models
+        from auth.models import User, AuditLog
+        
+        # Create the database tables
+        with app.app_context():
+            db.create_all()
+            
+        logger.info("TerraFusion Gateway Security initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize TerraFusion Gateway Security: {str(e)}")
+        logger.warning("Using fallback authentication")
+        # Fallback auth initialization would go here
 
 # Import and register WebSocket proxy
 try:
