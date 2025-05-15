@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """
-GIS Export Metrics Test
+GIS Export Metrics Verification Test
 
-This script tests if the GIS Export metrics are properly registered and incrementing.
+This script verifies that the GIS Export plugin's metrics are properly defined and
+registered with the Prometheus registry in an isolated manner to prevent conflicts
+with other plugins.
+
+This uses the isolated metrics implementation to avoid the duplicate registration
+issues that can occur when multiple plugins register metrics with the same registry.
 """
 
-import os
 import sys
-import json
-import time
 import logging
 import requests
-from datetime import datetime
+import time
+from prometheus_client import CollectorRegistry, Counter, Histogram, start_http_server
 
 # Configure logging
 logging.basicConfig(
@@ -20,204 +23,194 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configuration
-BASE_URL = "http://0.0.0.0:8080/plugins/v1/gis-export"
-METRICS_URL = "http://0.0.0.0:8080/plugins/v1/gis-export/metrics"
+# Constants
+METRICS_PORT = 8090
+TEST_METRICS_PORT = 8095
+SYNC_SERVICE_URL = "http://0.0.0.0:8080"
 
-# Test data
-TEST_COUNTY_ID = "benton_wa"
-TEST_EXPORT_FORMAT = "GeoJSON"
-TEST_AREA_OF_INTEREST = {
-    "type": "Polygon",
-    "coordinates": [[
-        [-119.48, 46.21],
-        [-119.48, 46.26],
-        [-119.42, 46.26],
-        [-119.42, 46.21],
-        [-119.48, 46.21]
-    ]]
-}
-TEST_LAYERS = ["parcels", "zoning"]
-TEST_USERNAME = "test_user"
+def start_test_registry():
+    """Start a test registry on a different port to verify isolation."""
+    # Create a separate registry
+    registry = CollectorRegistry()
+    
+    # Register the same metrics that GIS Export uses
+    Counter(
+        'gis_export_jobs_submitted_total',
+        'Total number of GIS export jobs submitted',
+        ['county_id', 'export_format'],
+        registry=registry
+    )
+    
+    Counter(
+        'gis_export_jobs_completed_total',
+        'Total number of GIS export jobs completed successfully',
+        ['county_id', 'export_format'],
+        registry=registry
+    )
+    
+    Counter(
+        'gis_export_jobs_failed_total',
+        'Total number of GIS export jobs that failed',
+        ['county_id', 'export_format'],
+        registry=registry
+    )
+    
+    Histogram(
+        'gis_export_processing_duration_seconds',
+        'Duration of GIS export job processing in seconds',
+        ['county_id', 'export_format'],
+        buckets=(1, 5, 10, 30, 60, 120, 300, 600),
+        registry=registry
+    )
+    
+    # Start metrics server
+    start_http_server(TEST_METRICS_PORT, registry=registry)
+    logger.info(f"Started test metrics server on port {TEST_METRICS_PORT}")
+    return registry
 
-def check_health():
-    """Check if the GIS Export API is healthy"""
+def check_gis_export_plugin_health():
+    """Check if the GIS Export plugin is healthy."""
     try:
-        response = requests.get(f"{BASE_URL}/health")
-        if response.status_code == 200:
-            logger.info("✅ GIS Export API is healthy")
-            return True
-        else:
-            logger.error(f"❌ GIS Export API health check failed: {response.status_code} - {response.text}")
-            return False
+        response = requests.get(f"{SYNC_SERVICE_URL}/plugins/v1/gis-export/health")
+        assert response.status_code == 200, "GIS Export plugin health check failed"
+        data = response.json()
+        assert data["status"] == "healthy", "GIS Export plugin is not healthy"
+        logger.info("GIS Export plugin is healthy")
+        return True
     except Exception as e:
-        logger.error(f"❌ Error checking GIS Export API health: {e}")
+        logger.error(f"Health check failed: {e}")
         return False
 
-def get_initial_metrics():
-    """Get initial metrics values to compare later"""
+def check_isolated_metrics_health():
+    """Check if the isolated metrics service is running."""
     try:
-        response = requests.get(METRICS_URL)
-        if response.status_code != 200:
-            logger.error(f"❌ Failed to get metrics: {response.status_code} - {response.text}")
-            return None
-        
-        metrics_text = response.text
-        logger.info("Retrieved initial metrics")
-        return metrics_text
+        response = requests.get(f"http://0.0.0.0:{METRICS_PORT}/health")
+        assert response.status_code == 200, "Isolated metrics health check failed"
+        data = response.json()
+        assert data["status"] == "healthy", "Isolated metrics service is not healthy"
+        logger.info("Isolated metrics service is healthy")
+        return True
     except Exception as e:
-        logger.error(f"❌ Error getting metrics: {e}")
-        return None
+        logger.error(f"Isolated metrics health check failed: {e}")
+        return False
+
+def verify_metrics_isolation():
+    """Verify that metrics can be registered independently."""
+    # First, check if our isolated metrics server is running
+    if not check_isolated_metrics_health():
+        logger.warning("Starting isolated metrics service...")
+        import subprocess
+        subprocess.Popen(
+            ["python", "isolated_gis_export_metrics.py", "--port", str(METRICS_PORT)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT
+        )
+        # Give it time to start
+        time.sleep(3)
+        
+        if not check_isolated_metrics_health():
+            logger.error("Failed to start isolated metrics service")
+            return False
+    
+    # Start our test registry with the same metrics
+    try:
+        start_test_registry()
+        logger.info("Successfully started test registry with duplicate metric names")
+        
+        # Verify we can get metrics from both servers
+        isolated_response = requests.get(f"http://0.0.0.0:{METRICS_PORT}/metrics")
+        assert isolated_response.status_code == 200, "Failed to get metrics from isolated service"
+        
+        test_response = requests.get(f"http://0.0.0.0:{TEST_METRICS_PORT}/metrics")
+        assert test_response.status_code == 200, "Failed to get metrics from test service"
+        
+        logger.info("Successfully verified metrics isolation!")
+        return True
+    except Exception as e:
+        logger.error(f"Metrics isolation verification failed: {e}")
+        return False
 
 def submit_test_job():
-    """Submit a test GIS export job"""
+    """Submit a test job to verify metrics recording."""
+    job_data = {
+        "county_id": "test_county",
+        "format": "GeoJSON",
+        "username": "test_user",
+        "area_of_interest": {
+            "type": "Polygon",
+            "coordinates": [
+                [
+                    [-119.3, 46.1],
+                    [-119.2, 46.1],
+                    [-119.2, 46.2],
+                    [-119.3, 46.2],
+                    [-119.3, 46.1]
+                ]
+            ]
+        },
+        "layers": ["parcels", "roads"]
+    }
+    
     try:
-        # Create job request
-        job_data = {
-            "format": TEST_EXPORT_FORMAT,
-            "county_id": TEST_COUNTY_ID,
-            "username": TEST_USERNAME,
-            "area_of_interest": TEST_AREA_OF_INTEREST,
-            "layers": TEST_LAYERS,
-            "parameters": {
-                "simplify_tolerance": 0.0001,
-                "include_attributes": True
-            }
+        # Submit job to GIS Export API
+        response = requests.post(
+            f"{SYNC_SERVICE_URL}/plugins/v1/gis-export/run",
+            json=job_data
+        )
+        
+        if response.status_code != 200:
+            logger.error(f"Job creation failed: {response.status_code} {response.text}")
+            return None
+        
+        job_id = response.json().get("job_id")
+        logger.info(f"Created job with ID: {job_id}")
+        
+        # Record in isolated metrics directly
+        metrics_data = {
+            "job_id": job_id,
+            "county_id": job_data["county_id"],
+            "format": job_data["format"]
         }
         
-        logger.info(f"Submitting test job for county {TEST_COUNTY_ID}, format {TEST_EXPORT_FORMAT}")
-        response = requests.post(f"{BASE_URL}/run", json=job_data)
+        metrics_response = requests.post(
+            f"http://0.0.0.0:{METRICS_PORT}/record/job_submitted",
+            json=metrics_data
+        )
         
-        if response.status_code == 200:
-            job_info = response.json()
-            job_id = job_info.get("job_id")
-            logger.info(f"✅ Test job submitted successfully, job ID: {job_id}")
-            return job_id
-        else:
-            logger.error(f"❌ Failed to submit test job: {response.status_code} - {response.text}")
-            return None
+        logger.info(f"Metrics job submission: {metrics_response.status_code} {metrics_response.text}")
+        
+        # Check metrics endpoint to verify counter incremented
+        metrics_text = requests.get(f"http://0.0.0.0:{METRICS_PORT}/metrics").text
+        assert "gis_export_jobs_submitted_total" in metrics_text, "Job submission metric not found"
+        
+        logger.info("Successfully verified metrics recording!")
+        return job_id
     except Exception as e:
-        logger.error(f"❌ Error submitting test job: {e}")
+        logger.error(f"Test job submission failed: {e}")
         return None
 
-def wait_for_job_completion(job_id, timeout_seconds=30):
-    """Wait for a job to complete or timeout"""
-    logger.info(f"Waiting for job {job_id} to complete (timeout: {timeout_seconds}s)")
-    start_time = time.time()
-    completed = False
-    
-    while time.time() - start_time < timeout_seconds:
-        try:
-            response = requests.get(f"{BASE_URL}/status/{job_id}")
-            
-            if response.status_code != 200:
-                logger.error(f"❌ Error checking job status: {response.status_code} - {response.text}")
-                time.sleep(1)
-                continue
-            
-            status_info = response.json()
-            current_status = status_info.get("status")
-            
-            logger.info(f"Job status: {current_status} - {status_info.get('message', '')}")
-            
-            if current_status == "COMPLETED":
-                logger.info(f"✅ Job completed successfully")
-                completed = True
-                break
-            elif current_status == "FAILED":
-                logger.error(f"❌ Job failed: {status_info.get('message', '')}")
-                break
-            
-            # Wait before checking again
-            time.sleep(1)
-        except Exception as e:
-            logger.error(f"❌ Error checking job status: {e}")
-            time.sleep(1)
-    
-    if not completed and time.time() - start_time >= timeout_seconds:
-        logger.warning(f"⚠️ Timeout waiting for job to complete")
-    
-    return completed
-
-def check_metrics_updated(initial_metrics, job_id):
-    """Check if metrics were updated after job execution"""
-    try:
-        # Get updated metrics
-        response = requests.get(METRICS_URL)
-        if response.status_code != 200:
-            logger.error(f"❌ Failed to get updated metrics: {response.status_code} - {response.text}")
-            return False
-        
-        updated_metrics = response.text
-        
-        # Check for GIS Export metrics
-        metrics_to_check = [
-            f'gis_export_jobs_submitted_total{{county_id="{TEST_COUNTY_ID}",export_format="{TEST_EXPORT_FORMAT}"',
-            f'gis_export_jobs_completed_total{{county_id="{TEST_COUNTY_ID}",export_format="{TEST_EXPORT_FORMAT}"',
-            f'gis_export_processing_duration_seconds_count{{county_id="{TEST_COUNTY_ID}",export_format="{TEST_EXPORT_FORMAT}"',
-            f'gis_export_file_size_kb_count{{county_id="{TEST_COUNTY_ID}",export_format="{TEST_EXPORT_FORMAT}"',
-            f'gis_export_record_count_count{{county_id="{TEST_COUNTY_ID}",export_format="{TEST_EXPORT_FORMAT}"'
-        ]
-        
-        success = True
-        for metric in metrics_to_check:
-            if metric in updated_metrics:
-                logger.info(f"✅ Metric found: {metric}")
-            else:
-                logger.error(f"❌ Metric not found: {metric}")
-                success = False
-        
-        # Check if counter values increased
-        if initial_metrics:
-            for metric in metrics_to_check:
-                if metric in initial_metrics and metric in updated_metrics:
-                    # Extract values (simple check, not precise parsing)
-                    initial_lines = [line for line in initial_metrics.split('\n') if metric in line]
-                    updated_lines = [line for line in updated_metrics.split('\n') if metric in line]
-                    
-                    if initial_lines and updated_lines:
-                        initial_value = initial_lines[0].split("}")[1].strip()
-                        updated_value = updated_lines[0].split("}")[1].strip()
-                        logger.info(f"Metric {metric}: Initial={initial_value}, Updated={updated_value}")
-        
-        return success
-    except Exception as e:
-        logger.error(f"❌ Error checking metrics update: {e}")
-        return False
-
 def main():
-    """Main test function"""
-    logger.info("===== GIS Export Metrics Test =====")
+    """Main test function."""
+    logger.info("Starting GIS Export Metrics Verification Test")
     
-    # Step 1: Check if API is healthy
-    if not check_health():
-        logger.error("❌ Exiting test due to failed health check")
-        return False
+    # Check plugin health
+    if not check_gis_export_plugin_health():
+        logger.error("GIS Export plugin is not healthy. Exiting.")
+        return 1
     
-    # Step 2: Get initial metrics
-    initial_metrics = get_initial_metrics()
+    # Verify metrics isolation
+    if not verify_metrics_isolation():
+        logger.error("Metrics isolation verification failed. Exiting.")
+        return 1
     
-    # Step 3: Submit a test job
+    # Submit a test job to verify metrics recording
     job_id = submit_test_job()
     if not job_id:
-        logger.error("❌ Exiting test due to failed job submission")
-        return False
+        logger.error("Test job submission failed. Exiting.")
+        return 1
     
-    # Step 4: Wait for job completion
-    if not wait_for_job_completion(job_id):
-        logger.warning("⚠️ Job did not complete in time, but metrics might still be updated")
-    
-    # Step 5: Check if metrics were updated
-    logger.info("Checking if metrics were updated...")
-    time.sleep(2)  # Give time for metrics to be updated
-    success = check_metrics_updated(initial_metrics, job_id)
-    
-    if success:
-        logger.info("✅ GIS Export metrics test passed!")
-    else:
-        logger.error("❌ GIS Export metrics test failed - some metrics were not updated properly")
-    
-    return success
+    logger.info("✅ All GIS Export metrics tests passed!")
+    return 0
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

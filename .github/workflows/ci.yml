@@ -95,6 +95,19 @@ print('Alembic migrations applied successfully')
         TEST_TERRAFUSION_OPERATIONAL_DB_URL: ${{ env.TEST_DATABASE_URL }}
         DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
         LOG_LEVEL: DEBUG # More verbose logging for CI tests can be helpful
+        
+    - name: Run GIS Export Plugin Integration Tests
+      run: |
+        echo "Running GIS Export Plugin Integration Tests..."
+        # Run the GIS export plugin tests with verbose output
+        pytest tests/plugins/test_gis_export.py -v -s -m "integration"
+        
+        # Verify GIS export isolated metrics
+        python test_gis_export_metrics.py
+      env:
+        TEST_TERRAFUSION_OPERATIONAL_DB_URL: ${{ env.TEST_DATABASE_URL }}
+        DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+        LOG_LEVEL: DEBUG
     
     - name: Generate coverage report
       run: |
