@@ -25,6 +25,14 @@ from terrafusion_sync.plugins.gis_export.schemas import (
 # Import Prometheus metrics if available
 try:
     from terrafusion_sync.plugins.gis_export.metrics import (
+        GisExportMetrics,
+        register_metrics
+    )
+    # Register metrics to ensure they're available
+    register_metrics()
+    
+    # Get references to the metrics for convenience
+    from terrafusion_sync.plugins.gis_export.metrics import (
         GIS_EXPORT_JOBS_SUBMITTED_TOTAL,
         GIS_EXPORT_JOBS_COMPLETED_TOTAL,
         GIS_EXPORT_JOBS_FAILED_TOTAL,
@@ -32,7 +40,9 @@ try:
         GIS_EXPORT_FILE_SIZE_KB,
         GIS_EXPORT_RECORD_COUNT
     )
+    
     metrics_available = True
+    logging.info("GIS Export metrics module loaded and metrics registered")
 except ImportError:
     metrics_available = False
     logging.warning("GIS Export metrics module not available, metrics will not be recorded")
