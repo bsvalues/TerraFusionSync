@@ -1,160 +1,212 @@
-{% extends "base.html" %}
-
-{% block title %}Login - TerraFusion Platform{% endblock %}
-
-{% block head %}
-<style>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TerraFusion Platform - Login</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #f5f5f5;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    
     .login-container {
-        max-width: 400px;
-        margin: 4rem auto;
-        padding: 2rem;
-        background-color: #fff;
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      background-color: white;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      width: 100%;
+      max-width: 400px;
+      padding: 2rem;
     }
     
-    .login-logo {
-        text-align: center;
-        margin-bottom: 2rem;
+    .logo-container {
+      text-align: center;
+      margin-bottom: 2rem;
     }
     
-    .login-logo img {
-        max-width: 200px;
+    .logo-container img {
+      width: 180px;
+      height: auto;
     }
     
-    .login-title {
-        font-size: 1.8rem;
-        text-align: center;
-        margin-bottom: 1.5rem;
-        color: var(--primary-color);
-    }
-    
-    .login-form {
-        display: flex;
-        flex-direction: column;
-        gap: 1.5rem;
+    h1 {
+      color: #333;
+      margin-bottom: 1.5rem;
+      text-align: center;
+      font-size: 1.75rem;
     }
     
     .form-group {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
+      margin-bottom: 1.25rem;
     }
     
-    .form-group label {
-        font-weight: 500;
-        color: #555;
+    label {
+      display: block;
+      margin-bottom: 0.5rem;
+      color: #555;
+      font-weight: 500;
     }
     
-    .form-group input {
-        padding: 0.75rem;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        font-size: 1rem;
-        outline: none;
-        transition: border-color 0.2s;
+    input[type="text"],
+    input[type="password"] {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 1rem;
+      transition: border-color 0.2s;
     }
     
-    .form-group input:focus {
-        border-color: var(--primary-color);
-        box-shadow: 0 0 0 2px rgba(74, 111, 220, 0.2);
+    input[type="text"]:focus,
+    input[type="password"]:focus {
+      border-color: #4a90e2;
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
     }
     
-    .login-btn {
-        background-color: var(--primary-color);
-        color: white;
-        border: none;
-        border-radius: 4px;
-        padding: 0.75rem;
-        font-size: 1rem;
-        font-weight: 500;
-        cursor: pointer;
-        transition: background-color 0.2s;
+    .submit-btn {
+      width: 100%;
+      background-color: #4a90e2;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 0.85rem;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.2s;
     }
     
-    .login-btn:hover {
-        background-color: var(--primary-dark);
+    .submit-btn:hover {
+      background-color: #3a7bc8;
     }
     
-    .login-footer {
-        margin-top: 1.5rem;
-        text-align: center;
-        font-size: 0.9rem;
-        color: #666;
+    .error-message {
+      background-color: #ffebee;
+      color: #d32f2f;
+      padding: 0.75rem;
+      border-radius: 4px;
+      margin-bottom: 1.25rem;
+      font-size: 0.9rem;
+    }
+    
+    .help-text {
+      text-align: center;
+      margin-top: 1.5rem;
+      color: #666;
+      font-size: 0.9rem;
+    }
+    
+    .help-text a {
+      color: #4a90e2;
+      text-decoration: none;
+    }
+    
+    .help-text a:hover {
+      text-decoration: underline;
+    }
+    
+    .footer {
+      text-align: center;
+      margin-top: 2rem;
+      color: #888;
+      font-size: 0.8rem;
+    }
+    
+    .footer a {
+      color: #666;
+      text-decoration: none;
+    }
+    
+    .footer a:hover {
+      text-decoration: underline;
     }
     
     .flash-messages {
-        margin-bottom: 1.5rem;
+      margin-bottom: 1.25rem;
     }
     
     .flash-message {
-        padding: 0.75rem;
-        border-radius: 4px;
-        margin-bottom: 0.5rem;
-    }
-    
-    .flash-message.info {
-        background-color: #e3f2fd;
-        color: #0d47a1;
-    }
-    
-    .flash-message.success {
-        background-color: #e8f5e9;
-        color: #1b5e20;
-    }
-    
-    .flash-message.warning {
-        background-color: #fff3e0;
-        color: #e65100;
+      padding: 0.75rem;
+      border-radius: 4px;
+      margin-bottom: 0.5rem;
+      font-size: 0.9rem;
     }
     
     .flash-message.error {
-        background-color: #ffebee;
-        color: #b71c1c;
+      background-color: #ffebee;
+      color: #d32f2f;
     }
-</style>
-{% endblock %}
-
-{% block content %}
-<div class="login-container">
-    <div class="login-logo">
-        <img src="{{ url_for('static', filename='logo.png') }}" alt="TerraFusion Platform" onerror="this.src='{{ url_for('static', filename='generated-icon.png') }}'; this.onerror='';">
+    
+    .flash-message.success {
+      background-color: #e8f5e9;
+      color: #388e3c;
+    }
+    
+    .flash-message.info {
+      background-color: #e3f2fd;
+      color: #1976d2;
+    }
+    
+    .flash-message.warning {
+      background-color: #fff8e1;
+      color: #f57f17;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <div class="logo-container">
+      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="TerraFusion Logo">
     </div>
     
-    <h1 class="login-title">Login to TerraFusion</h1>
+    <h1>Sign in to TerraFusion</h1>
     
     {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            <div class="flash-messages">
-                {% for category, message in messages %}
-                    <div class="flash-message {{ category }}">{{ message }}</div>
-                {% endfor %}
-            </div>
-        {% endif %}
+      {% if messages %}
+        <div class="flash-messages">
+          {% for category, message in messages %}
+            <div class="flash-message {{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
     {% endwith %}
     
-    <form class="login-form" method="POST" action="{{ url_for('auth.login') }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        {% if next %}
-        <input type="hidden" name="next" value="{{ next }}">
-        {% endif %}
-        
-        <div class="form-group">
-            <label for="username">Username</label>
-            <input type="text" id="username" name="username" required>
-        </div>
-        
-        <div class="form-group">
-            <label for="password">Password</label>
-            <input type="password" id="password" name="password" required>
-        </div>
-        
-        <button type="submit" class="login-btn">Login</button>
+    {% if error %}
+      <div class="error-message">{{ error }}</div>
+    {% endif %}
+    
+    <form method="POST" action="{{ url_for('auth.login', next=request.args.get('next')) }}">
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" required autocomplete="username">
+      </div>
+      
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required autocomplete="current-password">
+      </div>
+      
+      <input type="hidden" name="next" value="{{ request.args.get('next', '') }}">
+      
+      <button type="submit" class="submit-btn">Sign In</button>
     </form>
     
-    <div class="login-footer">
-        <p>TerraFusion Platform - Secure County Property Assessment Sync</p>
-        <p>© 2025 TerraFusion Platform</p>
+    <div class="help-text">
+      <p>Forgot your password? Contact your administrator.</p>
+      <p>New user? <a href="{{ url_for('auth.register') }}">Register here</a></p>
     </div>
-</div>
-{% endblock %}
+    
+    <div class="footer">
+      <p>TerraFusion Platform &copy; 2025 | <a href="#">Privacy Policy</a> | <a href="#">Help</a></p>
+    </div>
+  </div>
+</body>
+</html>

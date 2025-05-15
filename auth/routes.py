@@ -1,462 +1,535 @@
 """
 TerraFusion Platform - Authentication Routes
 
-This module handles the authentication routes for the TerraFusion Platform.
+This module provides route handlers for authentication-related requests.
 """
-import json
+import datetime
 import logging
-import os
-from typing import Dict, Any, List, Optional
+from typing import Tuple, Dict, Any, Optional, Union
 
 from flask import (
-    request, redirect, url_for, session, render_template, flash, 
-    jsonify, current_app, Response, abort
+    Blueprint, render_template, request, redirect, url_for, 
+    flash, jsonify, session, current_app, g
 )
-from werkzeug.security import check_password_hash
+from werkzeug.security import generate_password_hash, check_password_hash
 
-from auth import auth_bp
+from auth.models import User, RefreshToken, db
+from auth.audit import (
+    log_login_success, log_login_failure, log_logout, 
+    log_token_created, log_token_refreshed, log_password_change
+)
+from auth.jwt_utils import generate_token, verify_token, refresh_access_token, get_token_from_header
 from auth.config import (
-    AUTH_REDIRECT_PARAM, ROLE_PERMISSIONS, LDAP_ENABLED,
-    ROLE_ADMIN, ROLE_ASSESSOR, ROLE_STAFF, ROLE_AUDITOR
+    JWT_REFRESH_TOKEN_EXPIRES, PASSWORD_MIN_LENGTH, PASSWORD_REQUIRE_UPPERCASE,
+    PASSWORD_REQUIRE_LOWERCASE, PASSWORD_REQUIRE_DIGIT, PASSWORD_REQUIRE_SPECIAL
 )
-from auth.jwt_utils import (
-    create_access_token, create_refresh_token, blacklist_token
-)
-from auth.decorators import requires_auth
 
 logger = logging.getLogger(__name__)
 
-# Load test users from JSON file for development
-try:
-    with open('county_users.json', 'r') as f:
-        TEST_USERS = json.load(f)
-except FileNotFoundError:
-    # Create default test users if file doesn't exist
-    TEST_USERS = {
-        "admin": {
-            "username": "admin",
-            "password": "admin_pwd",  # In production, use hashed passwords
-            "role": ROLE_ADMIN,
-            "county_ids": ["*"],  # Admin can access all counties
-            "user_id": "1"
-        },
-        "assessor": {
-            "username": "assessor",
-            "password": "assessor_pwd",
-            "role": ROLE_ASSESSOR,
-            "county_ids": ["benton-wa", "franklin-wa"],
-            "user_id": "2"
-        },
-        "staff": {
-            "username": "staff",
-            "password": "staff_pwd",
-            "role": ROLE_STAFF,
-            "county_ids": ["benton-wa"],
-            "user_id": "3"
-        },
-        "auditor": {
-            "username": "auditor",
-            "password": "auditor_pwd",
-            "role": ROLE_AUDITOR,
-            "county_ids": ["benton-wa", "franklin-wa", "grant-wa"],
-            "user_id": "4"
-        }
-    }
-    # Save default users to file
-    try:
-        with open('county_users.json', 'w') as f:
-            json.dump(TEST_USERS, f, indent=2)
-    except Exception as e:
-        logger.warning(f"Failed to create default users file: {str(e)}")
+# Create a Blueprint for authentication routes
+auth = Blueprint('auth', __name__, url_prefix='/auth')
 
-
-@auth_bp.route('/login', methods=['GET', 'POST'])
-def login():
+@auth.route('/login', methods=['GET', 'POST'])
+def login() -> Union[str, Tuple[Dict[str, Any], int]]:
     """
-    Handle user login.
-    GET: Show login form
-    POST: Process login form submission
+    Handle login for web and API authentication.
+    
+    For web requests:
+    - GET: Show the login form
+    - POST: Process the login form
+    
+    For API requests:
+    - POST: Return JWT tokens
+    
+    Returns:
+        HTML page, redirect, or JSON response
     """
-    # Get the 'next' parameter for redirect after successful login
-    next_url = request.args.get(AUTH_REDIRECT_PARAM) or request.form.get('next')
+    # Check if it's an API request
+    is_api_request = request.headers.get('Accept', '').startswith('application/json') or request.is_json
     
-    # If the user is already logged in, redirect to the next URL or dashboard
-    if session.get('token'):
-        return redirect(next_url or url_for('dashboard'))
+    # Handle GET request for web pages
+    if request.method == 'GET' and not is_api_request:
+        return render_template('auth/login.html')
     
-    # Handle login form submission
-    if request.method == 'POST':
+    # For POST requests, get the credentials
+    if is_api_request and request.is_json:
+        data = request.json
+        username = data.get('username')
+        password = data.get('password')
+    else:
         username = request.form.get('username')
         password = request.form.get('password')
-        
-        if not username or not password:
-            flash('Username and password are required', 'error')
-            return render_template('auth/login.html', next=next_url)
-            
-        # Authenticate the user (using LDAP in production)
-        user = authenticate_user(username, password)
-        
-        if not user:
-            flash('Invalid username or password', 'error')
-            logger.warning(f"Failed login attempt for username: {username}")
-            return render_template('auth/login.html', next=next_url)
-        
-        # User authenticated successfully, create tokens
-        access_token = create_access_token(
-            user_id=user.get('user_id') or username,
-            username=username,
-            role=user.get('role'),
-            permissions=get_permissions_for_role(user.get('role')),
-            county_ids=user.get('county_ids')
+    
+    # Validate input
+    if not username or not password:
+        if is_api_request:
+            return jsonify({
+                "error": "Invalid request",
+                "message": "Username and password are required"
+            }), 400
+        flash('Username and password are required', 'error')
+        return render_template('auth/login.html', error='Username and password are required')
+    
+    # Find the user
+    user = User.query.filter_by(username=username).first()
+    
+    # Verify credentials
+    if not user or not user.check_password(password):
+        log_login_failure(username, "Invalid credentials")
+        if is_api_request:
+            return jsonify({
+                "error": "Authentication failed",
+                "message": "Invalid username or password"
+            }), 401
+        flash('Invalid username or password', 'error')
+        return render_template('auth/login.html', error='Invalid username or password')
+    
+    # Check if user is active
+    if not user.active:
+        log_login_failure(username, "Account is deactivated")
+        if is_api_request:
+            return jsonify({
+                "error": "Authentication failed",
+                "message": "Account is deactivated"
+            }), 401
+        flash('Your account is deactivated. Please contact an administrator.', 'error')
+        return render_template('auth/login.html', error='Account is deactivated')
+    
+    # Authentication succeeded
+    user.record_login()
+    log_login_success(user.id, user.username)
+    
+    # For API requests, generate and return tokens
+    if is_api_request:
+        # Generate access and refresh tokens
+        access_token = generate_token(
+            user_id=user.id,
+            username=user.username,
+            role=user.role,
+            county_ids=user.county_access,
+            token_type='access'
         )
         
-        refresh_token = create_refresh_token(
-            user_id=user.get('user_id') or username,
-            username=username,
-            role=user.get('role')
-        )
+        refresh_token_expires = datetime.datetime.utcnow() + datetime.timedelta(seconds=JWT_REFRESH_TOKEN_EXPIRES)
+        refresh_token_model = RefreshToken(user_id=user.id, expires_at=refresh_token_expires)
+        db.session.add(refresh_token_model)
+        db.session.commit()
         
-        # Store tokens in session
-        session['token'] = access_token
-        session['refresh_token'] = refresh_token
+        # Log token creation events
+        log_token_created(user.id, user.username, 'access')
+        log_token_created(user.id, user.username, 'refresh')
         
-        # Log successful login
-        logger.info(f"User {username} logged in successfully (role: {user.get('role')})")
-        
-        # Create audit log entry for login
-        try:
-            from app import create_audit_log
-            create_audit_log(
-                event_type='user_login',
-                resource_type='user',
-                description=f"User {username} logged in",
-                resource_id=str(user.get('user_id') or username),
-                user_id=str(user.get('user_id') or username),
-                username=username,
-                severity='info'
-            )
-        except ImportError:
-            logger.warning("Audit log function not available")
-        
-        # Redirect to the next URL or dashboard
-        flash(f'Welcome, {username}!', 'success')
-        return redirect(next_url or url_for('dashboard'))
+        return jsonify({
+            "access_token": access_token,
+            "refresh_token": refresh_token_model.token,
+            "token_type": "Bearer",
+            "expires_in": JWT_REFRESH_TOKEN_EXPIRES,
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "role": user.role,
+                "county_access": user.county_access
+            }
+        }), 200
     
-    # Show login form for GET requests
-    return render_template('auth/login.html', next=next_url)
-
-
-@auth_bp.route('/logout')
-def logout():
-    """Handle user logout."""
-    token = session.get('token')
-    if token:
-        # Add the token to the blacklist
-        blacklist_token(token)
-        
-        # Log the logout
-        logger.info(f"User logged out")
-        
-        # Create audit log entry for logout
-        try:
-            token_payload = None
-            try:
-                from auth.jwt_utils import decode_token
-                token_payload = decode_token(token)
-            except Exception:
-                pass
-            
-            if token_payload:
-                from app import create_audit_log
-                create_audit_log(
-                    event_type='user_logout',
-                    resource_type='user',
-                    description=f"User {token_payload.get('username')} logged out",
-                    resource_id=str(token_payload.get('sub')),
-                    user_id=str(token_payload.get('sub')),
-                    username=token_payload.get('username'),
-                    severity='info'
-                )
-        except ImportError:
-            logger.warning("Audit log function not available")
+    # For web requests, set session and redirect
+    session['user_id'] = user.id
+    session['username'] = user.username
+    session['role'] = user.role
+    session['county_ids'] = user.county_access
     
-    # Clear session data
+    # Redirect to the next URL if provided, or the dashboard
+    next_url = request.form.get('next') or request.args.get('next')
+    if next_url:
+        return redirect(next_url)
+    return redirect(url_for('dashboard'))
+
+@auth.route('/logout', methods=['GET', 'POST'])
+def logout() -> Union[str, Tuple[Dict[str, Any], int]]:
+    """
+    Handle logout for web and API authentication.
+    
+    For web requests:
+    - GET/POST: Clear session and redirect to login
+    
+    For API requests:
+    - POST: Revoke refresh token
+    
+    Returns:
+        Redirect or JSON response
+    """
+    # Check if it's an API request
+    is_api_request = request.headers.get('Accept', '').startswith('application/json') or request.is_json
+    
+    if is_api_request:
+        # For API requests, check if a refresh token was provided
+        if request.is_json:
+            data = request.json
+            token = data.get('refresh_token')
+            if token:
+                # Find and revoke the token
+                refresh_token = RefreshToken.get_by_token(token)
+                if refresh_token:
+                    refresh_token.revoke()
+                    user = User.query.get(refresh_token.user_id)
+                    if user:
+                        log_logout(user.id, user.username)
+        
+        return jsonify({"message": "Logged out successfully"}), 200
+    
+    # For web requests, clear the session
+    user_id = session.get('user_id')
+    username = session.get('username')
+    
     session.clear()
+    
+    if user_id and username:
+        log_logout(user_id, username)
     
     flash('You have been logged out', 'info')
     return redirect(url_for('auth.login'))
 
-
-@auth_bp.route('/refresh', methods=['POST'])
-def refresh():
+@auth.route('/refresh', methods=['POST'])
+def refresh() -> Tuple[Dict[str, Any], int]:
     """
-    Refresh the access token using the refresh token.
-    This endpoint is used by API clients to get a new access token.
-    """
-    # Get refresh token from request or session
-    refresh_token = None
-    if request.is_json:
-        refresh_token = request.json.get('refresh_token')
-    elif request.form:
-        refresh_token = request.form.get('refresh_token')
-    else:
-        refresh_token = session.get('refresh_token')
+    Refresh an access token using a refresh token.
     
-    if not refresh_token:
+    Returns:
+        JSON response with a new access token
+    """
+    # Only for API requests
+    if not request.is_json:
         return jsonify({
-            'success': False,
-            'message': 'Refresh token is required',
-            'error': 'missing_token'
+            "error": "Invalid request",
+            "message": "Request must be JSON"
         }), 400
     
-    try:
-        # Decode and validate refresh token
-        from auth.jwt_utils import decode_token
-        token_payload = decode_token(refresh_token)
-        
-        # Make sure it's a refresh token
-        if token_payload.get('type') != 'refresh':
-            return jsonify({
-                'success': False,
-                'message': 'Invalid token type',
-                'error': 'invalid_token_type'
-            }), 400
-        
-        # Create a new access token
-        user_id = token_payload.get('sub')
-        username = token_payload.get('username')
-        role = token_payload.get('role')
-        
-        # Get user details to include county IDs and permissions
-        user = get_user_details(username)
-        county_ids = user.get('county_ids') if user else None
-        
-        # Create a new access token
-        access_token = create_access_token(
-            user_id=user_id,
-            username=username,
-            role=role,
-            permissions=get_permissions_for_role(role),
-            county_ids=county_ids
-        )
-        
-        # Store the new access token in the session
-        session['token'] = access_token
-        
+    # Get the refresh token
+    refresh_token = request.json.get('refresh_token')
+    if not refresh_token:
         return jsonify({
-            'success': True,
-            'message': 'Token refreshed successfully',
-            'access_token': access_token
-        })
-    except Exception as e:
-        logger.warning(f"Token refresh failed: {str(e)}")
-        return jsonify({
-            'success': False,
-            'message': 'Invalid or expired refresh token',
-            'error': 'invalid_token'
-        }), 401
-
-
-@auth_bp.route('/user')
-@requires_auth()
-def get_user_info():
-    """
-    Get information about the currently logged-in user.
-    This endpoint is useful for client applications to check if the user is logged in.
-    """
-    token_payload = getattr(request, 'token_payload', None)
+            "error": "Invalid request",
+            "message": "Refresh token is required"
+        }), 400
     
-    if not token_payload:
+    # Check if the refresh token is valid
+    token_model = RefreshToken.get_by_token(refresh_token)
+    if not token_model or not token_model.is_valid():
         return jsonify({
-            'success': False,
-            'message': 'Not authenticated',
-            'authenticated': False
+            "error": "Invalid token",
+            "message": "Refresh token is invalid or expired"
         }), 401
     
-    # Get user details from the token
-    user_id = token_payload.get('sub')
-    username = token_payload.get('username')
-    role = token_payload.get('role')
-    permissions = token_payload.get('permissions', [])
-    county_ids = token_payload.get('county_ids', [])
+    # Generate a new access token
+    user = User.query.get(token_model.user_id)
+    if not user or not user.active:
+        return jsonify({
+            "error": "Invalid token",
+            "message": "User account is inactive or does not exist"
+        }), 401
+    
+    access_token = generate_token(
+        user_id=user.id,
+        username=user.username,
+        role=user.role,
+        county_ids=user.county_access,
+        token_type='access'
+    )
+    
+    log_token_refreshed(user.id, user.username)
     
     return jsonify({
-        'success': True,
-        'authenticated': True,
-        'user': {
-            'id': user_id,
-            'username': username,
-            'role': role,
-            'permissions': permissions,
-            'county_ids': county_ids
+        "access_token": access_token,
+        "token_type": "Bearer",
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "role": user.role,
+            "county_access": user.county_access
         }
-    })
+    }), 200
 
-
-def authenticate_user(username: str, password: str) -> Optional[Dict[str, Any]]:
+@auth.route('/password', methods=['POST'])
+def change_password() -> Tuple[Dict[str, Any], int]:
     """
-    Authenticate a user with the given username and password.
+    Change a user's password.
     
-    In production, this would use LDAP to authenticate against Active Directory.
-    For development, we use a simple in-memory store of test users.
+    The user must provide their current password and a new password.
     
-    Args:
-        username: The username to authenticate
-        password: The password to verify
-        
     Returns:
-        User details dict if authentication is successful, None otherwise
+        JSON response
     """
-    if LDAP_ENABLED:
-        return authenticate_user_ldap(username, password)
+    # Only for API requests
+    if not request.is_json:
+        return jsonify({
+            "error": "Invalid request",
+            "message": "Request must be JSON"
+        }), 400
+    
+    # Get the current user
+    current_user = getattr(g, 'current_user', None)
+    if not current_user:
+        return jsonify({
+            "error": "Authentication required",
+            "message": "You must be logged in to change your password"
+        }), 401
+    
+    # Get the passwords
+    data = request.json
+    current_password = data.get('current_password')
+    new_password = data.get('new_password')
+    confirm_password = data.get('confirm_password')
+    
+    # Validate input
+    if not current_password or not new_password or not confirm_password:
+        return jsonify({
+            "error": "Invalid request",
+            "message": "Current password, new password, and confirm password are required"
+        }), 400
+    
+    if new_password != confirm_password:
+        return jsonify({
+            "error": "Invalid request",
+            "message": "New password and confirm password do not match"
+        }), 400
+    
+    # Validate password strength
+    password_validation = validate_password_strength(new_password)
+    if not password_validation['valid']:
+        return jsonify({
+            "error": "Invalid password",
+            "message": password_validation['message']
+        }), 400
+    
+    # Find the user
+    user = User.query.get(current_user['user_id'])
+    if not user or not user.active:
+        return jsonify({
+            "error": "Authentication failed",
+            "message": "User account is inactive or does not exist"
+        }), 401
+    
+    # Verify current password
+    if not user.check_password(current_password):
+        return jsonify({
+            "error": "Authentication failed",
+            "message": "Current password is incorrect"
+        }), 401
+    
+    # Update the password
+    user.set_password(new_password)
+    db.session.commit()
+    
+    log_password_change(user.id, user.username)
+    
+    return jsonify({
+        "message": "Password changed successfully"
+    }), 200
+
+@auth.route('/register', methods=['GET', 'POST'])
+def register() -> Union[str, Tuple[Dict[str, Any], int]]:
+    """
+    Handle user registration.
+    
+    For web requests:
+    - GET: Show the registration form
+    - POST: Process the registration form
+    
+    For API requests:
+    - POST: Create a new user
+    
+    Returns:
+        HTML page, redirect, or JSON response
+    """
+    # Check if it's an API request
+    is_api_request = request.headers.get('Accept', '').startswith('application/json') or request.is_json
+    
+    # Handle GET request for web pages
+    if request.method == 'GET' and not is_api_request:
+        return render_template('auth/register.html')
+    
+    # For POST requests, get the user data
+    if is_api_request and request.is_json:
+        data = request.json
     else:
-        return authenticate_user_dev(username, password)
+        data = request.form
+    
+    username = data.get('username')
+    email = data.get('email')
+    password = data.get('password')
+    confirm_password = data.get('confirm_password')
+    first_name = data.get('first_name')
+    last_name = data.get('last_name')
+    
+    # Validate input
+    if not username or not email or not password or not confirm_password:
+        if is_api_request:
+            return jsonify({
+                "error": "Invalid request",
+                "message": "Username, email, password, and confirm password are required"
+            }), 400
+        flash('All fields are required', 'error')
+        return render_template('auth/register.html', error='All fields are required')
+    
+    if password != confirm_password:
+        if is_api_request:
+            return jsonify({
+                "error": "Invalid request",
+                "message": "Passwords do not match"
+            }), 400
+        flash('Passwords do not match', 'error')
+        return render_template('auth/register.html', error='Passwords do not match')
+    
+    # Validate password strength
+    password_validation = validate_password_strength(password)
+    if not password_validation['valid']:
+        if is_api_request:
+            return jsonify({
+                "error": "Invalid password",
+                "message": password_validation['message']
+            }), 400
+        flash(password_validation['message'], 'error')
+        return render_template('auth/register.html', error=password_validation['message'])
+    
+    # Check if username or email already exists
+    if User.query.filter_by(username=username).first():
+        if is_api_request:
+            return jsonify({
+                "error": "Invalid request",
+                "message": "Username already exists"
+            }), 400
+        flash('Username already exists', 'error')
+        return render_template('auth/register.html', error='Username already exists')
+    
+    if User.query.filter_by(email=email).first():
+        if is_api_request:
+            return jsonify({
+                "error": "Invalid request",
+                "message": "Email already exists"
+            }), 400
+        flash('Email already exists', 'error')
+        return render_template('auth/register.html', error='Email already exists')
+    
+    # Create the user
+    user = User(
+        username=username,
+        email=email,
+        password=password,
+        role='Staff',  # Default role
+        first_name=first_name,
+        last_name=last_name,
+        county_access=[]  # No county access by default
+    )
+    
+    db.session.add(user)
+    db.session.commit()
+    
+    # Registration succeeded
+    if is_api_request:
+        return jsonify({
+            "message": "User registered successfully",
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "role": user.role
+            }
+        }), 201
+    
+    flash('Registration successful. Please log in.', 'success')
+    return redirect(url_for('auth.login'))
 
-
-def authenticate_user_dev(username: str, password: str) -> Optional[Dict[str, Any]]:
+@auth.route('/unauthorized', methods=['GET'])
+def unauthorized() -> str:
     """
-    Authenticate a user using the development test users.
+    Display an unauthorized error page.
+    
+    Returns:
+        HTML page
+    """
+    message = request.args.get('message', 'You do not have permission to access this page')
+    return render_template(
+        'auth/error.html',
+        title='Access Denied',
+        error_code=403,
+        message=message
+    )
+
+@auth.route('/me', methods=['GET'])
+def get_current_user() -> Tuple[Dict[str, Any], int]:
+    """
+    Get the current user's profile.
+    
+    Returns:
+        JSON response with user data
+    """
+    # Get current user from g object
+    current_user = getattr(g, 'current_user', None)
+    
+    if not current_user:
+        return jsonify({
+            "error": "Authentication required",
+            "message": "You must be logged in to access this resource"
+        }), 401
+    
+    # Find the user
+    user = User.query.get(current_user['user_id'])
+    if not user or not user.active:
+        return jsonify({
+            "error": "Authentication failed",
+            "message": "User account is inactive or does not exist"
+        }), 401
+    
+    return jsonify({
+        "user": user.to_dict()
+    }), 200
+
+def validate_password_strength(password: str) -> Dict[str, Any]:
+    """
+    Validate the strength of a password.
     
     Args:
-        username: The username to authenticate
-        password: The password to verify
+        password: Password to validate
         
     Returns:
-        User details dict if authentication is successful, None otherwise
+        Dictionary with validation result and message
     """
-    user = TEST_USERS.get(username)
-    
-    if not user:
-        logger.warning(f"User not found: {username}")
-        return None
-    
-    # In production, we would use hashed passwords
-    if user.get('password') != password:
-        logger.warning(f"Invalid password for user: {username}")
-        return None
-    
-    return user
-
-
-def authenticate_user_ldap(username: str, password: str) -> Optional[Dict[str, Any]]:
-    """
-    Authenticate a user using LDAP (Active Directory).
-    
-    Args:
-        username: The username to authenticate
-        password: The password to verify
-        
-    Returns:
-        User details dict if authentication is successful, None otherwise
-    """
-    try:
-        import ldap
-        from auth.config import (
-            LDAP_SERVER, LDAP_PORT, LDAP_USE_SSL, 
-            LDAP_BIND_DN, LDAP_BIND_PASSWORD, 
-            LDAP_BASE_DN, LDAP_USER_FILTER, LDAP_GROUP_FILTER
-        )
-        
-        # Connect to LDAP server
-        ldap_uri = f"{'ldaps' if LDAP_USE_SSL else 'ldap'}://{LDAP_SERVER}:{LDAP_PORT}"
-        ldap_conn = ldap.initialize(ldap_uri)
-        ldap_conn.set_option(ldap.OPT_REFERRALS, 0)
-        
-        # Bind with service account
-        ldap_conn.simple_bind_s(LDAP_BIND_DN, LDAP_BIND_PASSWORD)
-        
-        # Search for the user
-        user_filter = LDAP_USER_FILTER.format(username=username)
-        result = ldap_conn.search_s(
-            LDAP_BASE_DN, ldap.SCOPE_SUBTREE, user_filter, ['cn', 'mail', 'memberOf']
-        )
-        
-        if not result or not result[0] or not result[0][0]:
-            logger.warning(f"LDAP: User not found: {username}")
-            return None
-        
-        user_dn = result[0][0]
-        user_attrs = result[0][1]
-        
-        # Authenticate the user
-        try:
-            ldap_conn.simple_bind_s(user_dn, password)
-        except ldap.INVALID_CREDENTIALS:
-            logger.warning(f"LDAP: Invalid credentials for user: {username}")
-            return None
-        
-        # Get user's groups and determine role
-        role = ROLE_STAFF  # Default role
-        county_ids = []
-        
-        # Extract group memberships
-        member_of = user_attrs.get('memberOf', [])
-        for group_dn in member_of:
-            group_dn = group_dn.decode('utf-8')
-            
-            # Determine role based on group membership
-            if 'CN=TerraFusion_Admins' in group_dn:
-                role = ROLE_ADMIN
-                county_ids = ['*']  # Admin can access all counties
-            elif 'CN=TerraFusion_Assessors' in group_dn:
-                role = ROLE_ASSESSOR
-            elif 'CN=TerraFusion_Auditors' in group_dn:
-                role = ROLE_AUDITOR
-            
-            # Extract county access
-            if 'CN=TerraFusion_County_' in group_dn:
-                # Extract county ID from group name (e.g., "TerraFusion_County_benton-wa")
-                parts = group_dn.split(',')[0].split('=')[1].split('_')
-                if len(parts) >= 3:
-                    county_id = parts[2].lower()
-                    if county_id and county_id not in county_ids and county_ids != ['*']:
-                        county_ids.append(county_id)
-        
-        # Create user details
-        user = {
-            'username': username,
-            'role': role,
-            'county_ids': county_ids,
-            'user_id': user_dn,  # Use the DN as the user ID
-            'email': user_attrs.get('mail', [b''])[0].decode('utf-8')
+    # Check length
+    if len(password) < PASSWORD_MIN_LENGTH:
+        return {
+            "valid": False,
+            "message": f"Password must be at least {PASSWORD_MIN_LENGTH} characters long"
         }
-        
-        return user
-        
-    except ImportError:
-        logger.error("LDAP module not available")
-        return None
-    except Exception as e:
-        logger.error(f"LDAP authentication error: {str(e)}")
-        return None
-
-
-def get_user_details(username: str) -> Optional[Dict[str, Any]]:
-    """
-    Get user details for the given username.
     
-    Args:
-        username: The username to look up
-        
-    Returns:
-        User details dict if found, None otherwise
-    """
-    if LDAP_ENABLED:
-        # In production, we would fetch this from LDAP or a database
-        # For now, just return the default values
-        return TEST_USERS.get(username)
-    else:
-        return TEST_USERS.get(username)
-
-
-def get_permissions_for_role(role: str) -> List[str]:
-    """
-    Get the permissions for a given role.
+    # Check for uppercase
+    if PASSWORD_REQUIRE_UPPERCASE and not any(c.isupper() for c in password):
+        return {
+            "valid": False,
+            "message": "Password must contain at least one uppercase letter"
+        }
     
-    Args:
-        role: The role to get permissions for
-        
-    Returns:
-        List of permission strings
-    """
-    return ROLE_PERMISSIONS.get(role, [])
+    # Check for lowercase
+    if PASSWORD_REQUIRE_LOWERCASE and not any(c.islower() for c in password):
+        return {
+            "valid": False,
+            "message": "Password must contain at least one lowercase letter"
+        }
+    
+    # Check for digit
+    if PASSWORD_REQUIRE_DIGIT and not any(c.isdigit() for c in password):
+        return {
+            "valid": False,
+            "message": "Password must contain at least one digit"
+        }
+    
+    # Check for special character
+    if PASSWORD_REQUIRE_SPECIAL and not any(not c.isalnum() for c in password):
+        return {
+            "valid": False,
+            "message": "Password must contain at least one special character"
+        }
+    
+    return {
+        "valid": True,
+        "message": "Password meets requirements"
+    }

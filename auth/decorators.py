@@ -1,277 +1,256 @@
 """
 TerraFusion Platform - Authentication Decorators
 
-This module provides decorator functions for securing routes and endpoints
-with JWT authentication and role-based access control.
+This module provides decorators for securing routes and APIs with authentication and authorization.
 """
-import functools
 import logging
-from typing import Callable, List, Union, Optional
+from functools import wraps
+from typing import Callable, Union, List, Optional, Dict, Any, cast
 
-from flask import request, redirect, url_for, session, flash, jsonify
+from flask import request, redirect, url_for, session, jsonify, g, current_app
+from werkzeug.local import LocalProxy
 
-from auth.jwt_utils import decode_token, validate_permissions, validate_county_access
+from auth.jwt_utils import get_token_from_header, verify_token
+from auth.config import ROLE_PERMISSIONS
 
 logger = logging.getLogger(__name__)
 
-
-def requires_auth(redirect_to_login: bool = True) -> Callable:
+def jwt_required(f: Callable) -> Callable:
     """
-    Decorator to require authentication for API endpoints.
+    Decorator to require a valid JWT token for API routes.
+    
+    This decorator extracts the JWT token from the Authorization header,
+    verifies it, and makes the payload available in request.token_payload.
+    
+    If the token is invalid, returns a 401 Unauthorized response.
+    """
+    @wraps(f)
+    def decorated(*args: Any, **kwargs: Any) -> Any:
+        # Get the token from the Authorization header
+        auth_header = request.headers.get('Authorization')
+        success, token, error = get_token_from_header(auth_header)
+        
+        if not success:
+            logger.warning(f"JWT authentication failed: {error}")
+            return jsonify({"error": "Authentication required", "message": error}), 401
+        
+        # Verify the token
+        success, payload, error = verify_token(token)
+        
+        if not success:
+            logger.warning(f"JWT verification failed: {error}")
+            return jsonify({"error": "Invalid token", "message": error}), 401
+        
+        # Store token payload in request
+        g.token_payload = payload
+        
+        # Store user identity for easy access
+        g.current_user = {
+            "user_id": payload.get("sub"),
+            "username": payload.get("username"),
+            "role": payload.get("role"),
+            "county_ids": payload.get("county_ids", [])
+        }
+        
+        logger.debug(f"JWT authentication successful for user {g.current_user['username']}")
+        return f(*args, **kwargs)
+    
+    return decorated
+
+def session_required(f: Callable) -> Callable:
+    """
+    Decorator to require a valid session for web routes.
+    
+    This decorator checks if the user is logged in via session,
+    redirects to login page if not.
+    """
+    @wraps(f)
+    def decorated(*args: Any, **kwargs: Any) -> Any:
+        # Check if user is logged in via session
+        if 'user_id' not in session:
+            logger.info("Session authentication failed: User not logged in")
+            return redirect(url_for('auth.login', next=request.path))
+        
+        # Store user identity for easy access
+        g.current_user = {
+            "user_id": session.get("user_id"),
+            "username": session.get("username"),
+            "role": session.get("role"),
+            "county_ids": session.get("county_ids", [])
+        }
+        
+        logger.debug(f"Session authentication successful for user {g.current_user.get('username')}")
+        return f(*args, **kwargs)
+    
+    return decorated
+
+def role_required(role: str) -> Callable:
+    """
+    Decorator factory to require a specific role for routes.
+    
+    This decorator checks if the user has the specified role,
+    returning a 403 Forbidden response if not.
     
     Args:
-        redirect_to_login: Whether to redirect to login page or return 401 JSON
-        
-    Returns:
-        Decorated function
+        role: Required role (e.g., 'ITAdmin', 'Assessor', 'Staff')
     """
     def decorator(f: Callable) -> Callable:
-        @functools.wraps(f)
-        def decorated_function(*args, **kwargs):
-            # Get token from header or session
-            token = None
-            auth_header = request.headers.get('Authorization')
+        @wraps(f)
+        def decorated(*args: Any, **kwargs: Any) -> Any:
+            # Get current user from g object
+            current_user = getattr(g, 'current_user', None)
             
-            if auth_header and auth_header.startswith('Bearer '):
-                token = auth_header.split(' ')[1]
-            else:
-                token = session.get('token')
+            if not current_user:
+                logger.warning("Role check failed: No authenticated user")
+                return handle_authorization_error("Authentication required")
             
-            # Check if token exists
-            if not token:
-                if redirect_to_login:
-                    logger.warning(f"Unauthorized access attempt to {request.path}")
-                    flash('Please log in to access this page', 'error')
-                    return redirect(url_for('auth.login', next=request.path))
-                else:
-                    return jsonify({
-                        'success': False,
-                        'message': 'Authentication required',
-                        'error': 'unauthorized'
-                    }), 401
+            user_role = current_user.get('role')
             
-            try:
-                # Decode and validate token
-                token_payload = decode_token(token)
-                
-                # Store token payload in request for use in the route handler
-                request.token_payload = token_payload
-                
+            # Check if the user has the required role
+            if user_role != role and user_role != 'ITAdmin':  # ITAdmin has access to everything
+                logger.warning(f"Role check failed: User {current_user.get('username')} with role {user_role} attempted to access resource requiring role {role}")
+                return handle_authorization_error(f"Role '{role}' required")
+            
+            logger.debug(f"Role check successful for user {current_user.get('username')} with role {user_role}")
+            return f(*args, **kwargs)
+        
+        return decorated
+    
+    return decorator
+
+def permission_required(permission: Union[str, List[str]]) -> Callable:
+    """
+    Decorator factory to require specific permissions for routes.
+    
+    This decorator checks if the user has the specified permission(s),
+    returning a 403 Forbidden response if not.
+    
+    Args:
+        permission: Required permission or list of permissions
+    """
+    def decorator(f: Callable) -> Callable:
+        @wraps(f)
+        def decorated(*args: Any, **kwargs: Any) -> Any:
+            # Get current user from g object
+            current_user = getattr(g, 'current_user', None)
+            
+            if not current_user:
+                logger.warning("Permission check failed: No authenticated user")
+                return handle_authorization_error("Authentication required")
+            
+            user_role = current_user.get('role')
+            
+            # ITAdmin role has all permissions
+            if user_role == 'ITAdmin':
                 return f(*args, **kwargs)
-            except Exception as e:
-                logger.warning(f"Token validation failed: {str(e)}")
-                
-                if redirect_to_login:
-                    flash('Your session has expired. Please log in again.', 'error')
-                    return redirect(url_for('auth.login', next=request.path))
-                else:
-                    return jsonify({
-                        'success': False,
-                        'message': 'Invalid or expired token',
-                        'error': 'invalid_token'
-                    }), 401
-        
-        return decorated_function
-    
-    return decorator
-
-
-def requires_permission(permissions: Union[str, List[str]], redirect_on_error: bool = False) -> Callable:
-    """
-    Decorator to require specific permissions for API endpoints.
-    
-    This decorator should be used after requires_auth.
-    
-    Args:
-        permissions: Single permission string or list of permission strings
-        redirect_on_error: Whether to redirect to error page or return 403 JSON
-        
-    Returns:
-        Decorated function
-    """
-    # Convert single permission to list
-    if isinstance(permissions, str):
-        permissions = [permissions]
-    
-    def decorator(f: Callable) -> Callable:
-        @functools.wraps(f)
-        def decorated_function(*args, **kwargs):
-            # Get token payload from request (set by requires_auth)
-            token_payload = getattr(request, 'token_payload', None)
             
-            if not token_payload:
-                logger.warning(f"Permission check without token payload: {request.path}")
-                if redirect_on_error:
-                    flash('Authentication required', 'error')
-                    return redirect(url_for('auth.login', next=request.path))
-                else:
-                    return jsonify({
-                        'success': False,
-                        'message': 'Authentication required',
-                        'error': 'unauthorized'
-                    }), 401
+            # Get permissions for the user's role
+            role_perms = ROLE_PERMISSIONS.get(user_role, [])
             
-            # Check permissions
-            if not validate_permissions(token_payload, permissions):
-                username = token_payload.get('username', 'Unknown')
-                role = token_payload.get('role', 'Unknown')
-                user_permissions = token_payload.get('permissions', [])
-                
-                logger.warning(
-                    f"Permission denied for user {username} (role: {role}): "
-                    f"Required {permissions}, has {user_permissions}"
-                )
-                
-                if redirect_on_error:
-                    flash('You do not have permission to access this resource', 'error')
-                    return redirect(url_for('error.forbidden'))
-                else:
-                    return jsonify({
-                        'success': False,
-                        'message': 'You do not have permission to access this resource',
-                        'error': 'forbidden',
-                        'required_permissions': permissions
-                    }), 403
+            # Convert single permission to list for consistent handling
+            required_permissions = [permission] if isinstance(permission, str) else permission
             
+            # Check if the user has all the required permissions
+            for perm in required_permissions:
+                if perm not in role_perms and '*' not in role_perms:
+                    logger.warning(f"Permission check failed: User {current_user.get('username')} with role {user_role} lacks permission {perm}")
+                    return handle_authorization_error(f"Permission '{perm}' required")
+            
+            logger.debug(f"Permission check successful for user {current_user.get('username')} with role {user_role}")
             return f(*args, **kwargs)
         
-        return decorated_function
+        return decorated
     
     return decorator
 
-
-def requires_county_access(county_id_param: str = 'county_id', redirect_on_error: bool = False) -> Callable:
+def county_access_required(county_id_param: str = 'county_id') -> Callable:
     """
-    Decorator to require access to a specific county.
+    Decorator factory to require access to a specific county.
     
-    This decorator should be used after requires_auth.
+    This decorator checks if the user has access to the county specified
+    in the route parameter or request data, returning a 403 Forbidden response if not.
     
     Args:
-        county_id_param: Name of the URL parameter containing the county ID
-        redirect_on_error: Whether to redirect to error page or return 403 JSON
-        
-    Returns:
-        Decorated function
+        county_id_param: Name of the route parameter or request field containing the county ID
     """
     def decorator(f: Callable) -> Callable:
-        @functools.wraps(f)
-        def decorated_function(*args, **kwargs):
-            # Get token payload from request (set by requires_auth)
-            token_payload = getattr(request, 'token_payload', None)
+        @wraps(f)
+        def decorated(*args: Any, **kwargs: Any) -> Any:
+            # Get current user from g object
+            current_user = getattr(g, 'current_user', None)
             
-            if not token_payload:
-                logger.warning(f"County access check without token payload: {request.path}")
-                if redirect_on_error:
-                    flash('Authentication required', 'error')
-                    return redirect(url_for('auth.login', next=request.path))
-                else:
-                    return jsonify({
-                        'success': False,
-                        'message': 'Authentication required',
-                        'error': 'unauthorized'
-                    }), 401
+            if not current_user:
+                logger.warning("County access check failed: No authenticated user")
+                return handle_authorization_error("Authentication required")
             
-            # Get county ID from URL params, query string, or form data
-            county_id = kwargs.get(county_id_param)
-            if county_id is None:
+            # Get the county ID from route params, query params, or request data
+            county_id = None
+            
+            if county_id_param in kwargs:
+                county_id = kwargs.get(county_id_param)
+            elif request.method == 'GET' and county_id_param in request.args:
                 county_id = request.args.get(county_id_param)
-            if county_id is None and request.is_json:
+            elif request.is_json and county_id_param in request.json:
                 county_id = request.json.get(county_id_param)
-            if county_id is None and request.form:
+            elif request.form and county_id_param in request.form:
                 county_id = request.form.get(county_id_param)
-            
-            if county_id is None:
-                logger.warning(f"County ID parameter '{county_id_param}' not found in request")
-                if redirect_on_error:
-                    flash('County ID is required', 'error')
-                    return redirect(url_for('error.bad_request'))
-                else:
-                    return jsonify({
-                        'success': False,
-                        'message': f"County ID parameter '{county_id_param}' is required",
-                        'error': 'missing_parameter'
-                    }), 400
-            
-            # Check county access
-            if not validate_county_access(token_payload, county_id):
-                username = token_payload.get('username', 'Unknown')
-                role = token_payload.get('role', 'Unknown')
-                user_county_ids = token_payload.get('county_ids', [])
                 
-                logger.warning(
-                    f"County access denied for user {username} (role: {role}): "
-                    f"Required access to {county_id}, has access to {user_county_ids}"
-                )
-                
-                if redirect_on_error:
-                    flash('You do not have access to the specified county', 'error')
-                    return redirect(url_for('error.forbidden'))
-                else:
-                    return jsonify({
-                        'success': False,
-                        'message': 'You do not have access to the specified county',
-                        'error': 'forbidden',
-                        'county_id': county_id
-                    }), 403
+            if not county_id:
+                logger.warning(f"County access check failed: No county ID found in parameter {county_id_param}")
+                return handle_authorization_error(f"County ID is required")
             
+            user_role = current_user.get('role')
+            user_county_ids = current_user.get('county_ids', [])
+            
+            # ITAdmin role has access to all counties
+            if user_role == 'ITAdmin':
+                return f(*args, **kwargs)
+            
+            # Check if the user has access to the specified county
+            if county_id not in user_county_ids and '*' not in user_county_ids:
+                logger.warning(f"County access check failed: User {current_user.get('username')} attempted to access county {county_id} without permission")
+                return handle_authorization_error(f"Access to county '{county_id}' is not authorized")
+            
+            logger.debug(f"County access check successful for user {current_user.get('username')} accessing county {county_id}")
             return f(*args, **kwargs)
         
-        return decorated_function
+        return decorated
     
     return decorator
 
-
-def admin_only(redirect_on_error: bool = False) -> Callable:
+def handle_authorization_error(message: str) -> Any:
     """
-    Decorator to restrict access to admin users only.
+    Handle authorization errors based on request type.
     
-    This decorator should be used after requires_auth.
+    For API requests, returns a JSON 403 Forbidden response.
+    For HTML requests, redirects to the unauthorized page.
     
     Args:
-        redirect_on_error: Whether to redirect to error page or return 403 JSON
-        
-    Returns:
-        Decorated function
-    """
-    def decorator(f: Callable) -> Callable:
-        @functools.wraps(f)
-        def decorated_function(*args, **kwargs):
-            # Get token payload from request (set by requires_auth)
-            token_payload = getattr(request, 'token_payload', None)
-            
-            if not token_payload:
-                logger.warning(f"Admin check without token payload: {request.path}")
-                if redirect_on_error:
-                    flash('Authentication required', 'error')
-                    return redirect(url_for('auth.login', next=request.path))
-                else:
-                    return jsonify({
-                        'success': False,
-                        'message': 'Authentication required',
-                        'error': 'unauthorized'
-                    }), 401
-            
-            # Check if user is admin
-            if token_payload.get('role') != 'Admin':
-                username = token_payload.get('username', 'Unknown')
-                role = token_payload.get('role', 'Unknown')
-                
-                logger.warning(
-                    f"Admin access denied for user {username} (role: {role})"
-                )
-                
-                if redirect_on_error:
-                    flash('Administrator access required', 'error')
-                    return redirect(url_for('error.forbidden'))
-                else:
-                    return jsonify({
-                        'success': False,
-                        'message': 'Administrator access required',
-                        'error': 'forbidden'
-                    }), 403
-            
-            return f(*args, **kwargs)
-        
-        return decorated_function
+        message: Error message
     
-    return decorator
+    Returns:
+        Either a JSON response or redirect
+    """
+    # Check if request wants JSON
+    if request.headers.get('Accept', '').startswith('application/json') or request.is_json:
+        return jsonify({"error": "Forbidden", "message": message}), 403
+    
+    # For HTML requests, redirect to the login page or unauthorized page
+    if 'user_id' in session:
+        # User is logged in but doesn't have permission
+        return redirect(url_for('auth.unauthorized', message=message))
+    else:
+        # User is not logged in
+        return redirect(url_for('auth.login', next=request.path))
+
+def get_current_user() -> Optional[Dict[str, Any]]:
+    """
+    Get the current authenticated user.
+    
+    Returns:
+        Dictionary with user data or None if not authenticated
+    """
+    return getattr(g, 'current_user', None)
+
+# Create a proxy for easier access to the current user
+current_user = cast(Dict[str, Any], LocalProxy(get_current_user))

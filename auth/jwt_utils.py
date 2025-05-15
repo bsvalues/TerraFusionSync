@@ -5,22 +5,27 @@ This module provides utilities for JWT token generation, validation, and managem
 """
 import datetime
 import logging
-import os
-from typing import Dict, Any, Optional, Tuple, Union
+from typing import Dict, Any, Tuple, Optional, List, Union
 
 import jwt
 
+from auth.config import (
+    JWT_SECRET_KEY,
+    JWT_ALGORITHM,
+    JWT_ACCESS_TOKEN_EXPIRES,
+    JWT_REFRESH_TOKEN_EXPIRES
+)
+
 logger = logging.getLogger(__name__)
 
-# Get secret key from environment or use fallback
-JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', os.environ.get('FLASK_SECRET_KEY', 'default_jwt_secret_key'))
-JWT_ALGORITHM = 'HS256'
-JWT_ACCESS_TOKEN_EXPIRES = datetime.timedelta(hours=8)  # 8 hours
-JWT_REFRESH_TOKEN_EXPIRES = datetime.timedelta(days=7)  # 7 days
-
-
-def generate_token(user_id: Union[int, str], username: str, role: str, county_ids: Optional[list] = None, 
-                   token_type: str = 'access', expires_delta: Optional[datetime.timedelta] = None) -> str:
+def generate_token(
+    user_id: Union[int, str], 
+    username: str, 
+    role: str, 
+    county_ids: Optional[List[str]] = None, 
+    token_type: str = 'access', 
+    expires_delta: Optional[datetime.timedelta] = None
+) -> str:
     """
     Generate a JWT token for a user.
     
@@ -35,35 +40,38 @@ def generate_token(user_id: Union[int, str], username: str, role: str, county_id
     Returns:
         JWT token string
     """
-    # Set expiration time
-    if expires_delta:
-        expires = datetime.datetime.utcnow() + expires_delta
-    else:
-        # Default expiration based on token type
-        if token_type == 'refresh':
-            expires = datetime.datetime.utcnow() + JWT_REFRESH_TOKEN_EXPIRES
-        else:
-            expires = datetime.datetime.utcnow() + JWT_ACCESS_TOKEN_EXPIRES
+    if county_ids is None:
+        county_ids = []
     
-    # Create payload
+    # Set the payload
     payload = {
-        'sub': str(user_id),
-        'username': username,
-        'role': role,
-        'type': token_type,
-        'exp': expires,
-        'iat': datetime.datetime.utcnow(),
-        'county_ids': county_ids or []
+        "sub": str(user_id),
+        "username": username,
+        "role": role,
+        "county_ids": county_ids,
+        "type": token_type,
+        "iat": datetime.datetime.utcnow()
     }
     
-    # Generate token
+    # Set token expiration based on type
+    if expires_delta:
+        expire = datetime.datetime.utcnow() + expires_delta
+    else:
+        if token_type == 'refresh':
+            expire = datetime.datetime.utcnow() + datetime.timedelta(seconds=JWT_REFRESH_TOKEN_EXPIRES)
+        else:  # 'access' token by default
+            expire = datetime.datetime.utcnow() + datetime.timedelta(seconds=JWT_ACCESS_TOKEN_EXPIRES)
+    
+    payload["exp"] = expire
+    
+    # Generate and return the token
     try:
         token = jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+        logger.debug(f"Generated {token_type} token for user {username} (ID: {user_id})")
         return token
     except Exception as e:
-        logger.error(f"Error generating JWT token: {str(e)}")
+        logger.error(f"Error generating {token_type} token: {str(e)}")
         raise
-
 
 def verify_token(token: str) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
     """
@@ -76,24 +84,19 @@ def verify_token(token: str) -> Tuple[bool, Optional[Dict[str, Any]], Optional[s
         Tuple of (success, payload, error_message)
     """
     try:
-        # Decode and verify token
+        # Decode and verify the token
         payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-        
-        # Check expiration
-        if 'exp' in payload:
-            expiration = datetime.datetime.fromtimestamp(payload['exp'])
-            if expiration < datetime.datetime.utcnow():
-                return False, None, "Token has expired"
-        
+        logger.debug(f"Successfully verified token for user {payload.get('username')}")
         return True, payload, None
     except jwt.ExpiredSignatureError:
-        return False, None, "Token has expired"
+        logger.warning("Token expired")
+        return False, None, "Token expired"
     except jwt.InvalidTokenError as e:
-        return False, None, f"Invalid token: {str(e)}"
+        logger.warning(f"Invalid token: {str(e)}")
+        return False, None, "Invalid token"
     except Exception as e:
-        logger.error(f"Error verifying JWT token: {str(e)}")
+        logger.error(f"Error verifying token: {str(e)}")
         return False, None, f"Error verifying token: {str(e)}"
-
 
 def refresh_access_token(refresh_token: str) -> Tuple[bool, Optional[str], Optional[str]]:
     """
@@ -105,27 +108,75 @@ def refresh_access_token(refresh_token: str) -> Tuple[bool, Optional[str], Optio
     Returns:
         Tuple of (success, new_access_token, error_message)
     """
-    # Verify refresh token
+    # Verify the refresh token
     success, payload, error = verify_token(refresh_token)
     
     if not success:
         return False, None, error
     
-    # Check token type
-    if payload.get('type') != 'refresh':
-        return False, None, "Invalid token type"
+    # Check if it's actually a refresh token
+    if payload.get("type") != "refresh":
+        logger.warning("Attempted to use an access token as a refresh token")
+        return False, None, "Invalid refresh token"
     
-    # Generate new access token
     try:
+        # Generate a new access token with the same claims
         new_token = generate_token(
-            user_id=payload['sub'],
-            username=payload['username'],
-            role=payload['role'],
-            county_ids=payload.get('county_ids', []),
-            token_type='access'
+            user_id=payload.get("sub"),
+            username=payload.get("username"),
+            role=payload.get("role"),
+            county_ids=payload.get("county_ids", []),
+            token_type="access"
         )
-        
+        logger.info(f"Generated new access token for user {payload.get('username')}")
         return True, new_token, None
     except Exception as e:
-        logger.error(f"Error refreshing access token: {str(e)}")
+        logger.error(f"Error refreshing token: {str(e)}")
         return False, None, f"Error refreshing token: {str(e)}"
+
+def get_token_from_header(auth_header: Optional[str]) -> Tuple[bool, Optional[str], Optional[str]]:
+    """
+    Extract token from Authorization header.
+    
+    Args:
+        auth_header: The Authorization header value
+        
+    Returns:
+        Tuple of (success, token, error_message)
+    """
+    if not auth_header:
+        return False, None, "Authorization header missing"
+    
+    parts = auth_header.split()
+    
+    # Check if the Authorization header has the correct format
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return False, None, "Authorization header must be 'Bearer <token>'"
+    
+    token = parts[1]
+    return True, token, None
+
+def get_token_identity(token: str) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
+    """
+    Get the identity information from a token.
+    
+    Args:
+        token: JWT token
+        
+    Returns:
+        Tuple of (success, identity_dict, error_message)
+    """
+    success, payload, error = verify_token(token)
+    
+    if not success:
+        return False, None, error
+    
+    # Extract identity fields
+    identity = {
+        "user_id": payload.get("sub"),
+        "username": payload.get("username"),
+        "role": payload.get("role"),
+        "county_ids": payload.get("county_ids", [])
+    }
+    
+    return True, identity, None
