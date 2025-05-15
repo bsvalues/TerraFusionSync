@@ -599,7 +599,11 @@ async def _simulate_gis_export_processing(
     """
     import asyncio
     import random
+    import json
+    import os
+    import logging
     from datetime import datetime
+    import hashlib
     
     # Get county configuration for realistic processing
     county_config = get_county_config()
@@ -608,19 +612,90 @@ async def _simulate_gis_export_processing(
     if export_format == "FAIL_FORMAT_SIM":
         raise Exception("Simulated failure for testing purposes")
     
-    # Simulate processing delay (1-3 seconds)
-    await asyncio.sleep(random.uniform(1, 3))
+    # Determine complexity of data processing based on layers and area
+    layers_complexity = len(layers)
+    
+    # Calculate area complexity based on the area_of_interest
+    area_complexity = 1.0
+    if isinstance(area_of_interest, dict) and 'features' in area_of_interest:
+        # Real GeoJSON complexity factor
+        features = area_of_interest.get('features', [])
+        geometry_types = set()
+        total_coords = 0
+        
+        for feature in features:
+            if isinstance(feature, dict) and 'geometry' in feature:
+                geometry = feature.get('geometry', {})
+                geometry_types.add(geometry.get('type', 'Unknown'))
+                
+                # Count coordinates for complexity
+                coords = geometry.get('coordinates', [])
+                if isinstance(coords, list):
+                    # Flatten and count all coordinates
+                    def count_coords(coord_list):
+                        count = 0
+                        if isinstance(coord_list, list):
+                            if coord_list and isinstance(coord_list[0], (int, float)):
+                                return 1
+                            for item in coord_list:
+                                count += count_coords(item)
+                        return count
+                    
+                    total_coords += count_coords(coords)
+        
+        # Increase complexity based on number of features, geometry types, and coordinates
+        area_complexity = 1.0 + (len(features) * 0.1) + (len(geometry_types) * 0.2) + (total_coords * 0.001)
+        # Cap at reasonable value
+        area_complexity = min(area_complexity, 5.0)
+    
+    # More realistic processing delay based on data complexity
+    processing_time = 1.0 + (layers_complexity * 0.5) + (area_complexity * 1.0)
+    # Add some randomness to simulate variable processing conditions
+    processing_time = random.uniform(processing_time, processing_time * 1.5)
+    logger.info(f"Simulating GIS export processing for {processing_time:.2f} seconds with " 
+                f"{layers_complexity} layers and area complexity {area_complexity:.2f}")
+    await asyncio.sleep(processing_time)
+    
+    # Create a deterministic but unique ID for this export based on inputs
+    export_hash = hashlib.md5()
+    export_hash.update(county_id.encode())
+    export_hash.update(export_format.encode())
+    export_hash.update(json.dumps(area_of_interest, sort_keys=True).encode())
+    export_hash.update(json.dumps(layers, sort_keys=True).encode())
+    export_hash.update(json.dumps(parameters, sort_keys=True).encode())
+    export_id = export_hash.hexdigest()[:12]
     
     # Generate a realistic file location based on county and format
     timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
     
-    # For testing, we just return a file path, but in reality this would be a storage URL
-    file_location = f"https://storage.terrafusion.com/{county_id}/exports/{timestamp}_{county_id}_export.{export_format.lower()}"
+    # Create a more realistic directory structure based on county, date, and export type
+    year_month = datetime.utcnow().strftime("%Y-%m")
     
-    # Calculate a realistic file size based on the number of layers and area size
-    # In a real implementation, this would be the actual file size
+    # For production system, create standard paths based on cloud provider 
+    azure_path = f"https://terrafusionstorage.blob.core.windows.net/exports/{county_id}/{year_month}/{timestamp}_{export_id}.{export_format.lower()}"
+    aws_path = f"https://terrafusion-exports.s3.amazonaws.com/{county_id}/{year_month}/{timestamp}_{export_id}.{export_format.lower()}"
+    
+    # Select storage path based on configured provider (would use environment variable in production)
+    cloud_provider = os.environ.get("TERRAFUSION_CLOUD_PROVIDER", "azure").lower()
+    file_location = azure_path if cloud_provider == "azure" else aws_path
+    
+    # Log the storage location for audit purposes
+    logger.info(f"Generated GIS export file location: {file_location}")
+    
+    # Calculate a realistic file size based on the number of layers, area size and format
+    # Different formats have different size characteristics
+    format_size_factor = {
+        "geojson": 1.2,  # Text format, larger
+        "shapefile": 0.8,  # Binary, more compact
+        "kml": 1.5,      # XML, larger
+        "topojson": 0.7, # Optimized, smaller
+        "geopackage": 0.9, # SQLite container
+        "geotiff": 2.5   # Raster data, much larger
+    }.get(export_format.lower(), 1.0)
+    
+    # Base size calculation
     base_size = 250  # Base size in KB
-    layer_factor = len(layers) * 50  # Each layer adds 50KB
+    layer_factor = sum([(50 + (len(layer) * 2)) for layer in layers])  # More complex calculation per layer
     
     # Use the county's configuration for realistic sizes
     coordinate_system = parameters.get("coordinate_system", 
@@ -631,12 +706,45 @@ async def _simulate_gis_export_processing(
     simplify_factor = 1.0 / (simplify_tolerance * 10000) if simplify_tolerance > 0 else 1.0
     simplify_factor = min(simplify_factor, 5.0)  # Cap the factor
     
-    # Calculate final size
-    file_size_kb = int((base_size + layer_factor) * simplify_factor)
+    # Include area complexity in size calculation
+    area_size_factor = area_complexity * 1.2
+    
+    # Calculate final size with realistic variability
+    file_size_base = ((base_size + layer_factor) * simplify_factor * format_size_factor * area_size_factor)
+    # Add some randomness to simulate real-world variability
+    file_size_kb = int(file_size_base * random.uniform(0.9, 1.1))
     
     # Calculate a realistic record count based on the area and layers
-    # In reality, this would be the actual count of records exported
-    record_count = random.randint(100, 5000) * len(layers)
+    # Different layer types have different typical record counts
+    layer_record_counts = {}
+    for layer in layers:
+        # Assign realistic record counts based on layer type
+        if "parcel" in layer.lower():
+            layer_record_counts[layer] = random.randint(5000, 20000)
+        elif "building" in layer.lower():
+            layer_record_counts[layer] = random.randint(10000, 30000)
+        elif "road" in layer.lower() or "street" in layer.lower():
+            layer_record_counts[layer] = random.randint(2000, 8000)
+        elif "boundary" in layer.lower():
+            layer_record_counts[layer] = random.randint(50, 200)
+        elif "zone" in layer.lower() or "zoning" in layer.lower():
+            layer_record_counts[layer] = random.randint(100, 500)
+        else:
+            # Generic layers
+            layer_record_counts[layer] = random.randint(1000, 5000)
+    
+    # Scale record counts based on area complexity
+    for layer in layer_record_counts:
+        # Reduce records for more simplified exports
+        simplify_count_factor = 1.0 - (min(simplify_tolerance * 5000, 0.5))  # Higher tolerance = fewer records
+        layer_record_counts[layer] = int(layer_record_counts[layer] * area_complexity * simplify_count_factor)
+    
+    # Total record count
+    record_count = sum(layer_record_counts.values())
+    
+    # Log detailed metrics for monitoring
+    logger.info(f"GIS Export simulation - Format: {export_format}, Layers: {len(layers)}, "
+                f"Size: {file_size_kb}KB, Records: {record_count}")
     
     # Return the simulated results
     return file_location, file_size_kb, record_count

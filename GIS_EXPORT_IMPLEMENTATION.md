@@ -76,7 +76,36 @@ The GIS Export plugin router now communicates with the metrics service via HTTP:
 2. When a job completes or fails, the status is recorded in the metrics service
 3. Monitoring systems query the isolated metrics endpoint for statistics
 
-#### 3. Testing Strategy
+#### 3. Enhanced Simulation Processing Logic
+
+The GIS Export plugin now includes a more realistic simulation of GIS data processing tasks to better represent actual processing times and file characteristics in a production environment:
+
+1. **Complexity-Based Processing Time**:
+   - Processing time varies based on layer count and complexity
+   - GeoJSON feature complexity is analyzed by examining geometry types and coordinate counts
+   - More complex exports (more layers, complex geometries) take proportionally longer to process
+
+2. **Cloud Storage Integration**:
+   - Simulates realistic file paths using standard Azure Blob or AWS S3 conventions
+   - Creates organized storage paths with county/date-based folder hierarchy
+   - Uses deterministic file naming with timestamp and content hash for idempotency
+
+3. **Format-Specific Output Characteristics**:
+   - Different export formats (GeoJSON, Shapefile, KML, etc.) have different file size characteristics
+   - Format-specific size factors reflect real-world differences (e.g., XML-based formats are larger)
+   - Output file size scales with the complexity of the input data
+
+4. **Layer-Type Record Counts**:
+   - Record counts are based on realistic expectations for different layer types
+   - Parcel layers typically contain thousands of records
+   - Building layers have higher record density
+   - Boundary layers have fewer, more complex records
+
+5. **Performance Monitoring**:
+   - Comprehensive logging of export parameters, processing time, and results
+   - Deterministic but randomized file sizes and record counts for realistic testing
+
+#### 4. Testing Strategy
 
 The implementation includes a comprehensive testing strategy:
 
@@ -93,6 +122,8 @@ The implementation includes a comprehensive testing strategy:
 - `/plugins/v1/gis-export/results/{job_id}` - Get job results
 - `/plugins/v1/gis-export/list` - List all jobs with optional filtering
 - `/plugins/v1/gis-export/health` - Plugin health check
+- `/plugins/v1/gis-export/formats/{county_id}` - Get supported formats for a county
+- `/plugins/v1/gis-export/defaults/{county_id}` - Get default export parameters
 
 ### Isolated Metrics API (Port 8090)
 
@@ -102,6 +133,35 @@ The implementation includes a comprehensive testing strategy:
 - `/record/job_completed` - Record a job completion
 - `/record/job_failed` - Record a job failure
 - `/jobs` - Get all tracked jobs (debugging)
+
+## Processing Parameters
+
+The GIS Export plugin accepts and processes the following parameters:
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| format | Export format (geojson, shapefile, kml, etc.) | (Required) |
+| county_id | County identifier | (Required) |
+| area_of_interest | GeoJSON object defining the export area | (Required) |
+| layers | Array of layer identifiers to export | (Required) |
+| coordinate_system | Coordinate system code (e.g., "EPSG:4326") | County default |
+| simplify_tolerance | Geometry simplification tolerance | 0.0001 |
+| max_precision | Maximum coordinate decimal precision | County default |
+| include_attributes | Attributes to include for each feature | All |
+| filter_expression | Expression to filter features | None |
+
+## File Output Characteristics
+
+Different export formats produce files with different characteristics:
+
+| Format | Size Factor | Typical Use Case |
+|--------|-------------|-----------------|
+| GeoJSON | 1.2x | Web mapping and visualization |
+| Shapefile | 0.8x | Desktop GIS applications |
+| KML | 1.5x | Google Earth and similar tools |
+| TopoJSON | 0.7x | Web visualization with topology preservation |
+| GeoPackage | 0.9x | OGC standard format for multiple datasets |
+| GeoTIFF | 2.5x | Raster data with spatial reference |
 
 ## County Configuration Integration
 
