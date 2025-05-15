@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 # Configuration
 BASE_URL = "http://0.0.0.0:8080/plugins/v1/gis-export"
-METRICS_URL = "http://0.0.0.0:8080/metrics"
+METRICS_URL = "http://0.0.0.0:8080/plugins/v1/gis-export/metrics"
 
 # Test data
 TEST_COUNTY_ID = "benton_wa"

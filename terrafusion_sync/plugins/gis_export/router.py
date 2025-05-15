@@ -8,7 +8,8 @@ configurations for proper format validation and default parameters.
 from fastapi import APIRouter, Depends, HTTPException, status as fastapi_status, BackgroundTasks, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
-from typing import Optional, Dict, Any, List
+import os
+from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime
 
 # Import DB session factory
@@ -421,6 +422,47 @@ async def health_check():
         "version": "1.0.0",
         "timestamp": datetime.utcnow().isoformat()
     }
+
+@router.get("/metrics", 
+           summary="Get GIS Export plugin metrics",
+           description="Get Prometheus metrics for the GIS Export plugin.",
+           response_model=None)
+async def get_plugin_metrics():
+    """
+    Get Prometheus metrics for the GIS Export plugin.
+    
+    This endpoint provides metrics specific to the GIS Export plugin
+    in Prometheus format.
+    
+    Returns:
+        Response: Prometheus-formatted metrics text
+    """
+    try:
+        # Import the GisExportMetrics class to get metrics
+        from terrafusion_sync.plugins.gis_export.metrics import GisExportMetrics
+        
+        # Set up custom registry
+        os.environ["GIS_EXPORT_USE_CUSTOM_REGISTRY"] = "1"
+        
+        # Initialize metrics with custom registry if not already initialized
+        if GisExportMetrics.registry is None:
+            GisExportMetrics.initialize(use_default_registry=False)
+        
+        # Get metrics as text
+        metrics_text = GisExportMetrics.get_metrics()
+        
+        # Return as plain text response
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(
+            content=metrics_text,
+            media_type="text/plain"
+        )
+    except Exception as e:
+        logger.error(f"Error getting GIS Export metrics: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get metrics: {str(e)}"
+        )
 
 # --- Background processing functions ---
 
