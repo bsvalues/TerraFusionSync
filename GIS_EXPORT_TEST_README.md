@@ -1,181 +1,82 @@
-# GIS Export Plugin Testing Guide
+# GIS Export Plugin - Quick Start Guide
 
-This guide explains how to test the GIS Export plugin functionality, including county-specific configuration integration, API endpoints, and job processing.
+This guide provides a quick overview of the GIS Export plugin implementation, focusing on how to run and test it in the TerraFusion platform.
 
 ## Overview
 
-The GIS Export plugin in the TerraFusion Platform allows county users to export geospatial data in various formats with county-specific configurations. This guide covers testing the different components of the plugin.
+The GIS Export plugin allows county staff to export geospatial data in various formats (GeoJSON, Shapefile, KML) with county-specific configurations. A key feature is the isolated metrics implementation that prevents conflicts with other plugins.
 
-## Prerequisites
+## Running the Tests
 
-Ensure that your environment is properly set up:
-
-1. Database is initialized with GIS export tables
-2. County configuration files are in place under `county_configs/`
-3. TerraFusion SyncService is running
-4. TerraFusion API Gateway is running
-
-## County Configuration Testing
-
-### Standalone Configuration Test
-
-The standalone configuration test validates that county-specific settings are properly loaded and applied:
+### Complete Test Suite (Recommended)
 
 ```bash
-python test_gis_export_county_config_standalone.py
+python run_gis_export_api_test.py
 ```
 
-This test verifies:
-- Available export formats per county
-- Format validation against county-allowed formats
-- Default coordinate systems and parameters
-- Maximum export area limits
+This will start the metrics service and run all tests automatically.
 
-### County Configuration Demo
+### Individual Steps
 
-To see a visual demonstration of how county configurations work with export requests:
+1. Start the isolated metrics service:
+   ```bash
+   python isolated_gis_export_metrics.py --port 8090
+   ```
 
-```bash
-python demo_gis_export_county_config.py
-```
+2. Run the tests:
+   ```bash
+   python run_fixed_gis_export_tests.py
+   ```
 
-This demo shows:
-- The configuration for multiple counties
-- Validation of export formats against county settings
-- Application of default parameters
-- Error handling for unsupported formats
+## Key Files
 
-## API Endpoint Testing
+- `isolated_gis_export_metrics.py` - Standalone metrics service
+- `run_fixed_gis_export_tests.py` - Main test script
+- `run_gis_export_api_test.py` - Orchestrator script
+- `GIS_EXPORT_IMPLEMENTATION.md` - Detailed implementation documentation
+- `GIS_EXPORT_TESTS.md` - Comprehensive testing guide
 
-To test the API endpoints directly, ensure the SyncService is running, then try:
+## API Endpoints
 
-### Health Check
+### Main Service (Port 8080)
 
-```bash
-curl -X GET http://0.0.0.0:8080/plugins/v1/gis-export/health
-```
+- **Create Job**: POST `/plugins/v1/gis-export/run`
+- **Check Status**: GET `/plugins/v1/gis-export/status/{job_id}`
+- **Get Results**: GET `/plugins/v1/gis-export/results/{job_id}`
+- **Health Check**: GET `/plugins/v1/gis-export/health`
 
-Expected response: `{"status": "healthy", "timestamp": "2025-05-14T12:00:00Z"}`
+### Isolated Metrics (Port 8090)
 
-### Available Formats for County
+- **Metrics**: GET `/metrics`
+- **Health Check**: GET `/health`
+- **Record Job Submission**: POST `/record/job_submitted`
+- **Record Job Completion**: POST `/record/job_completed`
 
-```bash
-curl -X GET http://0.0.0.0:8080/plugins/v1/gis-export/formats/benton_wa
-```
+## Example Job Creation Payload
 
-Expected response: `{"formats": ["GeoJSON", "Shapefile", "KML"]}`
-
-### Default Parameters for County
-
-```bash
-curl -X GET http://0.0.0.0:8080/plugins/v1/gis-export/defaults/benton_wa
-```
-
-Expected response: 
 ```json
 {
-  "parameters": {
-    "simplify_tolerance": 0.0001,
-    "include_attributes": true,
-    "coordinate_system": "EPSG:4326"
-  }
+  "county_id": "benton_wa",
+  "format": "GeoJSON",
+  "username": "test_user",
+  "area_of_interest": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [-119.3, 46.1],
+        [-119.2, 46.1],
+        [-119.2, 46.2],
+        [-119.3, 46.2],
+        [-119.3, 46.1]
+      ]
+    ]
+  },
+  "layers": ["parcels", "roads"]
 }
 ```
 
-### Submit Export Job
+## For More Information
 
-```bash
-curl -X POST http://0.0.0.0:8080/plugins/v1/gis-export/run \
-  -H "Content-Type: application/json" \
-  -d '{
-    "county_id": "benton_wa",
-    "format": "GeoJSON",
-    "username": "county_user",
-    "area_of_interest": {
-      "type": "Polygon",
-      "coordinates": [[
-        [-119.48, 46.21],
-        [-119.48, 46.26],
-        [-119.42, 46.26],
-        [-119.42, 46.21],
-        [-119.48, 46.21]
-      ]]
-    },
-    "layers": ["parcels", "zoning"],
-    "parameters": {
-      "simplify_tolerance": 0.0001,
-      "include_attributes": true
-    }
-  }'
-```
-
-Expected response: `{"job_id": "...", "status": "PENDING"}`
-
-### Check Job Status
-
-```bash
-curl -X GET http://0.0.0.0:8080/plugins/v1/gis-export/status/{job_id}
-```
-
-Expected response: `{"status": "COMPLETED", "message": "Export completed successfully"}`
-
-## End-to-End Testing
-
-For comprehensive end-to-end testing, run:
-
-```bash
-python run_gis_export_tests.py
-```
-
-This script runs a series of tests including:
-1. Health check endpoint
-2. County configuration integration
-3. Format validation
-4. Job submission
-5. Job status checking
-6. Results retrieval
-
-## Testing with Different Counties
-
-To verify that the system works with different county configurations:
-
-1. Create test configurations for multiple counties:
-   ```
-   county_configs/benton_wa/benton_wa_config.json
-   county_configs/clark_wa/clark_wa_config.json
-   county_configs/king_wa/king_wa_config.json
-   ```
-
-2. Run the demo with different county IDs:
-   ```bash
-   python demo_gis_export_county_config.py
-   ```
-
-3. Test API endpoints with different county IDs:
-   ```bash
-   curl -X GET http://0.0.0.0:8080/plugins/v1/gis-export/formats/clark_wa
-   curl -X GET http://0.0.0.0:8080/plugins/v1/gis-export/defaults/king_wa
-   ```
-
-## Troubleshooting
-
-If tests fail, check the following:
-
-1. **Service Connection**: Ensure SyncService is running on the expected port
-2. **Database Connection**: Verify database connectivity
-3. **County Configuration**: Check that county configuration files exist and have the correct format
-4. **Format Validation**: Verify that the requested export format is in the county's allowed formats list
-5. **CORS Issues**: For browser-based testing, ensure CORS headers are properly set
-
-## Metrics Verification
-
-To verify that metrics are being collected:
-
-```bash
-curl -X GET http://0.0.0.0:8080/metrics
-```
-
-Look for GIS Export-specific metrics such as:
-- `gis_export_jobs_submitted_total`
-- `gis_export_jobs_completed_total`
-- `gis_export_processing_duration_seconds`
+Refer to:
+- `GIS_EXPORT_IMPLEMENTATION.md` for detailed architecture
+- `GIS_EXPORT_TESTS.md` for comprehensive testing information

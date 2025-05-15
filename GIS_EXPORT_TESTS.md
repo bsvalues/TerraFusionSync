@@ -1,102 +1,141 @@
-# TerraFusion Platform GIS Export Testing Guide
+# GIS Export Plugin Testing Guide
 
-This document explains how to run the TerraFusion Platform GIS Export plugin tests.
+This document explains how to run the tests for the GIS Export plugin in the TerraFusion platform.
 
 ## Overview
 
-The GIS Export plugin provides geographic data export capabilities for the TerraFusion Platform. The integration tests validate the plugin's API endpoints, job processing functionality, and error handling.
+The GIS Export plugin testing consists of several components:
+
+1. **Isolated Metrics Service** - A standalone service that handles metrics recording
+2. **GIS Export API Tests** - Tests for the main plugin functionality
+3. **End-to-end Workflow Tests** - Tests that validate the complete export process
+
+## Testing Components
+
+### 1. Isolated Metrics Service
+
+The isolated metrics service runs on port 8090 and provides a separate Prometheus registry for GIS Export metrics. This design prevents conflicts with other plugins' metrics.
+
+**Files:**
+- `isolated_gis_export_metrics.py` - The standalone metrics service
+- `run_isolated_gis_export_metrics.py` - Script to run the metrics service manually
+
+### 2. GIS Export API Tests
+
+The GIS Export API tests verify that the plugin's endpoints work correctly, including job creation, status checking, and result retrieval.
+
+**Files:**
+- `run_fixed_gis_export_tests.py` - The main test script
+- `run_gis_export_api_test.py` - Orchestrator script that runs both the metrics service and tests
+
+### 3. Integration with County Configurations
+
+Tests verify that export requests respect county-specific configurations for supported formats, coordinate systems, and boundaries.
 
 ## Running the Tests
 
-### Component Tests
+### Prerequisites
 
-For targeted testing of specific GIS Export plugin components:
+1. Make sure the SyncService is running on port 8080
+2. Database is properly set up with the GIS Export tables
 
-```bash
-# Run the health check test
-python test_gis_export_component.py --host 0.0.0.0 --test health
+### Option 1: Run the Complete Test Suite
 
-# Run the job creation test
-python test_gis_export_component.py --host 0.0.0.0 --test create
-
-# Run the complete workflow test
-python test_gis_export_component.py --host 0.0.0.0 --test workflow
-```
-
-### Isolated End-to-End Tests
-
-For running isolated GIS Export tests without metrics conflicts:
+To run the complete test suite, which includes starting the metrics service and running all tests:
 
 ```bash
-python isolated_test_gis_export_end_to_end.py --host 0.0.0.0
-```
-
-### Running All Tests
-
-The complete test suite is designed to run as part of the main test package:
-
-```bash
-python run_tests.py --module gis-export
-```
-
-## Test Fixers
-
-If the tests are failing due to URL formatting or missing fields, you can use the fix script:
-
-```bash
-python fix_gis_export_tests.py
+python run_gis_export_api_test.py
 ```
 
 This script will:
-1. Update URL formats from underscores to dashes
-2. Fix endpoint paths from `/jobs` to `/run`
-3. Add required fields to test requests
-4. Add better error handling and logging
-5. Make status code assertions more lenient
+1. Start the isolated metrics service on port 8090
+2. Run the GIS Export tests
+3. Display the test results
+4. Clean up by stopping the metrics service
 
-## Known Issues
+### Option 2: Run Individual Components
 
-### Database Connectivity
+#### Step 1: Start the Isolated Metrics Service
 
-There's a known issue with the database connectivity when retrieving job results:
-
-```
-{"detail":"Failed to retrieve job results: connect() got an unexpected keyword argument 'sslmode'"}
+```bash
+python isolated_gis_export_metrics.py --port 8090
 ```
 
-The tests include conditional handling for this issue, allowing them to pass with a warning.
+#### Step 2: Run the GIS Export Tests
 
-## Test Structure
+In a separate terminal, run:
 
-The tests validate the following endpoints:
-
-1. **Health Check**: `/plugins/v1/gis-export/health`
-2. **Job Creation**: `/plugins/v1/gis-export/run`
-3. **Job Status**: `/plugins/v1/gis-export/status/{job_id}`
-4. **Job Results**: `/plugins/v1/gis-export/results/{job_id}`
-5. **Job Cancellation**: `/plugins/v1/gis-export/cancel/{job_id}`
-6. **List Jobs**: `/plugins/v1/gis-export/list`
-
-## Job Creation Requirements
-
-When creating a GIS export job, the following fields are required:
-
-```json
-{
-  "username": "test_user",
-  "format": "shapefile",
-  "county_id": "MONT001",
-  "area_of_interest": {
-    "name": "North District",
-    "type": "district",
-    "coordinates": [[-77.2, 39.1], [-77.1, 39.1], [-77.1, 39.2], [-77.2, 39.2], [-77.2, 39.1]]
-  },
-  "layers": ["parcels", "buildings"]
-}
+```bash
+python run_fixed_gis_export_tests.py
 ```
 
-Optional fields:
-- `properties`: List of property attributes to include
-- `query_filters`: Filters to apply when selecting features
-- `parameters`: Additional export parameters (simplification, coordinate system, etc.)
-- `metadata`: Job metadata for tracking purposes
+### Option 3: Run as a Replit Workflow
+
+To run the tests as part of a Replit workflow:
+
+```bash
+python run_gis_export_metrics_workflow.py
+```
+
+## Test Flow
+
+The tests perform the following operations:
+
+1. **Health Check**
+   - Verify SyncService is healthy
+   - Verify GIS Export plugin is healthy
+   - Verify Isolated Metrics service is healthy
+
+2. **Metrics Endpoints**
+   - Verify isolated metrics endpoint is accessible
+   - Verify SyncService main metrics endpoint is accessible
+
+3. **Job Creation**
+   - Create a test GIS export job for Benton County
+   - Record the job submission in the metrics service
+   - Verify metrics are updated to reflect the new job
+
+4. **Job Status**
+   - Poll the job status endpoint until the job completes
+   - Record the job completion in the metrics service
+   - Verify metrics are updated to reflect the completed job
+
+5. **Metrics Validation**
+   - Verify that the appropriate metrics counters have incremented
+   - Verify that histograms for processing time, file size, and record count are updated
+
+## Troubleshooting
+
+### Common Issues and Solutions
+
+1. **Metrics Endpoint 404 Error**
+   - Ensure the isolated metrics service is running on port 8090
+   - Check for any error messages in the isolated metrics service logs
+
+2. **Job Status Endpoint 404 Error**
+   - Verify that you're using the correct endpoint format: `/plugins/v1/gis-export/status/{job_id}`
+   - The job ID in the endpoint should match the one returned from the job creation API
+
+3. **Duplicate Metrics Registration Errors**
+   - This is the exact issue our isolated metrics solution addresses
+   - If you see this error, ensure you're using the isolated metrics service, not the default registry
+
+4. **Jobs Stuck in RUNNING State**
+   - Check the SyncService logs for any errors in the job processing
+   - Ensure that the county configuration exists for the county being tested
+
+## County-Specific Test Cases
+
+For each supported county, the test should verify:
+
+1. Supported formats are accepted (GeoJSON, Shapefile, KML, etc.)
+2. Unsupported formats are rejected with appropriate error messages
+3. Export area boundaries are properly validated
+4. County-specific coordinate systems are correctly applied
+
+## Next Steps for Testing
+
+1. Add more comprehensive county configuration tests
+2. Implement performance tests for large export regions
+3. Add stress tests for concurrent export requests
+4. Create integration tests with other plugins like Valuation and Market Analysis

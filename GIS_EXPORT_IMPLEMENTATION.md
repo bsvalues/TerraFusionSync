@@ -1,147 +1,130 @@
 # GIS Export Plugin Implementation
 
-This document provides implementation details for the GIS Export plugin in the TerraFusion Platform.
-
 ## Overview
 
-The GIS Export plugin allows county users to export geospatial data in various formats. The plugin supports county-specific configurations, health monitoring via Prometheus metrics, and asynchronous background processing.
+The GIS Export plugin provides functionality for exporting geographic data in various formats, including GeoJSON, Shapefile, and KML. It integrates with county-specific configurations to support different data formats, coordinate systems, and export limitations.
 
-## Key Components
+## Architecture
 
-The GIS Export plugin consists of the following components:
+The plugin uses a modular architecture with the following components:
 
-1. **County Configuration** (`county_config.py`) - Manages county-specific settings such as available export formats, default coordinate systems, and maximum export area size
-2. **Service Layer** (`service.py`) - Core business logic for creating, retrieving, and managing export jobs
-3. **API Router** (`router.py`) - FastAPI router for the plugin's REST API endpoints
-4. **Schemas** (`schemas.py`) - Pydantic models for request/response validation and serialization
-5. **Metrics** (`metrics.py`) - Prometheus metrics for monitoring the plugin's performance and usage
+1. **Core Plugin Router** - Manages API endpoints for job creation, status checking, and result retrieval
+2. **GIS Export Service** - Handles the business logic of processing export requests
+3. **County Configuration** - Provides county-specific settings and validation
+4. **Isolated Metrics Service** - Tracks usage metrics independently to avoid conflicts
 
-## Database Models
+## Isolated Metrics Solution
 
-The plugin uses the `GisExportJob` SQLAlchemy model defined in `terrafusion_sync.core_models`:
+### Problem Statement
+
+Initial implementation encountered metric registration conflicts between plugins, specifically:
+
+- Multiple plugins (GIS Export, Market Analysis, etc.) attempted to register metrics with the same Prometheus registry
+- Resulted in `ValueError: Duplicated timeseries in CollectorRegistry` errors
+- Prevented reliable metrics collection and monitoring
+
+### Solution
+
+Implemented a standalone metrics service with the following features:
+
+1. **Isolated Registry**: Each plugin has its own Prometheus registry, preventing conflicts
+2. **Dedicated Metrics Endpoint**: Runs on a separate port (8090), keeping metrics separate from the main API
+3. **Custom Record Endpoints**: Provides specific endpoints for recording job submission, completion, and failures
+4. **Stateful Job Tracking**: Maintains a record of jobs for consistent metrics recording
+
+### Implementation Details
+
+#### 1. Isolated Metrics API
+
+The `isolated_gis_export_metrics.py` file implements a standalone FastAPI service that:
+
+- Creates a dedicated Prometheus `CollectorRegistry`
+- Defines metrics specific to GIS Export operations
+- Exposes endpoints for recording job events
+- Provides a Prometheus-compatible metrics endpoint
 
 ```python
-class GisExportJob(Base):
-    __tablename__ = "gis_export_jobs"
-    
-    job_id = Column(String, primary_key=True)
-    county_id = Column(String, nullable=False)
-    export_format = Column(String, nullable=False)
-    status = Column(String, nullable=False)
-    message = Column(String, nullable=True)
-    area_of_interest_json = Column(JSON, nullable=False)
-    layers_json = Column(JSON, nullable=False)
-    parameters_json = Column(JSON, nullable=True)
-    result_file_location = Column(String, nullable=True)
-    result_file_size_kb = Column(Integer, nullable=True)
-    result_record_count = Column(Integer, nullable=True)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
-    started_at = Column(DateTime, nullable=True)
-    completed_at = Column(DateTime, nullable=True)
+# Key metrics tracked:
+gis_export_jobs_submitted = Counter(
+    'gis_export_jobs_submitted_total',
+    'Total number of GIS export jobs submitted',
+    ['county_id', 'export_format'],
+    registry=registry
+)
+
+gis_export_jobs_completed = Counter(
+    'gis_export_jobs_completed_total',
+    'Total number of GIS export jobs completed successfully',
+    ['county_id', 'export_format'],
+    registry=registry
+)
+
+gis_export_processing_duration = Histogram(
+    'gis_export_processing_duration_seconds',
+    'Duration of GIS export job processing in seconds',
+    ['county_id', 'export_format'],
+    buckets=(1, 5, 10, 30, 60, 120, 300, 600),
+    registry=registry
+)
 ```
+
+#### 2. Integration with Main Plugin
+
+The GIS Export plugin router now communicates with the metrics service via HTTP:
+
+1. When a job is created, the plugin sends a record to the metrics service
+2. When a job completes or fails, the status is recorded in the metrics service
+3. Monitoring systems query the isolated metrics endpoint for statistics
+
+#### 3. Testing Strategy
+
+The implementation includes a comprehensive testing strategy:
+
+- `run_fixed_gis_export_tests.py` - Tests the entire GIS Export plugin workflow with metrics
+- `run_gis_export_api_test.py` - Manages both the metrics service and test execution
+- `run_gis_export_metrics_workflow.py` - Runs the metrics service as a Replit workflow
 
 ## API Endpoints
 
-The plugin exposes the following API endpoints:
+### Main GIS Export API (Port 8080)
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/plugins/v1/gis-export/run` | Submit a new GIS export job |
-| `GET` | `/plugins/v1/gis-export/status/{job_id}` | Check job status |
-| `GET` | `/plugins/v1/gis-export/results/{job_id}` | Get job results |
-| `POST` | `/plugins/v1/gis-export/cancel/{job_id}` | Cancel a job |
-| `GET` | `/plugins/v1/gis-export/list` | List jobs with optional filtering |
-| `GET` | `/plugins/v1/gis-export/formats/{county_id}` | Get supported formats for a county |
-| `GET` | `/plugins/v1/gis-export/defaults/{county_id}` | Get default parameters for a county |
-| `GET` | `/plugins/v1/gis-export/health` | Health check endpoint |
+- `/plugins/v1/gis-export/run` - Create a new export job
+- `/plugins/v1/gis-export/status/{job_id}` - Check job status
+- `/plugins/v1/gis-export/results/{job_id}` - Get job results
+- `/plugins/v1/gis-export/list` - List all jobs with optional filtering
+- `/plugins/v1/gis-export/health` - Plugin health check
 
-## County Configuration
+### Isolated Metrics API (Port 8090)
 
-The county configuration system allows each county to have its own set of:
+- `/metrics` - Prometheus-compatible metrics endpoint
+- `/health` - Health check for the metrics service
+- `/record/job_submitted` - Record a new job submission
+- `/record/job_completed` - Record a job completion
+- `/record/job_failed` - Record a job failure
+- `/jobs` - Get all tracked jobs (debugging)
 
-1. Allowed export formats
-2. Default coordinate system
-3. Maximum export area size
-4. Default simplification tolerance
-5. Other export parameters
+## County Configuration Integration
 
-This configuration is loaded from county-specific JSON files at:
-```
-county_configs/{county_id}/{county_id}_config.json
-```
+The GIS Export plugin integrates with county-specific configurations to:
 
-If a county doesn't have a specific configuration, default values are used.
+1. Validate requested export formats against county-supported formats
+2. Apply county-specific coordinate systems to exports
+3. Verify export area is within county boundaries
+4. Apply county-specific data transformations and filters
 
-## Metrics
+## Deployment Strategy
 
-The plugin reports the following Prometheus metrics:
+For production deployment to Azure, the isolated metrics service is deployed as a separate microservice with:
 
-1. `gis_export_jobs_submitted_total` - Total number of submitted jobs
-2. `gis_export_jobs_completed_total` - Total number of successfully completed jobs
-3. `gis_export_jobs_failed_total` - Total number of failed jobs
-4. `gis_export_processing_duration_seconds` - Processing time histogram
-5. `gis_export_file_size_kb` - Result file size histogram
-6. `gis_export_record_count` - Result record count histogram
+1. Its own App Service instance
+2. Proper network security rules to allow only internal communication
+3. Integration with Azure Monitor for metrics collection
+4. Health checks and auto-recovery
 
-These metrics are labeled with `county_id` and `export_format` for detailed analysis.
+## Future Improvements
 
-## Background Processing
-
-The plugin uses FastAPI's `BackgroundTasks` to process export jobs asynchronously:
-
-1. When a job is submitted, it's created with status `PENDING`
-2. A background task is added to the request to process the job
-3. The job status is updated to `RUNNING` when processing starts
-4. After processing, the status is updated to `COMPLETED` or `FAILED`
-5. Results (file location, size, record count) are stored in the job record
-
-This allows the API to respond quickly while processing potentially large exports in the background.
-
-## Error Handling
-
-The plugin implements robust error handling:
-
-1. Request validation through Pydantic models
-2. Export format validation against county-specific allowed formats
-3. Job status checks to prevent invalid operations
-4. Detailed error messages in API responses
-5. Error logging with appropriate severity levels
-6. Error metrics for monitoring and alerting
-
-## Testing
-
-The plugin includes several test files:
-
-1. `test_gis_export_county_config_standalone.py` - Tests county configuration functionality
-2. `test_county_config_gis_export.py` - Integration tests between config and service
-3. `tests/plugins/fixed_test_gis_export_end_to_end.py` - End-to-end API tests
-
-## Documentation
-
-The plugin's documentation includes:
-
-1. `GIS_EXPORT_IMPLEMENTATION.md` (this file) - Implementation details
-2. `docs/gis_export_county_configuration.md` - County configuration guide
-3. `GIS_EXPORT_TEST_README.md` - Testing instructions
-4. API documentation via FastAPI's automatic OpenAPI generation
-
-## Future Enhancements
-
-Planned enhancements include:
-
-1. Support for more export formats (CSV, FileGDB, etc.)
-2. Advanced area filtering options
-3. Integration with county security and access controls
-4. Caching of frequently requested exports
-5. Rate limiting for resource-intensive exports
-
-## Deployment Considerations
-
-When deploying the plugin:
-
-1. Ensure county configuration files are properly set up
-2. Configure appropriate database access and permissions
-3. Set up Prometheus scraping for the metrics endpoints
-4. Ensure adequate storage for export files
-5. Configure backup and retention policies for exports
+1. Add support for more export formats (GML, FGDB, etc.)
+2. Implement county-specific data transformations
+3. Add caching for frequently requested exports
+4. Implement multi-region export capability
+5. Add rate limiting based on county configurations
