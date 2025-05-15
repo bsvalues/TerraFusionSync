@@ -6,11 +6,10 @@ with JWT authentication and role-based access control.
 """
 
 import logging
-from functools import wraps
-from typing import List, Union, Callable, Optional
+import functools
+from typing import Callable, List, Union, Optional, Dict, Any
 
-from flask import request, redirect, url_for, session, g, jsonify
-from jwt.exceptions import InvalidTokenError
+from flask import request, session, g, redirect, url_for, jsonify, current_app
 
 from auth.jwt_utils import decode_token, validate_permissions, validate_county_access
 
@@ -29,70 +28,57 @@ def requires_auth(redirect_to_login: bool = True) -> Callable:
         Decorated function
     """
     def decorator(f: Callable) -> Callable:
-        @wraps(f)
+        @functools.wraps(f)
         def decorated_function(*args, **kwargs):
-            # Check if authenticated
-            try:
-                # First try to get token from Authorization header
+            # Check for token in session first (web app)
+            token = session.get('token')
+            
+            # If not in session, try Authorization header (API)
+            if not token:
                 auth_header = request.headers.get('Authorization')
                 if auth_header and auth_header.startswith('Bearer '):
                     token = auth_header.split(' ')[1]
-                    # Decode and validate the token
-                    payload = decode_token(token)
-                    # Store user info in Flask's g object for the current request
-                    g.user = payload
-                    # Continue to the wrapped function
-                    return f(*args, **kwargs)
-                    
-                # Then try to get token from session
-                elif 'token' in session:
-                    token = session['token']
-                    # Decode and validate the token
-                    payload = decode_token(token)
-                    # Store user info in Flask's g object for the current request
-                    g.user = payload
-                    # Continue to the wrapped function
-                    return f(*args, **kwargs)
-                
-                # No valid authentication found
-                else:
-                    if redirect_to_login:
-                        # Store the requested URL in session for redirect after login
-                        session['next'] = request.path
-                        return redirect(url_for('login_page'))
-                    else:
-                        return jsonify({
-                            'success': False,
-                            'error': 'Authentication required'
-                        }), 401
-                        
-            except InvalidTokenError as e:
-                # Token is invalid or expired
-                logger.warning(f"Invalid token: {str(e)}")
-                if 'token' in session:
-                    # Clear the invalid token from session
-                    session.pop('token', None)
-                    
+            
+            # If still no token, redirect to login or return 401
+            if not token:
                 if redirect_to_login:
-                    # Redirect to login page
-                    return redirect(url_for('login_page'))
+                    # Store the current URL for redirect after login
+                    session['next'] = request.url
+                    return redirect(url_for('auth.login'))
                 else:
                     return jsonify({
                         'success': False,
-                        'error': f'Invalid authentication token: {str(e)}'
+                        'error': 'Authentication required'
                     }), 401
-                    
+            
+            # Validate token
+            try:
+                # Decode the token (also validates it)
+                token_data = decode_token(token)
+                
+                # Store user info in Flask's g object for the current request
+                g.user = token_data
+                
+                # Call the protected view function
+                return f(*args, **kwargs)
+                
             except Exception as e:
-                # Unexpected error during authentication
-                logger.error(f"Authentication error: {str(e)}")
+                logger.warning(f"Authentication failed: {str(e)}")
+                
+                # Clear invalid token from session
+                if 'token' in session:
+                    session.pop('token', None)
+                
+                # Redirect or return 401 based on setting
                 if redirect_to_login:
-                    return redirect(url_for('login_page'))
+                    session['next'] = request.url
+                    return redirect(url_for('auth.login'))
                 else:
                     return jsonify({
                         'success': False,
-                        'error': 'Authentication error'
-                    }), 500
-                
+                        'error': f'Authentication failed: {str(e)}'
+                    }), 401
+        
         return decorated_function
     return decorator
 
@@ -110,14 +96,16 @@ def requires_permission(permissions: Union[str, List[str]], redirect_on_error: b
     Returns:
         Decorated function
     """
+    # Convert single permission to list
     if isinstance(permissions, str):
         permissions = [permissions]
-        
+    
     def decorator(f: Callable) -> Callable:
-        @wraps(f)
+        @functools.wraps(f)
         def decorated_function(*args, **kwargs):
             # Check if user is authenticated
             if not hasattr(g, 'user'):
+                logger.error("requires_permission used without requires_auth")
                 if redirect_on_error:
                     return redirect(url_for('error_page', code=401))
                 else:
@@ -126,25 +114,31 @@ def requires_permission(permissions: Union[str, List[str]], redirect_on_error: b
                         'error': 'Authentication required'
                     }), 401
             
-            # Check if user has the required permissions
-            user = g.user if hasattr(g, 'user') else {}
-            if not validate_permissions(user, permissions):
-                username = user.get('username', 'unknown')
-                role = user.get('role', 'unknown')
-                logger.warning(f"Permission denied: User {username} with role {role} attempted to access {request.path} requiring permissions {permissions}")
+            # Validate user permissions
+            if not validate_permissions(g.user, permissions):
+                username = g.user.get('username', 'unknown')
+                role = g.user.get('role', 'unknown')
+                user_permissions = g.user.get('permissions', [])
+                
+                logger.warning(
+                    f"Permission denied: User {username} with role {role} and "
+                    f"permissions {user_permissions} attempted to access endpoint "
+                    f"{request.path} which requires permissions {permissions}"
+                )
                 
                 if redirect_on_error:
                     return redirect(url_for('error_page', code=403))
                 else:
                     return jsonify({
                         'success': False,
-                        'error': 'Insufficient permissions'
+                        'error': 'You do not have permission to access this resource'
                     }), 403
             
-            # Continue to the wrapped function
+            # If permissions are valid, call the protected view function
             return f(*args, **kwargs)
-            
+        
         return decorated_function
+    
     return decorator
 
 
@@ -162,10 +156,11 @@ def requires_county_access(county_id_param: str = 'county_id', redirect_on_error
         Decorated function
     """
     def decorator(f: Callable) -> Callable:
-        @wraps(f)
+        @functools.wraps(f)
         def decorated_function(*args, **kwargs):
             # Check if user is authenticated
             if not hasattr(g, 'user'):
+                logger.error("requires_county_access used without requires_auth")
                 if redirect_on_error:
                     return redirect(url_for('error_page', code=401))
                 else:
@@ -174,43 +169,54 @@ def requires_county_access(county_id_param: str = 'county_id', redirect_on_error
                         'error': 'Authentication required'
                     }), 401
             
-            # Get county ID from URL parameters
-            county_id = kwargs.get(county_id_param)
+            # Get county ID from URL parameters, JSON body, or query parameters
+            county_id = None
             
-            # If county_id is not in URL parameters, try to get it from query string
+            if county_id_param in kwargs:
+                # From URL parameter
+                county_id = kwargs[county_id_param]
+            elif request.is_json and county_id_param in request.json:
+                # From JSON body
+                county_id = request.json[county_id_param]
+            elif county_id_param in request.args:
+                # From query parameter
+                county_id = request.args[county_id_param]
+            
             if not county_id:
-                county_id = request.args.get(county_id_param)
-                
-            # If county_id is not in query string, try to get it from form data
-            if not county_id and request.method in ['POST', 'PUT']:
-                if request.content_type == 'application/json':
-                    county_id = request.json.get(county_id_param)
+                logger.warning(f"County ID not found in request for {request.path}")
+                if redirect_on_error:
+                    return redirect(url_for('error_page', code=400))
                 else:
-                    county_id = request.form.get(county_id_param)
+                    return jsonify({
+                        'success': False,
+                        'error': f'Missing county ID parameter: {county_id_param}'
+                    }), 400
             
-            # If county_id is not found, allow access (no county-specific restriction)
-            if not county_id:
-                return f(*args, **kwargs)
+            # Validate county access
+            if not validate_county_access(g.user, county_id):
+                username = g.user.get('username', 'unknown')
+                role = g.user.get('role', 'unknown')
+                allowed_counties = g.user.get('county_ids', [])
                 
-            # Check if user has access to the specified county
-            user = g.user if hasattr(g, 'user') else {}
-            if not validate_county_access(user, county_id):
-                username = user.get('username', 'unknown')
-                role = user.get('role', 'unknown')
-                logger.warning(f"County access denied: User {username} with role {role} attempted to access county {county_id}")
+                logger.warning(
+                    f"County access denied: User {username} with role {role} and "
+                    f"allowed counties {allowed_counties} attempted to access "
+                    f"county {county_id} via endpoint {request.path}"
+                )
                 
                 if redirect_on_error:
                     return redirect(url_for('error_page', code=403))
                 else:
                     return jsonify({
                         'success': False,
-                        'error': f'Access to county {county_id} denied'
+                        'error': f'You do not have access to county: {county_id}'
                     }), 403
             
-            # Continue to the wrapped function
+            # If county access is valid, call the protected view function
             return f(*args, **kwargs)
-            
+        
         return decorated_function
+    
     return decorator
 
 
@@ -227,10 +233,11 @@ def admin_only(redirect_on_error: bool = False) -> Callable:
         Decorated function
     """
     def decorator(f: Callable) -> Callable:
-        @wraps(f)
+        @functools.wraps(f)
         def decorated_function(*args, **kwargs):
             # Check if user is authenticated
             if not hasattr(g, 'user'):
+                logger.error("admin_only used without requires_auth")
                 if redirect_on_error:
                     return redirect(url_for('error_page', code=401))
                 else:
@@ -254,8 +261,9 @@ def admin_only(redirect_on_error: bool = False) -> Callable:
                         'error': 'Admin access required'
                     }), 403
             
-            # Continue to the wrapped function
+            # If user is admin, call the protected view function
             return f(*args, **kwargs)
-            
+        
         return decorated_function
+    
     return decorator

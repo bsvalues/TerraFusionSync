@@ -39,3 +39,5 @@ pytest
 aiosqlite
 httpx
 aiosqlite
+opencensus
+pyjwt

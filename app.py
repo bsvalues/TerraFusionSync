@@ -1873,6 +1873,22 @@ def new_sync_wizard():
     return render_template('new_sync_wizard.html', user=user)
 
 
+@app.route('/error/<code>')
+def error_page(code):
+    """Error page handler."""
+    # Convert code to int if it's a string
+    if isinstance(code, str) and code.isdigit():
+        code = int(code)
+    elif not isinstance(code, int):
+        code = 500
+        
+    # Ensure code is a valid HTTP status code
+    if code not in [400, 401, 403, 404, 500]:
+        code = 500
+    
+    return render_template('error.html', code=code), code
+
+
 @app.route('/test-metrics')
 def test_metrics():
     """Test endpoint to check metrics (development only)."""

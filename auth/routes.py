@@ -262,4 +262,4 @@ def init_auth_routes(app) -> None:
     @app.route('/login', methods=['GET', 'POST'])
     def login_page():
         """Alias for auth.login for compatibility."""
-        return auth_bp.get_url_defaults('auth.login')(*request.args)
+        return login()
