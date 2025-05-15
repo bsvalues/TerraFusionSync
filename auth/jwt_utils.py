@@ -48,8 +48,8 @@ def create_access_token(
     username: str,
     role: str,
     permissions: List[str],
-    county_ids: List[str] = None,
-    additional_claims: Dict[str, Any] = None
+    county_ids: Optional[List[str]] = None,
+    additional_claims: Optional[Dict[str, Any]] = None
 ) -> str:
     """
     Create a new access token for a user.
@@ -103,7 +103,7 @@ def create_refresh_token(
     user_id: Union[str, int],
     username: str,
     role: str,
-    additional_claims: Dict[str, Any] = None
+    additional_claims: Optional[Dict[str, Any]] = None
 ) -> str:
     """
     Create a new refresh token for a user.

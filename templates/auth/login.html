@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block title %}Login - TerraFusion Platform{% endblock %}
+
+{% block head %}
+<style>
+    .login-container {
+        max-width: 450px;
+        margin: 2rem auto;
+        padding: 2rem;
+        background-color: #fff;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+    .login-header {
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .login-header h1 {
+        color: #333;
+        margin-bottom: 0.5rem;
+    }
+    .login-header p {
+        color: #666;
+    }
+    .form-group {
+        margin-bottom: 1.5rem;
+    }
+    .form-group label {
+        display: block;
+        margin-bottom: 0.5rem;
+        font-weight: 500;
+        color: #333;
+    }
+    .form-control {
+        width: 100%;
+        padding: 0.75rem;
+        font-size: 1rem;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        transition: border-color 0.2s;
+    }
+    .form-control:focus {
+        border-color: #4a6fdc;
+        outline: none;
+    }
+    .remember-me {
+        display: flex;
+        align-items: center;
+        margin-bottom: 1.5rem;
+    }
+    .remember-me input {
+        margin-right: 0.5rem;
+    }
+    .btn-login {
+        width: 100%;
+        padding: 0.75rem;
+        background-color: #4a6fdc;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-size: 1rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+    .btn-login:hover {
+        background-color: #3a5dc0;
+    }
+    .alert {
+        padding: 1rem;
+        margin-bottom: 1.5rem;
+        border-radius: 4px;
+    }
+    .alert-danger {
+        background-color: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+    }
+    .alert-success {
+        background-color: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+    }
+    .banner {
+        text-align: center;
+        padding: 1rem;
+        background-color: #f9f9f9;
+        border-radius: 4px;
+        margin-bottom: 1.5rem;
+    }
+    .banner img {
+        max-width: 200px;
+        margin-bottom: 1rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="login-container">
+    <div class="login-header">
+        <div class="banner">
+            <h2>TerraFusion Platform</h2>
+            <p>County Property Assessment System</p>
+        </div>
+        <h1>Login</h1>
+        <p>Enter your credentials to access the system</p>
+    </div>
+    
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+    
+    <form method="POST" action="{{ url_for('auth.login') }}">
+        <div class="form-group">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" class="form-control" required autocomplete="username">
+        </div>
+        
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" class="form-control" required autocomplete="current-password">
+        </div>
+        
+        <div class="remember-me">
+            <input type="checkbox" id="remember" name="remember" value="true">
+            <label for="remember">Remember me</label>
+        </div>
+        
+        <button type="submit" class="btn-login">Login</button>
+    </form>
+</div>
+{% endblock %}
