@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Button, Card, Badge, ProgressBar } from '@terrafusion/ui';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Button, Card, Badge, ProgressBar, Notification, Spinner } from '@terrafusion/ui';
+import { useSyncOperations } from '../hooks/useSyncOperations';
+import { useWebSocketConnection } from '../hooks/useWebSocketConnection';
 
 type SyncStatus = 'active' | 'completed' | 'failed' | 'pending' | 'scheduled';
 
@@ -20,86 +22,67 @@ interface SyncOperation {
 
 export const SyncDashboard: React.FC = () => {
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
-  const [operations, setOperations] = useState<SyncOperation[]>([]);
+  const location = useLocation();
   const [filterStatus, setFilterStatus] = useState<SyncStatus | 'all'>('all');
-
-  // Fetch sync operations data
+  const [showSuccessNotification, setShowSuccessNotification] = useState(false);
+  
+  // Check for created=true in URL query params (for showing success notification)
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        // In a real implementation, this would fetch from API
-        const response = await fetch('/api/sync/operations');
-        if (!response.ok) {
-          throw new Error('Failed to fetch sync operations');
-        }
-        const data = await response.json();
-        setOperations(data.operations);
-      } catch (error) {
-        console.error('Error fetching sync operations:', error);
-        // Simulate data for development
-        setOperations([
-          {
-            id: '1',
-            name: 'Products Synchronization',
-            status: 'active',
-            source: 'ERP System',
-            target: 'E-commerce Platform',
-            progress: 65,
-            recordsTotal: 1250,
-            recordsProcessed: 812,
-            startTime: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-          },
-          {
-            id: '2',
-            name: 'Customer Data Migration',
-            status: 'completed',
-            source: 'Legacy CRM',
-            target: 'New CRM Platform',
-            progress: 100,
-            recordsTotal: 500,
-            recordsProcessed: 500,
-            startTime: new Date(Date.now() - 120 * 60 * 1000).toISOString(),
-            endTime: new Date(Date.now() - 105 * 60 * 1000).toISOString(),
-          },
-          {
-            id: '3',
-            name: 'Inventory Update',
-            status: 'scheduled',
-            source: 'Warehouse System',
-            target: 'Marketplace',
-            progress: 0,
-            recordsTotal: 0,
-            recordsProcessed: 0,
-            startTime: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-          },
-          {
-            id: '4',
-            name: 'Pricing Update',
-            status: 'failed',
-            source: 'Pricing System',
-            target: 'Marketplace',
-            progress: 23,
-            recordsTotal: 1500,
-            recordsProcessed: 345,
-            startTime: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
-            endTime: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-            lastRunStatus: 'API Error: Target system not responding',
-          },
-        ]);
-      } finally {
-        setLoading(false);
-      }
-    };
+    const params = new URLSearchParams(location.search);
+    if (params.get('created') === 'true') {
+      setShowSuccessNotification(true);
+      // Remove the query param after showing notification
+      navigate(location.pathname, { replace: true });
+      
+      // Auto-hide notification after 5 seconds
+      const timer = setTimeout(() => {
+        setShowSuccessNotification(false);
+      }, 5000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [location, navigate]);
 
-    fetchData();
-  }, []);
+  // Use custom hook for API operations
+  const { 
+    operations, 
+    isLoading: loading, 
+    error, 
+    fetchOperations, 
+    retryOperation,
+    cancelOperation 
+  } = useSyncOperations();
+  
+  // Use WebSocket connection for real-time updates
+  const { isConnected: wsConnected } = useWebSocketConnection({
+    onMessage: (data) => {
+      // Refresh operations list when we receive an update
+      fetchOperations();
+    }
+  });
 
   // Filter operations based on selected status
   const filteredOperations = filterStatus === 'all'
     ? operations
     : operations.filter(op => op.status === filterStatus);
+
+  // Setup auto-refresh for active operations
+  useEffect(() => {
+    const hasActiveOperations = operations.some(op => op.status === 'active' || op.status === 'pending');
+    
+    let intervalId: NodeJS.Timeout | null = null;
+    
+    // If we have active operations and no WebSocket connection, poll instead
+    if (hasActiveOperations && !wsConnected) {
+      intervalId = setInterval(() => {
+        fetchOperations();
+      }, 10000); // Poll every 10 seconds
+    }
+    
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [operations, wsConnected, fetchOperations]);
 
   // Render status badge with appropriate color
   const renderStatusBadge = (status: SyncStatus) => {
@@ -123,22 +106,88 @@ export const SyncDashboard: React.FC = () => {
 
   // Create a new sync operation
   const handleNewSync = () => {
-    navigate('/sync-new');
+    navigate('/sync/new');
+  };
+  
+  // Handle retry operation
+  const handleRetryOperation = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await retryOperation(id);
+    } catch (error) {
+      console.error('Error retrying operation:', error);
+    }
+  };
+  
+  // Handle cancel operation
+  const handleCancelOperation = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (window.confirm('Are you sure you want to cancel this operation?')) {
+      try {
+        await cancelOperation(id);
+      } catch (error) {
+        console.error('Error canceling operation:', error);
+      }
+    }
   };
 
   return (
     <div className="p-6">
+      {showSuccessNotification && (
+        <Notification
+          type="success"
+          title="Sync Operation Created"
+          message="Your new sync operation has been created successfully."
+          onClose={() => setShowSuccessNotification(false)}
+          className="mb-6"
+        />
+      )}
+      
+      {error && (
+        <Notification
+          type="error"
+          title="Error Loading Sync Operations"
+          message={error.message || 'An error occurred while loading sync operations.'}
+          onClose={() => {}} // Keep error visible until refresh
+          action={{
+            label: 'Retry',
+            onClick: fetchOperations
+          }}
+          className="mb-6"
+        />
+      )}
+      
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold">Sync Operations</h1>
-          <p className="text-gray-600">View and manage your data sync operations</p>
+          <p className="text-gray-600">
+            View and manage your data sync operations
+            {wsConnected && (
+              <span className="ml-2 text-green-600 text-xs">
+                <span className="inline-block h-2 w-2 rounded-full bg-green-600 mr-1"></span>
+                Real-time updates active
+              </span>
+            )}
+          </p>
         </div>
-        <Button onClick={handleNewSync}>New Sync Operation</Button>
+        <div className="flex space-x-2 items-center">
+          <Button 
+            variant="secondary" 
+            size="sm" 
+            onClick={fetchOperations}
+            disabled={loading}
+            className="mr-2"
+          >
+            {loading ? <Spinner size="sm" className="mr-2" /> : null}
+            Refresh
+          </Button>
+          <Button onClick={handleNewSync}>New Sync Operation</Button>
+        </div>
       </div>
 
       {/* Status filter */}
       <div className="mb-6">
-        <div className="flex space-x-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             variant={filterStatus === 'all' ? 'primary' : 'tertiary'}
             size="sm"
@@ -184,28 +233,9 @@ export const SyncDashboard: React.FC = () => {
         </div>
       </div>
 
-      {loading ? (
+      {loading && operations.length === 0 ? (
         <div className="text-center py-12">
-          <svg
-            className="animate-spin h-10 w-10 text-blue-500 mx-auto mb-4"
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="4"
-            ></circle>
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            ></path>
-          </svg>
+          <Spinner size="lg" className="mb-4" />
           <p className="text-gray-500">Loading sync operations...</p>
         </div>
       ) : (
@@ -275,13 +305,18 @@ export const SyncDashboard: React.FC = () => {
                       <Button
                         size="sm"
                         variant="danger"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          // In a real implementation, this would call an API
-                          alert(`Retry operation ${operation.id}`);
-                        }}
+                        onClick={(e) => handleRetryOperation(operation.id, e)}
                       >
                         Retry
+                      </Button>
+                    )}
+                    {operation.status === 'active' && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={(e) => handleCancelOperation(operation.id, e)}
+                      >
+                        Cancel
                       </Button>
                     )}
                   </div>
