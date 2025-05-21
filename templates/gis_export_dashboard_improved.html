@@ -1,0 +1,978 @@
+{% extends "base_improved.html" %}
+
+{% block title %}GIS Export Dashboard{% endblock %}
+
+{% block page_id %}gis-export{% endblock %}
+
+{% block content %}
+<div class="tf-row tf-mt-4">
+    <div class="tf-col-12">
+        <h1 class="tf-mb-3">GIS Export Dashboard</h1>
+        <p class="lead">Export geographic data from TerraFusion in various formats with customizable parameters.</p>
+    </div>
+</div>
+
+<div class="tf-row tf-mt-4">
+    <div class="tf-col-lg-8">
+        <!-- Create Export Form -->
+        <div class="tf-card">
+            <div class="tf-card-header tf-d-flex tf-justify-content-between tf-align-items-center">
+                <h5 class="tf-mb-0">Create New GIS Export</h5>
+                <span id="export-workflow-status" class="tf-badge tf-badge-primary">Step 1 of 4: Select County</span>
+            </div>
+            <div class="tf-card-body">
+                <form id="gis-export-form" data-autosave="true">
+                    <!-- Multi-step form for export creation -->
+                    <div class="export-step" id="step-1">
+                        <h6 class="tf-mb-3">County Selection</h6>
+                        <div class="tf-form-group">
+                            <label for="county-id" class="tf-form-label">County ID</label>
+                            <input type="text" class="tf-form-control" id="county-id" name="county_id" required>
+                            <small class="tf-form-text">Enter the ID of the county for which you want to export data.</small>
+                        </div>
+                        
+                        <div class="tf-d-flex tf-justify-content-end tf-mt-3">
+                            <button type="button" class="tf-btn tf-btn-primary next-step" data-step="1">Continue to Format Selection</button>
+                        </div>
+                    </div>
+                    
+                    <div class="export-step" id="step-2" style="display: none;">
+                        <h6 class="tf-mb-3">Export Format</h6>
+                        <div class="tf-form-group">
+                            <label for="export-format" class="tf-form-label">Export Format</label>
+                            <select class="tf-form-control" id="export-format" name="export_format" required>
+                                <option value="">Select format...</option>
+                                <option value="GeoJSON">GeoJSON</option>
+                                <option value="Shapefile">Shapefile</option>
+                                <option value="KML">KML</option>
+                                <option value="CSV">CSV</option>
+                            </select>
+                            <small class="tf-form-text">Select the format in which you want to export the geographic data.</small>
+                        </div>
+                        
+                        <div class="tf-form-group tf-mt-3">
+                            <label class="tf-form-label">Layers to Export</label>
+                            <div class="tf-form-check">
+                                <input class="tf-form-check-input" type="checkbox" value="parcels" name="layers" id="layer-parcels" checked>
+                                <label class="tf-form-check-label" for="layer-parcels">
+                                    Parcels
+                                </label>
+                            </div>
+                            <div class="tf-form-check">
+                                <input class="tf-form-check-input" type="checkbox" value="buildings" name="layers" id="layer-buildings">
+                                <label class="tf-form-check-label" for="layer-buildings">
+                                    Buildings
+                                </label>
+                            </div>
+                            <div class="tf-form-check">
+                                <input class="tf-form-check-input" type="checkbox" value="roads" name="layers" id="layer-roads">
+                                <label class="tf-form-check-label" for="layer-roads">
+                                    Roads
+                                </label>
+                            </div>
+                            <div class="tf-form-check">
+                                <input class="tf-form-check-input" type="checkbox" value="zoning" name="layers" id="layer-zoning">
+                                <label class="tf-form-check-label" for="layer-zoning">
+                                    Zoning
+                                </label>
+                            </div>
+                            <small class="tf-form-text">Select the layers you want to include in the export.</small>
+                        </div>
+                        
+                        <div class="tf-d-flex tf-justify-content-between tf-mt-3">
+                            <button type="button" class="tf-btn tf-btn-secondary prev-step" data-step="2">Back to County Selection</button>
+                            <button type="button" class="tf-btn tf-btn-primary next-step" data-step="2">Continue to Area Configuration</button>
+                        </div>
+                    </div>
+                    
+                    <div class="export-step" id="step-3" style="display: none;">
+                        <h6 class="tf-mb-3">Area of Interest</h6>
+                        <div class="tf-form-group">
+                            <label for="area-of-interest" class="tf-form-label">Area of Interest (GeoJSON)</label>
+                            <textarea class="tf-form-control" id="area-of-interest" name="area_of_interest" rows="4" placeholder='{"type":"Polygon","coordinates":[[[-122.48,37.78],[-122.45,37.78],[-122.45,37.76],[-122.48,37.76],[-122.48,37.78]]]}'></textarea>
+                            <small class="tf-form-text">Define a geographic area to limit the export. Leave blank to export entire county.</small>
+                        </div>
+                        
+                        <div class="tf-form-group tf-mt-3">
+                            <label for="parameters" class="tf-form-label">Additional Parameters (JSON)</label>
+                            <textarea class="tf-form-control" id="parameters" name="parameters" rows="3" placeholder='{"simplification": 0.0001, "include_metadata": true}'></textarea>
+                            <small class="tf-form-text">Optional format-specific parameters in JSON format.</small>
+                        </div>
+                        
+                        <div class="tf-d-flex tf-justify-content-between tf-mt-3">
+                            <button type="button" class="tf-btn tf-btn-secondary prev-step" data-step="3">Back to Format Selection</button>
+                            <button type="button" class="tf-btn tf-btn-primary next-step" data-step="3">Continue to Review</button>
+                        </div>
+                    </div>
+                    
+                    <div class="export-step" id="step-4" style="display: none;">
+                        <h6 class="tf-mb-3">Review and Submit</h6>
+                        <div class="tf-card" style="background-color: #f8f9fa;">
+                            <div class="tf-card-body">
+                                <dl class="tf-row">
+                                    <dt class="tf-col-sm-4">County ID:</dt>
+                                    <dd class="tf-col-sm-8" id="review-county-id">-</dd>
+                                    
+                                    <dt class="tf-col-sm-4">Export Format:</dt>
+                                    <dd class="tf-col-sm-8" id="review-export-format">-</dd>
+                                    
+                                    <dt class="tf-col-sm-4">Layers:</dt>
+                                    <dd class="tf-col-sm-8" id="review-layers">-</dd>
+                                    
+                                    <dt class="tf-col-sm-4">Area of Interest:</dt>
+                                    <dd class="tf-col-sm-8" id="review-area">-</dd>
+                                    
+                                    <dt class="tf-col-sm-4">Additional Parameters:</dt>
+                                    <dd class="tf-col-sm-8" id="review-parameters">-</dd>
+                                </dl>
+                            </div>
+                        </div>
+                        
+                        <div class="tf-form-group tf-mt-3">
+                            <div class="tf-form-check">
+                                <input class="tf-form-check-input" type="checkbox" id="confirm-submit" required>
+                                <label class="tf-form-check-label" for="confirm-submit">
+                                    I confirm that the export configuration is correct and want to submit this job.
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="tf-d-flex tf-justify-content-between tf-mt-3">
+                            <button type="button" class="tf-btn tf-btn-secondary prev-step" data-step="4">Back to Area Configuration</button>
+                            <button type="submit" class="tf-btn tf-btn-success" id="submit-export" disabled>Submit Export Job</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="tf-col-lg-4">
+        <!-- Job Status and List -->
+        <div class="tf-card">
+            <div class="tf-card-header tf-d-flex tf-justify-content-between tf-align-items-center">
+                <h5 class="tf-mb-0">Recent Jobs</h5>
+                <button id="refresh-jobs-btn" class="tf-btn tf-btn-outline-primary tf-btn-sm">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+            <div class="tf-card-body">
+                <div id="recent-jobs-list">
+                    <div class="tf-d-flex tf-justify-content-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="tf-card tf-mt-4">
+            <div class="tf-card-header">
+                <h5 class="tf-mb-0">Job Status</h5>
+            </div>
+            <div class="tf-card-body">
+                <div id="job-status-details">
+                    <p class="text-muted text-center">Select a job to view details</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Job Details Modal -->
+<div class="modal fade" id="jobDetailsModal" tabindex="-1" aria-labelledby="jobDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="jobDetailsModalLabel">Export Job Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="job-details-content">
+                <!-- Job details will be loaded here -->
+                <div class="tf-d-flex tf-justify-content-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="tf-btn tf-btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="tf-btn tf-btn-primary" id="download-result-btn" style="display: none;">Download Result</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize by loading recent jobs
+        loadRecentJobs();
+        
+        // Set up event listeners
+        document.getElementById('refresh-jobs-btn').addEventListener('click', loadRecentJobs);
+        document.getElementById('gis-export-form').addEventListener('submit', submitExportJob);
+        
+        // Set up multi-step form navigation
+        setupMultiStepForm();
+        
+        // Load jobs on page load and refresh periodically
+        setInterval(loadRecentJobs, 30000); // Refresh every 30 seconds
+        
+        // Load form state if available
+        if (window.TerraFusion && window.TerraFusion.state) {
+            window.TerraFusion.state.loadFormState('gis-export-form');
+            
+            // If we were in the middle of a step, restore it
+            const currentStep = window.TerraFusion.state.get('gisExportCurrentStep');
+            if (currentStep) {
+                goToStep(currentStep);
+            }
+        }
+        
+        // Set up confirmation checkbox
+        document.getElementById('confirm-submit').addEventListener('change', function() {
+            document.getElementById('submit-export').disabled = !this.checked;
+        });
+    });
+    
+    // Set up multi-step form
+    function setupMultiStepForm() {
+        // Handle next step buttons
+        document.querySelectorAll('.next-step').forEach(button => {
+            button.addEventListener('click', function() {
+                const step = parseInt(this.getAttribute('data-step'));
+                
+                // Validate current step
+                if (validateStep(step)) {
+                    // If validation passes, proceed to next step
+                    goToStep(step + 1);
+                    
+                    // Save form state
+                    if (window.TerraFusion && window.TerraFusion.state) {
+                        window.TerraFusion.state.saveFormState('gis-export-form');
+                        window.TerraFusion.state.set('gisExportCurrentStep', step + 1);
+                    }
+                    
+                    // Update review information when going to review step
+                    if (step + 1 === 4) {
+                        updateReviewInfo();
+                    }
+                }
+            });
+        });
+        
+        // Handle previous step buttons
+        document.querySelectorAll('.prev-step').forEach(button => {
+            button.addEventListener('click', function() {
+                const step = parseInt(this.getAttribute('data-step'));
+                goToStep(step - 1);
+                
+                // Save current step to state
+                if (window.TerraFusion && window.TerraFusion.state) {
+                    window.TerraFusion.state.set('gisExportCurrentStep', step - 1);
+                }
+            });
+        });
+    }
+    
+    // Go to a specific step
+    function goToStep(step) {
+        // Hide all steps
+        document.querySelectorAll('.export-step').forEach(element => {
+            element.style.display = 'none';
+        });
+        
+        // Show the requested step
+        document.getElementById('step-' + step).style.display = 'block';
+        
+        // Update workflow status indicator
+        const statusElement = document.getElementById('export-workflow-status');
+        const stepLabels = [
+            'Step 1 of 4: Select County',
+            'Step 2 of 4: Format Selection',
+            'Step 3 of 4: Area Configuration',
+            'Step 4 of 4: Review & Submit'
+        ];
+        
+        statusElement.textContent = stepLabels[step - 1];
+        
+        // Update breadcrumb (if using our state management)
+        if (window.TerraFusion && window.TerraFusion.state) {
+            // Set the current step in our navigation state
+            window.TerraFusion.state.set('gisExportStep', {
+                step: step,
+                label: stepLabels[step - 1]
+            });
+        }
+    }
+    
+    // Validate a specific step
+    function validateStep(step) {
+        let isValid = true;
+        
+        switch (step) {
+            case 1:
+                // Validate county ID
+                const countyId = document.getElementById('county-id').value.trim();
+                if (!countyId) {
+                    showValidationError('county-id', 'Please enter a County ID');
+                    isValid = false;
+                } else {
+                    clearValidationError('county-id');
+                }
+                break;
+                
+            case 2:
+                // Validate export format
+                const exportFormat = document.getElementById('export-format').value;
+                if (!exportFormat) {
+                    showValidationError('export-format', 'Please select an export format');
+                    isValid = false;
+                } else {
+                    clearValidationError('export-format');
+                }
+                
+                // Check if at least one layer is selected
+                const selectedLayers = document.querySelectorAll('input[name="layers"]:checked');
+                if (selectedLayers.length === 0) {
+                    showValidationError('layer-parcels', 'Please select at least one layer');
+                    isValid = false;
+                } else {
+                    clearValidationError('layer-parcels');
+                }
+                break;
+                
+            case 3:
+                // Validate area of interest (if provided)
+                const areaOfInterest = document.getElementById('area-of-interest').value.trim();
+                if (areaOfInterest) {
+                    try {
+                        JSON.parse(areaOfInterest);
+                        clearValidationError('area-of-interest');
+                    } catch (e) {
+                        showValidationError('area-of-interest', 'Invalid GeoJSON format');
+                        isValid = false;
+                    }
+                }
+                
+                // Validate parameters (if provided)
+                const parameters = document.getElementById('parameters').value.trim();
+                if (parameters) {
+                    try {
+                        JSON.parse(parameters);
+                        clearValidationError('parameters');
+                    } catch (e) {
+                        showValidationError('parameters', 'Invalid JSON format');
+                        isValid = false;
+                    }
+                }
+                break;
+        }
+        
+        return isValid;
+    }
+    
+    // Show validation error
+    function showValidationError(elementId, message) {
+        const element = document.getElementById(elementId);
+        element.classList.add('is-invalid');
+        
+        // Create or update error message
+        let errorElement = document.getElementById(`${elementId}-error`);
+        if (!errorElement) {
+            errorElement = document.createElement('div');
+            errorElement.id = `${elementId}-error`;
+            errorElement.className = 'invalid-feedback';
+            element.parentNode.appendChild(errorElement);
+        }
+        
+        errorElement.textContent = message;
+        
+        // Show as notification if available
+        if (window.TerraFusion && window.TerraFusion.notifications) {
+            window.TerraFusion.notifications.warning('Validation Error', message);
+        }
+    }
+    
+    // Clear validation error
+    function clearValidationError(elementId) {
+        const element = document.getElementById(elementId);
+        element.classList.remove('is-invalid');
+        
+        const errorElement = document.getElementById(`${elementId}-error`);
+        if (errorElement) {
+            errorElement.remove();
+        }
+    }
+    
+    // Update review information
+    function updateReviewInfo() {
+        // Get form values
+        const countyId = document.getElementById('county-id').value;
+        const exportFormat = document.getElementById('export-format').value;
+        
+        // Get selected layers
+        const layerElements = document.querySelectorAll('input[name="layers"]:checked');
+        const layers = Array.from(layerElements).map(element => element.value);
+        
+        // Get area of interest
+        let areaDisplay = 'Entire County';
+        const areaOfInterest = document.getElementById('area-of-interest').value.trim();
+        if (areaOfInterest) {
+            try {
+                const areaObj = JSON.parse(areaOfInterest);
+                if (areaObj.type) {
+                    areaDisplay = `Custom ${areaObj.type}`;
+                }
+            } catch (e) {
+                areaDisplay = 'Invalid GeoJSON';
+            }
+        }
+        
+        // Get additional parameters
+        let paramsDisplay = 'None';
+        const parameters = document.getElementById('parameters').value.trim();
+        if (parameters) {
+            try {
+                const paramsObj = JSON.parse(parameters);
+                const paramKeys = Object.keys(paramsObj);
+                paramsDisplay = paramKeys.join(', ');
+            } catch (e) {
+                paramsDisplay = 'Invalid JSON';
+            }
+        }
+        
+        // Update review display
+        document.getElementById('review-county-id').textContent = countyId;
+        document.getElementById('review-export-format').textContent = exportFormat;
+        document.getElementById('review-layers').textContent = layers.join(', ');
+        document.getElementById('review-area').textContent = areaDisplay;
+        document.getElementById('review-parameters').textContent = paramsDisplay;
+    }
+    
+    // Load recent export jobs
+    function loadRecentJobs() {
+        const jobsList = document.getElementById('recent-jobs-list');
+        jobsList.innerHTML = `
+            <div class="tf-d-flex tf-justify-content-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+        `;
+        
+        fetch('/api/v1/gis-export/list')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data && data.length > 0) {
+                    let jobsHtml = '<ul class="list-group">';
+                    
+                    data.forEach(job => {
+                        const statusClass = getStatusClass(job.status);
+                        const statusIcon = getStatusIcon(job.status);
+                        
+                        jobsHtml += `
+                            <li class="list-group-item d-flex justify-content-between align-items-center job-item" 
+                                data-job-id="${job.job_id}">
+                                <div>
+                                    <div class="fw-bold">${job.county_id} (${job.export_format})</div>
+                                    <small class="text-muted">${new Date(job.created_at).toLocaleString()}</small>
+                                </div>
+                                <span class="badge ${statusClass} rounded-pill">${statusIcon} ${job.status}</span>
+                            </li>
+                        `;
+                    });
+                    
+                    jobsHtml += '</ul>';
+                    jobsList.innerHTML = jobsHtml;
+                    
+                    // Add click listeners to job items
+                    document.querySelectorAll('.job-item').forEach(item => {
+                        item.addEventListener('click', () => {
+                            const jobId = item.getAttribute('data-job-id');
+                            loadJobDetails(jobId);
+                        });
+                    });
+                    
+                    // If we have success notifications, show the latest job status
+                    if (window.TerraFusion && window.TerraFusion.notifications) {
+                        const completedJobs = data.filter(job => job.status === 'COMPLETED');
+                        const runningJobs = data.filter(job => job.status === 'RUNNING');
+                        
+                        if (completedJobs.length > 0 && !window.lastCompletedJobShown) {
+                            const latestJob = completedJobs[0];
+                            window.TerraFusion.notifications.success(
+                                `Export job for ${latestJob.county_id} completed successfully.`,
+                                'Export Complete'
+                            );
+                            window.lastCompletedJobShown = latestJob.job_id;
+                        }
+                        
+                        if (runningJobs.length > 0) {
+                            const latestRunning = runningJobs[0];
+                            document.getElementById('job-status-details').innerHTML = `
+                                <div class="text-center">
+                                    <div class="spinner-border text-primary mb-3" role="status">
+                                        <span class="visually-hidden">Processing...</span>
+                                    </div>
+                                    <p><strong>${latestRunning.county_id}</strong> export in progress</p>
+                                    <small class="text-muted">Started at: ${new Date(latestRunning.started_at || latestRunning.created_at).toLocaleString()}</small>
+                                </div>
+                            `;
+                        }
+                    }
+                } else {
+                    jobsList.innerHTML = '<p class="text-center text-muted">No export jobs found</p>';
+                }
+            })
+            .catch(error => {
+                console.error('Error loading jobs:', error);
+                jobsList.innerHTML = 
+                    '<div class="alert alert-danger">Failed to load jobs. Please try again later.</div>';
+                
+                // Show error notification
+                if (window.TerraFusion && window.TerraFusion.notifications) {
+                    window.TerraFusion.notifications.error(
+                        'Could not load recent jobs. Please check your connection and try again.',
+                        'Connection Error'
+                    );
+                }
+            });
+    }
+    
+    // Submit a new export job
+    function submitExportJob(event) {
+        event.preventDefault();
+        
+        // Get form values
+        const form = event.target;
+        const countyId = form.elements.county_id.value;
+        const exportFormat = form.elements.export_format.value;
+        
+        // Get checked layers
+        const layerCheckboxes = form.querySelectorAll('input[name="layers"]:checked');
+        const layers = Array.from(layerCheckboxes).map(cb => cb.value);
+        
+        // Parse JSON inputs
+        let areaOfInterest = null;
+        if (form.elements.area_of_interest.value) {
+            try {
+                areaOfInterest = JSON.parse(form.elements.area_of_interest.value);
+            } catch (e) {
+                if (window.TerraFusion && window.TerraFusion.notifications) {
+                    window.TerraFusion.notifications.error('Invalid GeoJSON for Area of Interest');
+                } else {
+                    alert('Invalid GeoJSON for Area of Interest');
+                }
+                return;
+            }
+        }
+        
+        let parameters = {};
+        if (form.elements.parameters.value) {
+            try {
+                parameters = JSON.parse(form.elements.parameters.value);
+            } catch (e) {
+                if (window.TerraFusion && window.TerraFusion.notifications) {
+                    window.TerraFusion.notifications.error('Invalid JSON for Parameters');
+                } else {
+                    alert('Invalid JSON for Parameters');
+                }
+                return;
+            }
+        }
+        
+        // Build request payload
+        const payload = {
+            county_id: countyId,
+            export_format: exportFormat,
+            layers: layers,
+            area_of_interest: areaOfInterest,
+            parameters: parameters
+        };
+        
+        // Show loading state
+        const submitButton = document.getElementById('submit-export');
+        const originalButtonText = submitButton.innerHTML;
+        submitButton.disabled = true;
+        submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Submitting...';
+        
+        // Submit the job
+        fetch('/api/v1/gis-export/run', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.job_id) {
+                // Show success notification
+                if (window.TerraFusion && window.TerraFusion.notifications) {
+                    window.TerraFusion.notifications.success(
+                        `Export job submitted successfully! Job ID: ${data.job_id}`,
+                        'Job Submitted'
+                    );
+                } else {
+                    alert('Export job submitted successfully! Job ID: ' + data.job_id);
+                }
+                
+                // Reset form and go back to step 1
+                form.reset();
+                goToStep(1);
+                
+                // Clear form state
+                if (window.TerraFusion && window.TerraFusion.state) {
+                    window.TerraFusion.state.clearFormState('gis-export-form');
+                    window.TerraFusion.state.set('gisExportCurrentStep', 1);
+                }
+                
+                // Refresh jobs list and show job details
+                loadRecentJobs();
+                setTimeout(() => {
+                    loadJobDetails(data.job_id);
+                }, 1000);
+            } else {
+                if (window.TerraFusion && window.TerraFusion.notifications) {
+                    window.TerraFusion.notifications.error('Failed to submit export job');
+                } else {
+                    alert('Failed to submit export job');
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error submitting job:', error);
+            if (window.TerraFusion && window.TerraFusion.notifications) {
+                window.TerraFusion.notifications.error(
+                    'Error submitting job. Please try again later.',
+                    'Submission Error'
+                );
+            } else {
+                alert('Error submitting job. Please try again later.');
+            }
+        })
+        .finally(() => {
+            // Restore button state
+            submitButton.disabled = false;
+            submitButton.innerHTML = originalButtonText;
+        });
+    }
+    
+    // Load job details
+    function loadJobDetails(jobId) {
+        // First, update job status panel
+        document.getElementById('job-status-details').innerHTML = `
+            <div class="tf-d-flex tf-justify-content-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading job details...</span>
+                </div>
+            </div>
+        `;
+        
+        // Fetch job status
+        fetch(`/api/v1/gis-export/status/${jobId}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(job => {
+                const statusClass = getStatusClass(job.status);
+                const statusIcon = getStatusIcon(job.status);
+                
+                let detailsHtml = `
+                    <div class="text-center mb-3">
+                        <span class="badge ${statusClass} px-3 py-2">${statusIcon} ${job.status}</span>
+                    </div>
+                    <p class="mb-1"><strong>Job ID:</strong> <span class="text-monospace">${job.job_id}</span></p>
+                    <p class="mb-1"><strong>County:</strong> ${job.county_id}</p>
+                    <p class="mb-1"><strong>Format:</strong> ${job.export_format}</p>
+                    <p class="mb-1"><strong>Submitted:</strong> ${new Date(job.created_at).toLocaleString()}</p>
+                `;
+                
+                if (job.started_at) {
+                    detailsHtml += `<p class="mb-1"><strong>Started:</strong> ${new Date(job.started_at).toLocaleString()}</p>`;
+                }
+                
+                if (job.completed_at) {
+                    detailsHtml += `<p class="mb-1"><strong>Completed:</strong> ${new Date(job.completed_at).toLocaleString()}</p>`;
+                }
+                
+                detailsHtml += `<p class="mb-0"><strong>Message:</strong> ${job.message || 'No message'}</p>`;
+                
+                if (job.status === 'COMPLETED') {
+                    detailsHtml += `
+                        <div class="tf-d-grid tf-mt-3">
+                            <button class="tf-btn tf-btn-success view-results-btn" data-job-id="${job.job_id}">
+                                <i class="fas fa-download"></i> View Results
+                            </button>
+                        </div>
+                    `;
+                } else if (job.status === 'RUNNING' || job.status === 'PENDING') {
+                    detailsHtml += `
+                        <div class="tf-d-grid tf-mt-3">
+                            <button class="tf-btn tf-btn-warning cancel-job-btn" data-job-id="${job.job_id}">
+                                <i class="fas fa-times-circle"></i> Cancel Job
+                            </button>
+                        </div>
+                    `;
+                    
+                    if (job.status === 'RUNNING') {
+                        // For running jobs, add a progress bar if we have progress data
+                        const progress = job.progress || 0;
+                        detailsHtml += `
+                            <div class="tf-mt-3">
+                                <div class="tf-progress">
+                                    <div class="tf-progress-bar" role="progressbar" style="width: ${progress}%;" 
+                                         aria-valuenow="${progress}" aria-valuemin="0" aria-valuemax="100">
+                                        ${progress}%
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }
+                }
+                
+                document.getElementById('job-status-details').innerHTML = detailsHtml;
+                
+                // Add event listeners for buttons
+                const viewResultsBtn = document.querySelector('.view-results-btn');
+                if (viewResultsBtn) {
+                    viewResultsBtn.addEventListener('click', () => {
+                        showJobResults(job.job_id);
+                    });
+                }
+                
+                const cancelJobBtn = document.querySelector('.cancel-job-btn');
+                if (cancelJobBtn) {
+                    cancelJobBtn.addEventListener('click', () => {
+                        cancelJob(job.job_id);
+                    });
+                }
+                
+                // Save current job ID to state
+                if (window.TerraFusion && window.TerraFusion.state) {
+                    window.TerraFusion.state.set('currentJobId', job.job_id);
+                }
+            })
+            .catch(error => {
+                console.error('Error loading job details:', error);
+                document.getElementById('job-status-details').innerHTML = `
+                    <div class="alert alert-danger">
+                        Failed to load job details. Please try again later.
+                    </div>
+                `;
+                
+                // Show error notification
+                if (window.TerraFusion && window.TerraFusion.notifications) {
+                    window.TerraFusion.notifications.error(
+                        'Could not load job details. Please check your connection and try again.',
+                        'Connection Error'
+                    );
+                }
+            });
+    }
+    
+    // Show job results
+    function showJobResults(jobId) {
+        // Show the modal with loading state
+        const modal = new bootstrap.Modal(document.getElementById('jobDetailsModal'));
+        document.getElementById('job-details-content').innerHTML = `
+            <div class="tf-d-flex tf-justify-content-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading job results...</span>
+                </div>
+            </div>
+        `;
+        modal.show();
+        
+        // Fetch job results
+        fetch(`/api/v1/gis-export/results/${jobId}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.result_url) {
+                    // Show result details
+                    document.getElementById('job-details-content').innerHTML = `
+                        <div class="tf-card">
+                            <div class="tf-card-body">
+                                <h5 class="tf-card-title">Export Successful</h5>
+                                <p>Your export job has completed successfully. The exported data is now ready for download.</p>
+                                
+                                <dl class="tf-row">
+                                    <dt class="tf-col-sm-4">Job ID:</dt>
+                                    <dd class="tf-col-sm-8">${data.job_id}</dd>
+                                    
+                                    <dt class="tf-col-sm-4">County:</dt>
+                                    <dd class="tf-col-sm-8">${data.county_id}</dd>
+                                    
+                                    <dt class="tf-col-sm-4">Format:</dt>
+                                    <dd class="tf-col-sm-8">${data.export_format}</dd>
+                                    
+                                    <dt class="tf-col-sm-4">File Size:</dt>
+                                    <dd class="tf-col-sm-8">${data.file_size || 'Unknown'}</dd>
+                                    
+                                    <dt class="tf-col-sm-4">Records Exported:</dt>
+                                    <dd class="tf-col-sm-8">${data.record_count || 'Unknown'}</dd>
+                                </dl>
+                            </div>
+                        </div>
+                    `;
+                    
+                    // Show download button
+                    const downloadBtn = document.getElementById('download-result-btn');
+                    downloadBtn.style.display = 'block';
+                    downloadBtn.onclick = function() {
+                        window.location.href = data.result_url;
+                    };
+                } else {
+                    // Show error message
+                    document.getElementById('job-details-content').innerHTML = `
+                        <div class="alert alert-warning">
+                            <h5>Results Not Available</h5>
+                            <p>The export job results are not yet available. The job might still be processing or encountered an error.</p>
+                        </div>
+                    `;
+                    
+                    // Hide download button
+                    document.getElementById('download-result-btn').style.display = 'none';
+                }
+            })
+            .catch(error => {
+                console.error('Error loading job results:', error);
+                document.getElementById('job-details-content').innerHTML = `
+                    <div class="alert alert-danger">
+                        <h5>Error Loading Results</h5>
+                        <p>Could not load job results. Please try again later.</p>
+                    </div>
+                `;
+                
+                // Hide download button
+                document.getElementById('download-result-btn').style.display = 'none';
+                
+                // Show error notification
+                if (window.TerraFusion && window.TerraFusion.notifications) {
+                    window.TerraFusion.notifications.error(
+                        'Could not load job results. Please check your connection and try again.',
+                        'Connection Error'
+                    );
+                }
+            });
+    }
+    
+    // Cancel a job
+    function cancelJob(jobId) {
+        // Confirm cancellation
+        if (!confirm('Are you sure you want to cancel this export job?')) {
+            return;
+        }
+        
+        // Update button state
+        const cancelBtn = document.querySelector('.cancel-job-btn');
+        if (cancelBtn) {
+            cancelBtn.disabled = true;
+            cancelBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Cancelling...';
+        }
+        
+        // Send cancellation request
+        fetch(`/api/v1/gis-export/cancel/${jobId}`, {
+            method: 'POST'
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            // Show success notification
+            if (window.TerraFusion && window.TerraFusion.notifications) {
+                window.TerraFusion.notifications.success(
+                    'Export job has been cancelled.',
+                    'Job Cancelled'
+                );
+            } else {
+                alert('Export job has been cancelled.');
+            }
+            
+            // Refresh job list and details
+            loadRecentJobs();
+            loadJobDetails(jobId);
+        })
+        .catch(error => {
+            console.error('Error cancelling job:', error);
+            
+            // Show error notification
+            if (window.TerraFusion && window.TerraFusion.notifications) {
+                window.TerraFusion.notifications.error(
+                    'Failed to cancel job. Please try again later.',
+                    'Cancellation Error'
+                );
+            } else {
+                alert('Failed to cancel job. Please try again later.');
+            }
+            
+            // Reset button state
+            if (cancelBtn) {
+                cancelBtn.disabled = false;
+                cancelBtn.innerHTML = '<i class="fas fa-times-circle"></i> Cancel Job';
+            }
+        });
+    }
+    
+    // Get status class for display
+    function getStatusClass(status) {
+        switch (status) {
+            case 'COMPLETED':
+                return 'bg-success';
+            case 'FAILED':
+                return 'bg-danger';
+            case 'RUNNING':
+                return 'bg-primary';
+            case 'PENDING':
+                return 'bg-warning text-dark';
+            case 'CANCELLED':
+                return 'bg-secondary';
+            default:
+                return 'bg-secondary';
+        }
+    }
+    
+    // Get status icon for display
+    function getStatusIcon(status) {
+        switch (status) {
+            case 'COMPLETED':
+                return '<i class="fas fa-check"></i>';
+            case 'FAILED':
+                return '<i class="fas fa-times"></i>';
+            case 'RUNNING':
+                return '<i class="fas fa-spinner fa-spin"></i>';
+            case 'PENDING':
+                return '<i class="fas fa-clock"></i>';
+            case 'CANCELLED':
+                return '<i class="fas fa-ban"></i>';
+            default:
+                return '<i class="fas fa-question"></i>';
+        }
+    }
+</script>
+{% endblock %}

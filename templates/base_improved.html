@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}TerraFusion Platform{% endblock %}</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+    
+    <!-- Bootstrap CSS (keeping for compatibility) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- TerraFusion CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/terrafusion.css') }}">
+    
+    {% block head %}{% endblock %}
+</head>
+<body data-page="{% block page_id %}default{% endblock %}">
+    <!-- Header with navigation -->
+    <header class="tf-navbar">
+        <div class="tf-container">
+            <div class="tf-d-flex tf-justify-content-between tf-align-items-center">
+                <a href="{{ url_for('root') }}" class="tf-navbar-brand">
+                    <i class="fas fa-sync-alt me-2"></i>TerraFusion Platform
+                </a>
+                
+                <nav id="main-nav">
+                    <ul class="tf-navbar-nav">
+                        {% if session.get('token') %}
+                            <li class="tf-nav-item"><a href="{{ url_for('dashboard') }}" class="tf-nav-link"><i class="fas fa-tachometer-alt me-1"></i>Dashboard</a></li>
+                            <li class="tf-nav-item"><a href="{{ url_for('sync_dashboard') }}" class="tf-nav-link"><i class="fas fa-exchange-alt me-1"></i>Sync Operations</a></li>
+                            <li class="tf-nav-item"><a href="{{ url_for('gis_export_dashboard') }}" class="tf-nav-link"><i class="fas fa-map-marked-alt me-1"></i>GIS Export</a></li>
+                            <li class="tf-nav-item"><a href="{{ url_for('metrics_dashboard') }}" class="tf-nav-link"><i class="fas fa-chart-line me-1"></i>Metrics</a></li>
+                            <li class="tf-nav-item"><a href="{{ url_for('architecture_visualization') }}" class="tf-nav-link"><i class="fas fa-project-diagram me-1"></i>Architecture</a></li>
+                            <li class="tf-nav-item"><a href="{{ url_for('audit_dashboard') }}" class="tf-nav-link"><i class="fas fa-history me-1"></i>Audit Trail</a></li>
+                            <li class="tf-nav-item"><a href="{{ url_for('auth.logout') }}" class="tf-nav-link"><i class="fas fa-sign-out-alt me-1"></i>Logout</a></li>
+                        {% else %}
+                            <li class="tf-nav-item"><a href="{{ url_for('auth.login') }}" class="tf-nav-link"><i class="fas fa-sign-in-alt me-1"></i>Login</a></li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    </header>
+    
+    <!-- Breadcrumb navigation -->
+    <div class="tf-container">
+        <ol class="tf-breadcrumb">
+            <!-- Breadcrumbs will be dynamically generated -->
+        </ol>
+    </div>
+    
+    <!-- Main content area -->
+    <main>
+        <div class="tf-container">
+            <!-- System notifications -->
+            <div id="system-notifications">
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="tf-alert tf-alert-{{ category }}">
+                                {{ message }}
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+            </div>
+            
+            <!-- Page content -->
+            {% block content %}{% endblock %}
+        </div>
+    </main>
+    
+    <!-- Footer -->
+    <footer class="tf-mt-5 tf-py-3 tf-bg-light">
+        <div class="tf-container">
+            <div class="tf-d-flex tf-justify-content-between tf-align-items-center">
+                <p class="tf-mb-0">
+                    &copy; 2025 TerraFusion Platform
+                </p>
+                <div>
+                    <a href="#" class="tf-me-3">Documentation</a>
+                    <a href="#" class="tf-me-3">Support</a>
+                    <a href="#" class="tf-me-3">Privacy Policy</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+    
+    <!-- Bootstrap JavaScript (keeping for compatibility) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- TerraFusion JavaScript utilities -->
+    <script src="{{ url_for('static', filename='js/notifications.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/state-management.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/components/navigation.js') }}"></script>
+    
+    {% block scripts %}{% endblock %}
+    
+    <!-- Initialize toast notifications -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Convert Flask flash messages to toast notifications
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        let notificationType = '{{ category }}';
+                        if (notificationType === 'message') notificationType = 'info';
+                        if (notificationType === 'error') notificationType = 'error';
+                        if (window.TerraFusion && window.TerraFusion.notifications) {
+                            window.TerraFusion.notifications.show(
+                                notificationType.charAt(0).toUpperCase() + notificationType.slice(1),
+                                '{{ message }}',
+                                notificationType
+                            );
+                        }
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+        });
+    </script>
+</body>
+</html>
