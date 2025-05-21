@@ -440,6 +440,14 @@ try:
 except ImportError as e:
     logger.warning(f"GIS Export API blueprint not available: {e}")
 
+# Register improved UI routes
+try:
+    from routes.improved_routes import improved_bp
+    app.register_blueprint(improved_bp)
+    logger.info("Registered improved UI routes blueprint")
+except ImportError as e:
+    logger.warning(f"Improved UI routes not available: {e}")
+
 # Add route for validation dashboard
 @app.route('/validation', methods=['GET'])
 def validation_dashboard():
