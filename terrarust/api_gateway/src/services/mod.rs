@@ -1,23 +1,40 @@
-pub mod sync;
-pub mod gis;
-pub mod audit;
+use common::config::Config;
+use reqwest::Client;
+use std::time::Duration;
 
-use crate::config::ServiceConfig;
-use common::database::Database;
+pub mod sync_service;
+pub mod gis_export;
 
-#[derive(Clone)]
+/// Container for all service clients
 pub struct Services {
-    pub sync: sync::SyncServiceClient,
-    pub gis: gis::GisExportClient,
-    pub audit: audit::AuditClient,
+    pub sync_service: sync_service::SyncServiceClient,
+    pub gis_export: gis_export::GisExportClient,
 }
 
 impl Services {
-    pub fn new(config: &ServiceConfig, database: Database) -> Self {
+    pub fn new(config: &Config) -> Self {
+        // Create a shared HTTP client with defaults
+        let http_client = Client::builder()
+            .timeout(Duration::from_secs(30))
+            .connect_timeout(Duration::from_secs(5))
+            .build()
+            .expect("Failed to build HTTP client");
+        
+        // Initialize service clients
+        // Note: In a production environment, these URLs would come from config
+        let sync_service = sync_service::SyncServiceClient::new(
+            "http://localhost:5001",
+            http_client.clone(),
+        );
+        
+        let gis_export = gis_export::GisExportClient::new(
+            "http://localhost:8080",
+            http_client,
+        );
+        
         Self {
-            sync: sync::SyncServiceClient::new(config.sync_service_url.clone()),
-            gis: gis::GisExportClient::new(config.gis_service_url.clone()),
-            audit: audit::AuditClient::new(database),
+            sync_service,
+            gis_export,
         }
     }
 }

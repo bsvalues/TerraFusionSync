@@ -1,87 +1,88 @@
-mod api;
-mod config;
-mod handlers;
-mod models;
-mod services;
-mod database;
-
+use actix_web::{middleware, web, App, HttpServer};
 use actix_cors::Cors;
-use actix_web::{web, App, HttpServer};
-use common::config::Settings;
+use common::config::Config;
 use common::database::Database;
+use common::error::Result;
 use common::telemetry::TelemetryService;
-use dotenv::dotenv;
 use std::sync::Arc;
-use tracing_actix_web::TracingLogger;
+
+mod api;
+mod handlers;
+mod services;
+
+// Define the application state shared across request handlers
+pub struct AppState {
+    pub config: Config,
+    pub database: Database,
+    pub telemetry: Arc<TelemetryService>,
+    pub sync_engine: services::sync_engine::SyncEngine,
+}
 
 #[actix_web::main]
-async fn main() -> std::io::Result<()> {
-    // Load environment variables from .env file
-    dotenv().ok();
-    
+async fn main() -> Result<()> {
     // Initialize configuration
-    let settings = Settings::new().expect("Failed to read configuration");
+    let config = Config::from_env().expect("Failed to load configuration");
     
-    // Set up logging
-    env_logger::init_from_env(env_logger::Env::new().default_filter_or(&settings.logging.level));
+    // Initialize logging based on configuration
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(&config.logging.level))
+        .init();
     
     // Initialize telemetry
-    let telemetry_service = Arc::new(TelemetryService::new());
-    let _subscriber = TelemetryService::init_tracing(&settings.telemetry);
+    let telemetry = Arc::new(TelemetryService::new(
+        &config.telemetry.service_name,
+        &config.telemetry.jaeger_endpoint,
+    )?);
     
-    // Set up database connection pool
-    let database = Database::new(&settings.database)
-        .expect("Failed to create database connection pool");
+    // Initialize database connection
+    let database = Database::new(
+        &config.database.username,
+        &config.database.password,
+        &config.database.host,
+        config.database.port,
+        &config.database.database_name,
+        config.database.max_connections,
+    )?;
     
-    // Create application state
+    // Initialize sync engine
+    let sync_engine = services::sync_engine::SyncEngine::new(
+        database.clone(),
+        telemetry.clone(),
+    );
+    
+    // Set up application state
     let app_state = web::Data::new(AppState {
-        settings: settings.clone(),
+        config: config.clone(),
         database: database.clone(),
-        telemetry: telemetry_service.clone(),
-        sync_engine: services::sync_engine::SyncEngine::new(
-            database.clone(),
-            telemetry_service.clone()
-        )
+        telemetry: telemetry.clone(),
+        sync_engine,
     });
     
+    // Test database connection
+    if let Err(e) = database.test_connection() {
+        log::error!("Database connection test failed: {}", e);
+        return Err(e);
+    }
+    
     // Start HTTP server
-    log::info!("Starting SyncService on {}:{}", settings.server.host, settings.server.port);
+    log::info!("Starting Sync Service on {}:{}", config.server.host, config.server.port);
     
     HttpServer::new(move || {
-        // Configure CORS
         let cors = Cors::default()
             .allow_any_origin()
             .allow_any_method()
             .allow_any_header()
             .max_age(3600);
-            
+        
         App::new()
-            .wrap(TracingLogger::default())
-            .wrap(cors)
             .app_data(app_state.clone())
-            .service(
-                web::scope("/api")
-                    .configure(api::configure_routes)
-            )
-            .service(
-                web::scope("/metrics")
-                    .route("", web::get().to(handlers::metrics::get_metrics))
-            )
-            .service(
-                web::resource("/health")
-                    .route(web::get().to(handlers::health::health_check))
-            )
+            .wrap(middleware::Logger::default())
+            .wrap(cors)
+            .configure(api::configure_routes)
     })
-    .workers(settings.server.workers)
-    .bind(format!("{}:{}", settings.server.host, settings.server.port))?
+    .workers(config.server.workers)
+    .bind((config.server.host.clone(), config.server.port))?
     .run()
-    .await
-}
-
-#[derive(Clone)]
-pub struct AppState {
-    pub settings: Settings,
-    pub database: Database,
-    pub telemetry: Arc<TelemetryService>,
-    pub sync_engine: services::sync_engine::SyncEngine,
+    .await?;
+    
+    Ok(())
 }

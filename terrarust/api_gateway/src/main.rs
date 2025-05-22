@@ -1,84 +1,107 @@
+use actix_cors::Cors;
+use actix_files::Files;
+use actix_session::{SessionMiddleware, storage::CookieSessionStore};
+use actix_web::{cookie::Key, middleware, web, App, HttpServer};
+use common::config::Config;
+use common::database::Database;
+use common::error::Result;
+use common::telemetry::TelemetryService;
+use handlebars::Handlebars;
+use std::sync::Arc;
+
 mod api;
-mod auth;
-mod config;
 mod handlers;
-mod middleware;
-mod routes;
+mod middleware as app_middleware;
 mod services;
 
-use actix_cors::Cors;
-use actix_web::{web, App, HttpServer};
-use common::config::Settings;
-use common::database::Database;
-use common::telemetry::TelemetryService;
-use dotenv::dotenv;
-use std::sync::Arc;
-use tracing_actix_web::TracingLogger;
+// Define the application state shared across request handlers
+pub struct AppState {
+    pub config: Config,
+    pub database: Database,
+    pub telemetry: Arc<TelemetryService>,
+    pub handlebars: web::Data<Handlebars<'static>>,
+    pub services: services::Services,
+}
 
 #[actix_web::main]
-async fn main() -> std::io::Result<()> {
-    // Load environment variables from .env file
-    dotenv().ok();
-    
+async fn main() -> Result<()> {
     // Initialize configuration
-    let settings = Settings::new().expect("Failed to read configuration");
+    let config = Config::from_env().expect("Failed to load configuration");
     
-    // Set up logging
-    env_logger::init_from_env(env_logger::Env::new().default_filter_or(&settings.logging.level));
+    // Initialize logging based on configuration
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(&config.logging.level))
+        .init();
     
     // Initialize telemetry
-    let telemetry_service = Arc::new(TelemetryService::new());
-    let _subscriber = TelemetryService::init_tracing(&settings.telemetry);
+    let telemetry = Arc::new(TelemetryService::new(
+        &config.telemetry.service_name,
+        &config.telemetry.jaeger_endpoint,
+    )?);
     
-    // Set up database connection pool
-    let database = Database::new(&settings.database)
-        .expect("Failed to create database connection pool");
+    // Initialize database connection
+    let database = Database::new(
+        &config.database.username,
+        &config.database.password,
+        &config.database.host,
+        config.database.port,
+        &config.database.database_name,
+        config.database.max_connections,
+    )?;
     
-    // Create application state
+    // Initialize templating engine
+    let mut handlebars = Handlebars::new();
+    handlebars.register_templates_directory(".hbs", "templates")
+        .expect("Failed to register template directory");
+    let handlebars_data = web::Data::new(handlebars);
+    
+    // Initialize services
+    let services = services::Services::new(&config);
+    
+    // Set up application state
     let app_state = web::Data::new(AppState {
-        settings: settings.clone(),
+        config: config.clone(),
         database: database.clone(),
-        telemetry: telemetry_service.clone(),
+        telemetry: telemetry.clone(),
+        handlebars: handlebars_data.clone(),
+        services,
     });
     
+    // Test database connection
+    if let Err(e) = database.test_connection() {
+        log::error!("Database connection test failed: {}", e);
+        return Err(e);
+    }
+    
+    // Generate a key for cookie session
+    let secret_key = Key::generate();
+    
     // Start HTTP server
-    log::info!("Starting API Gateway on {}:{}", settings.server.host, settings.server.port);
+    log::info!("Starting API Gateway on {}:{}", config.server.host, config.server.port);
     
     HttpServer::new(move || {
-        // Configure CORS
         let cors = Cors::default()
             .allow_any_origin()
             .allow_any_method()
             .allow_any_header()
             .max_age(3600);
-            
+        
         App::new()
-            .wrap(TracingLogger::default())
-            .wrap(cors)
-            .wrap(middleware::auth::AuthMiddleware::new(settings.security.jwt_secret.clone()))
             .app_data(app_state.clone())
-            .service(
-                web::scope("/api")
-                    .configure(routes::configure_routes)
-            )
-            .service(
-                web::scope("/metrics")
-                    .route("", web::get().to(handlers::metrics::get_metrics))
-            )
-            .service(
-                web::resource("/health")
-                    .route(web::get().to(handlers::health::health_check))
-            )
+            .app_data(handlebars_data.clone())
+            .wrap(middleware::Logger::default())
+            .wrap(cors)
+            .wrap(SessionMiddleware::new(
+                CookieSessionStore::default(),
+                secret_key.clone()
+            ))
+            .wrap(app_middleware::auth::AuthMiddleware)
+            .configure(api::configure_routes)
+            .service(Files::new("/static", "static").prefer_utf8(true))
     })
-    .workers(settings.server.workers)
-    .bind(format!("{}:{}", settings.server.host, settings.server.port))?
+    .workers(config.server.workers)
+    .bind((config.server.host.clone(), config.server.port))?
     .run()
-    .await
-}
-
-#[derive(Clone)]
-pub struct AppState {
-    pub settings: Settings,
-    pub database: Database,
-    pub telemetry: Arc<TelemetryService>,
+    .await?;
+    
+    Ok(())
 }
