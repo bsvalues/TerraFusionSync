@@ -1,0 +1,135 @@
+ main
+BranchesTags
+Go to file
+Add file
+Add fileAdd file
+Code
+
+Folders and files
+Name		
+Latest commit
+ 
+History
+689 Commits
+.github
+.github
+ 
+ 
+backend
+backend
+ 
+ 
+frontend
+frontend
+ 
+ 
+.gitignore
+.gitignore
+ 
+ 
+.pre-commit-config.yaml
+.pre-commit-config.yaml
+ 
+ 
+CLA.md
+CLA.md
+ 
+ 
+CODE_OF_CONDUCT.md
+CODE_OF_CONDUCT.md
+ 
+ 
+CONTRIBUTING.md
+CONTRIBUTING.md
+ 
+ 
+LICENSE
+LICENSE
+ 
+ 
+README.md
+README.md
+ 
+ 
+SECURITY.md
+SECURITY.md
+ 
+ 
+View all files
+Repository files navigation
+README
+Code of conduct
+Apache-2.0 license
+Security
+
+ACI.dev Logo
+
+ACI: Open-Source Infra to Power Unified MCP Servers
+aipotheosis-labs%2Faci | Trendshift
+
+Documentation PyPI version License Discord Twitter Follow
+
+Note
+
+This repo is for the ACI.dev platform. If you're looking for the Unified MCP server built with ACI.dev, see aci-mcp.
+
+ACI.dev is the open-source infrastructure layer for AI-agent tool-use. It gives your agents intent-aware access to 600+ tools with multi-tenant auth, granular permissions, and dynamic tool discovery—exposed as either direct function calls or through a Unified Model-Context-Protocol (MCP) server.
+
+Example: Instead of writing separate OAuth flows and API clients for Google Calendar, Slack, and more, use ACI.dev to manage authentication and provide your AI agents with unified, secure function calls. Access these capabilities through our Unified MCP server or via our lightweight Python SDK, compatible with any LLM framework.
+
+Build production-ready AI agents without the infrastructure headaches.
+
+ACI.dev Architecture
+
+Join us on Discord to help shape the future of Open Source AI Infrastructure.
+
+🌟 Star ACI.dev to stay updated on new releases!
+
+GitHub Stars
+
+📺 Demo Video
+ACI.dev Unified MCP Server Demo
+
+ACI.dev Unified MCP Server Demo
+
+✨ Key Features
+600+ Pre-built Integrations: Connect to popular services and apps in minutes.
+Flexible Access Methods: Use our unified MCP server or our lightweight SDK for direct function calling.
+Multi-tenant Authentication: Built-in OAuth flows and secrets management for both developers and end-users.
+Enhanced Agent Reliability: Natural language permission boundaries and dynamic tool discovery.
+Framework & Model Agnostic: Works with any LLM framework and agent architecture.
+100% Open Source: Everything released under Apache 2.0 (backend, dev portal, integrations).
+💡 Why Use ACI.dev?
+ACI.dev solves your critical infrastructure challenges for production-ready AI agents:
+
+Authentication at Scale: Connect multiple users to multiple services securely.
+Discovery Without Overload: Find and use the right tools without overwhelming LLM context windows.
+Natural Language Permissions: Control agent capabilities with human-readable boundaries.
+Build Once, Run Anywhere: No vendor lock-in with our open source, framework-agnostic approach.
+🧰 Common Use Cases
+Personal Assistant Chatbots: Build chatbots that can search the web, manage calendars, send emails, interact with SaaS tools, etc.
+Research Agent: Conducts research on specific topics and syncs results to other apps (e.g., Notion, Google Sheets).
+Outbound Sales Agent: Automates lead generation, email outreach, and CRM updates.
+Customer Support Agent: Provides answers, manages tickets, and performs actions based on customer queries.
+🔗 Quick Links
+Managed Service: aci.dev
+Documentation: aci.dev/docs
+Available Tools List: aci.dev/tools
+Python SDK: github.com/aipotheosis-labs/aci-python-sdk
+Unified MCP Server: github.com/aipotheosis-labs/aci-mcp
+Agent Examples Built with ACI.dev: github.com/aipotheosis-labs/aci-agents
+Blog: aci.dev/blog
+Community: Discord | Twitter/X | LinkedIn
+💻 Getting Started: Local Development
+To run the full ACI.dev platform (backend server and frontend portal) locally, follow the individual README files for each component:
+
+Backend: backend/README.md
+Frontend: frontend/README.md
+👋 Contributing
+We welcome contributions! Please see our CONTRIBUTING.md for more information.
+
+Integration Requests
+Missing any integrations (apps or functions) you need? Please see our Integration Request Template and submit an integration request! Or, if you're feeling adventurous, you can submit a PR to add the integration yourself!
+
+Star History
+Star History Chart
