@@ -1,29 +1,77 @@
-use crate::config::DatabaseSettings;
+use diesel::prelude::*;
+use diesel::r2d2::{self, ConnectionManager, Pool, PoolError, PooledConnection};
 use diesel::pg::PgConnection;
-use diesel::r2d2::{ConnectionManager, Pool, PoolError, PooledConnection};
-use std::sync::Arc;
+use std::time::Duration;
 
-pub type DbPool = Pool<ConnectionManager<PgConnection>>;
-pub type DbPooledConnection = PooledConnection<ConnectionManager<PgConnection>>;
+use crate::error::{Error, Result};
 
+// Database wrapper for managing connections
 #[derive(Clone)]
 pub struct Database {
-    pool: Arc<DbPool>,
+    pool: Pool<ConnectionManager<PgConnection>>,
 }
 
 impl Database {
-    pub fn new(config: &DatabaseSettings) -> Result<Self, PoolError> {
-        let manager = ConnectionManager::<PgConnection>::new(config.connection_string());
-        let pool = Pool::builder()
-            .max_size(config.max_connections)
-            .build(manager)?;
+    pub fn new(
+        username: &str,
+        password: &str,
+        host: &str,
+        port: u16,
+        database_name: &str,
+        max_connections: u32,
+    ) -> Result<Self> {
+        let database_url = format!(
+            "postgres://{}:{}@{}:{}/{}",
+            username, password, host, port, database_name
+        );
         
-        Ok(Self {
-            pool: Arc::new(pool),
+        let manager = ConnectionManager::<PgConnection>::new(database_url);
+        
+        let pool = r2d2::Pool::builder()
+            .max_size(max_connections)
+            .connection_timeout(Duration::from_secs(30))
+            .build(manager)
+            .map_err(|e| Error::DatabaseError(format!("Failed to create connection pool: {}", e)))?;
+        
+        Ok(Self { pool })
+    }
+    
+    pub fn get_connection(&self) -> Result<PooledConnection<ConnectionManager<PgConnection>>> {
+        self.pool
+            .get()
+            .map_err(|e| Error::DatabaseError(format!("Failed to get database connection: {}", e)))
+    }
+    
+    // Execute a query within a transaction
+    pub fn transaction<F, T>(&self, f: F) -> Result<T>
+    where
+        F: FnOnce(&PgConnection) -> Result<T>,
+    {
+        let conn = self.get_connection()?;
+        
+        conn.transaction(|c| {
+            f(c).map_err(|e| {
+                diesel::result::Error::RollbackTransaction
+            })
+        })
+        .map_err(|e| {
+            if let diesel::result::Error::RollbackTransaction = e {
+                // Transaction was explicitly rolled back, the original error will be propagated
+                return Error::DatabaseError("Transaction rolled back".to_string());
+            }
+            
+            Error::DatabaseError(format!("Transaction error: {}", e))
         })
     }
     
-    pub fn get_connection(&self) -> Result<DbPooledConnection, PoolError> {
-        self.pool.get()
+    // Test database connection
+    pub fn test_connection(&self) -> Result<()> {
+        let conn = self.get_connection()?;
+        
+        diesel::sql_query("SELECT 1")
+            .execute(&conn)
+            .map_err(|e| Error::DatabaseError(format!("Connection test failed: {}", e)))?;
+        
+        Ok(())
     }
 }
