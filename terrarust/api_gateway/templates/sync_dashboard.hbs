@@ -1,0 +1,380 @@
+{{#> layout}}
+  {{#*inline "content"}}
+    <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+      <h1 class="h2">Sync Dashboard</h1>
+      <div class="btn-toolbar mb-2 mb-md-0">
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#newSyncModal">
+          <span data-feather="plus"></span>
+          New Sync Pair
+        </button>
+      </div>
+    </div>
+
+    <div class="row mb-4">
+      <div class="col-md-12">
+        <div class="card shadow">
+          <div class="card-header">
+            <h5 class="card-title mb-0">Active Sync Pairs</h5>
+          </div>
+          <div class="card-body">
+            <div class="table-responsive">
+              <table class="table table-bordered table-hover">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Source</th>
+                    <th>Target</th>
+                    <th>County</th>
+                    <th>Last Sync</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {{#each sync_pairs}}
+                  <tr>
+                    <td>{{this.name}}</td>
+                    <td>{{this.source_system}}</td>
+                    <td>{{this.target_system}}</td>
+                    <td>{{this.county_id}}</td>
+                    <td>{{#if this.last_sync_time}}{{this.last_sync_time}}{{else}}Never{{/if}}</td>
+                    <td>
+                      {{#if this.is_active}}
+                      <span class="badge bg-success">Active</span>
+                      {{else}}
+                      <span class="badge bg-secondary">Inactive</span>
+                      {{/if}}
+                    </td>
+                    <td>
+                      <div class="btn-group">
+                        <button type="button" class="btn btn-sm btn-primary" onclick="runSync('{{this.id}}')">
+                          <span data-feather="play"></span>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-info" onclick="viewDetails('{{this.id}}')">
+                          <span data-feather="eye"></span>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-warning" onclick="editSyncPair('{{this.id}}')">
+                          <span data-feather="edit"></span>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-danger" onclick="toggleStatus('{{this.id}}', {{#if this.is_active}}false{{else}}true{{/if}})">
+                          {{#if this.is_active}}
+                          <span data-feather="pause"></span>
+                          {{else}}
+                          <span data-feather="play"></span>
+                          {{/if}}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  {{/each}}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col-md-12">
+        <div class="card shadow">
+          <div class="card-header">
+            <h5 class="card-title mb-0">Recent Sync Operations</h5>
+          </div>
+          <div class="card-body">
+            <div class="table-responsive">
+              <table class="table table-bordered table-hover">
+                <thead>
+                  <tr>
+                    <th>Sync Pair</th>
+                    <th>Status</th>
+                    <th>Started</th>
+                    <th>Ended</th>
+                    <th>Records</th>
+                    <th>Success Rate</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {{#each recent_operations}}
+                  <tr>
+                    <td>{{this.sync_pair_name}}</td>
+                    <td>
+                      {{#if (eq this.status "COMPLETED")}}
+                      <span class="badge bg-success">Completed</span>
+                      {{else if (eq this.status "RUNNING")}}
+                      <span class="badge bg-primary">Running</span>
+                      {{else if (eq this.status "FAILED")}}
+                      <span class="badge bg-danger">Failed</span>
+                      {{else if (eq this.status "CANCELED")}}
+                      <span class="badge bg-warning">Canceled</span>
+                      {{else}}
+                      <span class="badge bg-secondary">{{this.status}}</span>
+                      {{/if}}
+                    </td>
+                    <td>{{this.start_time}}</td>
+                    <td>{{#if this.end_time}}{{this.end_time}}{{else}}-{{/if}}</td>
+                    <td>
+                      {{#if this.records_processed}}
+                      {{this.records_processed}} / {{this.records_succeeded}} / {{this.records_failed}}
+                      {{else}}
+                      -
+                      {{/if}}
+                    </td>
+                    <td>
+                      {{#if this.records_processed}}
+                      {{calculateSuccessRate this.records_succeeded this.records_processed}}%
+                      {{else}}
+                      -
+                      {{/if}}
+                    </td>
+                    <td>
+                      <div class="btn-group">
+                        <button type="button" class="btn btn-sm btn-info" onclick="viewOperation('{{this.id}}')">
+                          <span data-feather="eye"></span>
+                        </button>
+                        {{#if (eq this.status "RUNNING")}}
+                        <button type="button" class="btn btn-sm btn-danger" onclick="cancelOperation('{{this.id}}')">
+                          <span data-feather="square"></span>
+                        </button>
+                        {{/if}}
+                      </div>
+                    </td>
+                  </tr>
+                  {{/each}}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- New Sync Pair Modal -->
+    <div class="modal fade" id="newSyncModal" tabindex="-1" aria-labelledby="newSyncModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="newSyncModalLabel">Create New Sync Pair</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <form id="newSyncForm">
+              <div class="mb-3">
+                <label for="syncName" class="form-label">Sync Pair Name</label>
+                <input type="text" class="form-control" id="syncName" name="name" required>
+              </div>
+              <div class="mb-3">
+                <label for="syncDescription" class="form-label">Description</label>
+                <textarea class="form-control" id="syncDescription" name="description" rows="2"></textarea>
+              </div>
+              <div class="row">
+                <div class="col-md-6">
+                  <div class="mb-3">
+                    <label for="sourceSystem" class="form-label">Source System</label>
+                    <input type="text" class="form-control" id="sourceSystem" name="source_system" required>
+                  </div>
+                  <div class="mb-3">
+                    <label for="sourceConfig" class="form-label">Source Configuration</label>
+                    <textarea class="form-control" id="sourceConfig" name="source_config" rows="5" required>{}</textarea>
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <div class="mb-3">
+                    <label for="targetSystem" class="form-label">Target System</label>
+                    <input type="text" class="form-control" id="targetSystem" name="target_system" required>
+                  </div>
+                  <div class="mb-3">
+                    <label for="targetConfig" class="form-label">Target Configuration</label>
+                    <textarea class="form-control" id="targetConfig" name="target_config" rows="5" required>{}</textarea>
+                  </div>
+                </div>
+              </div>
+              <div class="row">
+                <div class="col-md-6">
+                  <div class="mb-3">
+                    <label for="syncInterval" class="form-label">Sync Interval (minutes)</label>
+                    <input type="number" class="form-control" id="syncInterval" name="sync_interval_minutes" value="60">
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <div class="mb-3">
+                    <label for="conflictStrategy" class="form-label">Conflict Resolution Strategy</label>
+                    <select class="form-select" id="conflictStrategy" name="sync_conflict_strategy">
+                      <option value="SOURCE_WINS">Source Wins</option>
+                      <option value="TARGET_WINS">Target Wins</option>
+                      <option value="NEWER_WINS">Newer Wins</option>
+                      <option value="MANUAL">Manual Resolution</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" id="isActive" name="is_active" checked>
+                <label class="form-check-label" for="isActive">
+                  Active
+                </label>
+              </div>
+            </form>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" class="btn btn-primary" onclick="createSyncPair()">Create</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Helper functions for the sync dashboard
+      function runSync(syncPairId) {
+        if (confirm('Are you sure you want to run this sync operation?')) {
+          fetch('/api/v1/sync-operations', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              sync_pair_id: syncPairId,
+              custom_parameters: {}
+            })
+          })
+          .then(response => {
+            if (response.ok) {
+              alert('Sync operation started successfully');
+              location.reload();
+            } else {
+              response.json().then(data => {
+                alert('Error: ' + data.error);
+              });
+            }
+          })
+          .catch(error => {
+            alert('Error: ' + error);
+          });
+        }
+      }
+
+      function viewDetails(syncPairId) {
+        window.location.href = '/sync-pairs/' + syncPairId;
+      }
+
+      function editSyncPair(syncPairId) {
+        window.location.href = '/sync-pairs/' + syncPairId + '/edit';
+      }
+
+      function toggleStatus(syncPairId, newStatus) {
+        const statusText = newStatus ? 'activate' : 'deactivate';
+        if (confirm('Are you sure you want to ' + statusText + ' this sync pair?')) {
+          fetch('/api/v1/sync-pairs/' + syncPairId + '/toggle', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              is_active: newStatus
+            })
+          })
+          .then(response => {
+            if (response.ok) {
+              alert('Sync pair ' + statusText + 'd successfully');
+              location.reload();
+            } else {
+              response.json().then(data => {
+                alert('Error: ' + data.error);
+              });
+            }
+          })
+          .catch(error => {
+            alert('Error: ' + error);
+          });
+        }
+      }
+
+      function viewOperation(operationId) {
+        window.location.href = '/sync-operations/' + operationId;
+      }
+
+      function cancelOperation(operationId) {
+        if (confirm('Are you sure you want to cancel this sync operation?')) {
+          fetch('/api/v1/sync-operations/' + operationId + '/cancel', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          })
+          .then(response => {
+            if (response.ok) {
+              alert('Sync operation canceled successfully');
+              location.reload();
+            } else {
+              response.json().then(data => {
+                alert('Error: ' + data.error);
+              });
+            }
+          })
+          .catch(error => {
+            alert('Error: ' + error);
+          });
+        }
+      }
+
+      function createSyncPair() {
+        const form = document.getElementById('newSyncForm');
+        const formData = new FormData(form);
+        const data = {};
+        
+        for (const [key, value] of formData.entries()) {
+          if (key === 'source_config' || key === 'target_config') {
+            try {
+              data[key] = JSON.parse(value);
+            } catch (e) {
+              alert('Invalid JSON in ' + key);
+              return;
+            }
+          } else if (key === 'is_active') {
+            data[key] = true;
+          } else if (key === 'sync_interval_minutes') {
+            data[key] = parseInt(value);
+          } else {
+            data[key] = value;
+          }
+        }
+        
+        // If is_active checkbox is not checked, it won't be in the formData
+        if (!formData.has('is_active')) {
+          data.is_active = false;
+        }
+        
+        // Include county ID from the current user's session
+        data.county_id = '{{county_id}}';
+        
+        fetch('/api/v1/sync-pairs', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(data)
+        })
+        .then(response => {
+          if (response.ok) {
+            alert('Sync pair created successfully');
+            location.reload();
+          } else {
+            response.json().then(data => {
+              alert('Error: ' + data.error);
+            });
+          }
+        })
+        .catch(error => {
+          alert('Error: ' + error);
+        });
+      }
+
+      // Initialize Feather icons when the document is loaded
+      document.addEventListener('DOMContentLoaded', function() {
+        feather.replace();
+      });
+    </script>
+  {{/inline}}
+{{/layout}}

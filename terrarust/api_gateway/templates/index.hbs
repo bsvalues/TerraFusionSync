@@ -1,0 +1,113 @@
+{{#> layout}}
+  {{#*inline "content"}}
+    <div class="px-4 py-5 my-5 text-center">
+      <img class="d-block mx-auto mb-4" src="/static/img/terrafusion-logo.svg" alt="TerraFusion Logo" width="120" height="120">
+      <h1 class="display-5 fw-bold">TerraFusion Platform</h1>
+      <div class="col-lg-6 mx-auto">
+        <p class="lead mb-4">
+          Enterprise-grade geospatial data synchronization platform for county assessor offices.
+          Synchronize data across systems, export geographic information, and streamline your workflows.
+        </p>
+        <div class="d-grid gap-2 d-sm-flex justify-content-sm-center">
+          <a href="/login" class="btn btn-primary btn-lg px-4 gap-3">Sign In</a>
+          <a href="#features" class="btn btn-outline-secondary btn-lg px-4">Learn More</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="container px-4 py-5" id="features">
+      <h2 class="pb-2 border-bottom">Key Features</h2>
+      <div class="row g-4 py-5 row-cols-1 row-cols-lg-3">
+        <div class="col d-flex align-items-start">
+          <div class="icon-square text-bg-light d-inline-flex align-items-center justify-content-center fs-4 flex-shrink-0 me-3">
+            <i data-feather="refresh-cw"></i>
+          </div>
+          <div>
+            <h3 class="fs-2">Data Synchronization</h3>
+            <p>Keep your data consistent across multiple systems with automated, bidirectional synchronization.</p>
+          </div>
+        </div>
+        <div class="col d-flex align-items-start">
+          <div class="icon-square text-bg-light d-inline-flex align-items-center justify-content-center fs-4 flex-shrink-0 me-3">
+            <i data-feather="map"></i>
+          </div>
+          <div>
+            <h3 class="fs-2">GIS Export</h3>
+            <p>Export geographic data in multiple formats including GeoJSON, Shapefile, and KML.</p>
+          </div>
+        </div>
+        <div class="col d-flex align-items-start">
+          <div class="icon-square text-bg-light d-inline-flex align-items-center justify-content-center fs-4 flex-shrink-0 me-3">
+            <i data-feather="bar-chart-2"></i>
+          </div>
+          <div>
+            <h3 class="fs-2">Advanced Analytics</h3>
+            <p>Gain insights into your data with built-in analytics and visualization tools.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="container px-4 py-5">
+      <h2 class="pb-2 border-bottom">Why TerraFusion?</h2>
+      <div class="row g-4 py-5">
+        <div class="col-md-6">
+          <h3>Secure and Reliable</h3>
+          <p>
+            Built with robust security features and high availability in mind.
+            Your data is protected with industry-standard encryption and access controls.
+          </p>
+          <h3>Flexible Integration</h3>
+          <p>
+            Connect to various systems including GIS databases, tax assessment software,
+            and other county information systems with our extensive API support.
+          </p>
+        </div>
+        <div class="col-md-6">
+          <h3>High Performance</h3>
+          <p>
+            Optimized for performance with Rust-based microservices architecture,
+            ensuring fast data processing even with large geographic datasets.
+          </p>
+          <h3>Comprehensive Audit Trail</h3>
+          <p>
+            Track all changes with detailed audit logging, helping you maintain
+            compliance with record-keeping requirements.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="container px-4 py-5 bg-light rounded-3">
+      <div class="row align-items-center g-5 py-5">
+        <div class="col-lg-7">
+          <h2 class="fw-bold">Ready to streamline your county's data management?</h2>
+          <p class="lead">
+            Join the growing number of county assessor offices using TerraFusion
+            to manage their geospatial data synchronization needs.
+          </p>
+          <div class="d-grid gap-2 d-md-flex justify-content-md-start">
+            <a href="/login" class="btn btn-primary btn-lg px-4 me-md-2">Get Started</a>
+            <a href="/contact" class="btn btn-outline-secondary btn-lg px-4">Contact Sales</a>
+          </div>
+        </div>
+        <div class="col-lg-5">
+          <div class="text-center">
+            <img src="/static/img/dashboard-preview.png" class="img-fluid rounded shadow" alt="TerraFusion Dashboard Preview">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer class="py-3 my-4">
+      <ul class="nav justify-content-center border-bottom pb-3 mb-3">
+        <li class="nav-item"><a href="#" class="nav-link px-2 text-muted">Home</a></li>
+        <li class="nav-item"><a href="#features" class="nav-link px-2 text-muted">Features</a></li>
+        <li class="nav-item"><a href="#" class="nav-link px-2 text-muted">About</a></li>
+        <li class="nav-item"><a href="#" class="nav-link px-2 text-muted">Contact</a></li>
+        <li class="nav-item"><a href="#" class="nav-link px-2 text-muted">Documentation</a></li>
+      </ul>
+      <p class="text-center text-muted">© 2023 TerraFusion Inc.</p>
+    </footer>
+  {{/inline}}
+{{/layout}}

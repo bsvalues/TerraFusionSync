@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{title}} - TerraFusion Platform</title>
+    <link rel="stylesheet" href="/static/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/css/terrafusion.css">
+    <script src="/static/js/feather.min.js"></script>
+</head>
+<body>
+    {{#if username}}
+    <!-- Main navigation -->
+    <header class="navbar navbar-dark sticky-top bg-dark flex-md-nowrap p-0 shadow">
+        <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="/">TerraFusion Platform</a>
+        <button class="navbar-toggler position-absolute d-md-none collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu" aria-controls="sidebarMenu" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="navbar-nav">
+            <div class="nav-item text-nowrap">
+                <span class="nav-link px-3 text-white">{{username}} ({{county_id}})</span>
+            </div>
+        </div>
+        <div class="navbar-nav">
+            <div class="nav-item text-nowrap">
+                <a class="nav-link px-3" href="/logout">Sign out</a>
+            </div>
+        </div>
+    </header>
+
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar navigation -->
+            <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block bg-light sidebar collapse">
+                <div class="position-sticky pt-3">
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link {{#if (eq active_page "dashboard")}}active{{/if}}" href="/dashboard">
+                                <i data-feather="home"></i>
+                                Dashboard
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {{#if (eq active_page "sync_dashboard")}}active{{/if}}" href="/sync-dashboard">
+                                <i data-feather="refresh-cw"></i>
+                                Sync Dashboard
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {{#if (eq active_page "gis_export")}}active{{/if}}" href="/gis-export">
+                                <i data-feather="map"></i>
+                                GIS Export
+                            </a>
+                        </li>
+                    </ul>
+
+                    {{#if (eq role "admin")}}
+                    <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-4 mb-1 text-muted">
+                        <span>Administration</span>
+                    </h6>
+                    <ul class="nav flex-column mb-2">
+                        <li class="nav-item">
+                            <a class="nav-link {{#if (eq active_page "users")}}active{{/if}}" href="/admin/users">
+                                <i data-feather="users"></i>
+                                Users
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {{#if (eq active_page "counties")}}active{{/if}}" href="/admin/counties">
+                                <i data-feather="map-pin"></i>
+                                Counties
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {{#if (eq active_page "settings")}}active{{/if}}" href="/admin/settings">
+                                <i data-feather="settings"></i>
+                                Settings
+                            </a>
+                        </li>
+                    </ul>
+                    {{/if}}
+                </div>
+            </nav>
+
+            <!-- Main content area -->
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+                {{> content}}
+            </main>
+        </div>
+    </div>
+    {{else}}
+    <!-- Content for non-authenticated pages -->
+    <div class="container">
+        {{> content}}
+    </div>
+    {{/if}}
+
+    <script src="/static/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Initialize Feather icons
+        document.addEventListener('DOMContentLoaded', function() {
+            feather.replace();
+        });
+    </script>
+</body>
+</html>

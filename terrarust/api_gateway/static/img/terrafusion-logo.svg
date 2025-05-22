@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Main circular background -->
+  <circle cx="60" cy="60" r="56" fill="#4e73df" opacity="0.8"/>
+  <circle cx="60" cy="60" r="52" stroke="white" stroke-width="2" fill="none"/>
+  
+  <!-- Earth/globe representation -->
+  <ellipse cx="60" cy="60" rx="35" ry="35" stroke="white" stroke-width="1.5" fill="none"/>
+  <path d="M25 60 H95" stroke="white" stroke-width="1" fill="none" opacity="0.7"/>
+  <path d="M60 25 V95" stroke="white" stroke-width="1" fill="none" opacity="0.7"/>
+  
+  <!-- Latitude lines -->
+  <ellipse cx="60" cy="60" rx="35" ry="12" stroke="white" stroke-width="1" fill="none" opacity="0.7"/>
+  <ellipse cx="60" cy="60" rx="35" ry="22" stroke="white" stroke-width="1" fill="none" opacity="0.7"/>
+  
+  <!-- Stylized map/terrain contours -->
+  <path d="M40 72 Q50 65 60 70 T80 65" stroke="#1cc88a" stroke-width="3" fill="none"/>
+  <path d="M30 60 Q45 50 60 55 T90 50" stroke="#1cc88a" stroke-width="3" fill="none"/>
+  <path d="M40 50 Q50 45 65 47 T85 42" stroke="#1cc88a" stroke-width="3" fill="none"/>
+  
+  <!-- Data sync symbol -->
+  <g transform="translate(60,60) scale(0.8) translate(-60,-60)">
+    <path d="M47 45 L60 35 L73 45 L60 55 Z" fill="white" opacity="0.9"/>
+    <path d="M47 65 L60 55 L73 65 L60 75 Z" fill="white" opacity="0.9"/>
+  </g>
+  
+  <!-- Circular outer border -->
+  <circle cx="60" cy="60" r="58" stroke="white" stroke-width="2" fill="none"/>
+</svg>

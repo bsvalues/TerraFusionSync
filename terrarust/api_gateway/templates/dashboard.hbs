@@ -1,0 +1,209 @@
+{{#> layout}}
+  {{#*inline "content"}}
+    <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+      <h1 class="h2">Dashboard</h1>
+      <div class="btn-toolbar mb-2 mb-md-0">
+        <div class="btn-group me-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary">Export</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary">Print</button>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle">
+          <span data-feather="calendar"></span>
+          This week
+        </button>
+      </div>
+    </div>
+
+    <div class="row">
+      <!-- Sync operations stat card -->
+      <div class="col-md-6 col-lg-3 mb-4">
+        <div class="card border-left-primary shadow h-100 py-2">
+          <div class="card-body">
+            <div class="row no-gutters align-items-center">
+              <div class="col mr-2">
+                <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
+                  Sync Operations</div>
+                <div class="h5 mb-0 font-weight-bold text-gray-800">{{sync_operations_count}}</div>
+              </div>
+              <div class="col-auto">
+                <i data-feather="refresh-cw" class="text-gray-300"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Active sync pairs stat card -->
+      <div class="col-md-6 col-lg-3 mb-4">
+        <div class="card border-left-success shadow h-100 py-2">
+          <div class="card-body">
+            <div class="row no-gutters align-items-center">
+              <div class="col mr-2">
+                <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
+                  Active Sync Pairs</div>
+                <div class="h5 mb-0 font-weight-bold text-gray-800">{{active_sync_pairs}}</div>
+              </div>
+              <div class="col-auto">
+                <i data-feather="link" class="text-gray-300"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent exports stat card -->
+      <div class="col-md-6 col-lg-3 mb-4">
+        <div class="card border-left-info shadow h-100 py-2">
+          <div class="card-body">
+            <div class="row no-gutters align-items-center">
+              <div class="col mr-2">
+                <div class="text-xs font-weight-bold text-info text-uppercase mb-1">
+                  Recent Exports</div>
+                <div class="h5 mb-0 font-weight-bold text-gray-800">{{recent_exports}}</div>
+              </div>
+              <div class="col-auto">
+                <i data-feather="map" class="text-gray-300"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pending exports stat card -->
+      <div class="col-md-6 col-lg-3 mb-4">
+        <div class="card border-left-warning shadow h-100 py-2">
+          <div class="card-body">
+            <div class="row no-gutters align-items-center">
+              <div class="col mr-2">
+                <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">
+                  Pending Exports</div>
+                <div class="h5 mb-0 font-weight-bold text-gray-800">{{pending_exports}}</div>
+              </div>
+              <div class="col-auto">
+                <i data-feather="clock" class="text-gray-300"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h2>System Overview</h2>
+    <div class="row">
+      <div class="col-lg-6">
+        <div class="card shadow mb-4">
+          <div class="card-header py-3">
+            <h6 class="m-0 font-weight-bold text-primary">Recent Sync Activity</h6>
+          </div>
+          <div class="card-body">
+            <canvas id="syncActivityChart" width="400" height="200"></canvas>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="card shadow mb-4">
+          <div class="card-header py-3">
+            <h6 class="m-0 font-weight-bold text-primary">System Performance</h6>
+          </div>
+          <div class="card-body">
+            <canvas id="systemPerformanceChart" width="400" height="200"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h2>Quick Actions</h2>
+    <div class="row mb-4">
+      <div class="col-md-4">
+        <div class="card shadow">
+          <div class="card-body text-center">
+            <i data-feather="refresh-cw" style="width: 48px; height: 48px; margin-bottom: 10px;"></i>
+            <h5 class="card-title">Run Sync</h5>
+            <p class="card-text">Start a new synchronization operation</p>
+            <a href="/sync-dashboard" class="btn btn-primary">Go to Sync Dashboard</a>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card shadow">
+          <div class="card-body text-center">
+            <i data-feather="map" style="width: 48px; height: 48px; margin-bottom: 10px;"></i>
+            <h5 class="card-title">GIS Export</h5>
+            <p class="card-text">Export geospatial data</p>
+            <a href="/gis-export" class="btn btn-primary">Go to GIS Export</a>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card shadow">
+          <div class="card-body text-center">
+            <i data-feather="file-text" style="width: 48px; height: 48px; margin-bottom: 10px;"></i>
+            <h5 class="card-title">View Reports</h5>
+            <p class="card-text">Access system reports and logs</p>
+            <a href="#" class="btn btn-primary">View Reports</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/static/js/chart.min.js"></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        // Initialize charts
+        const syncActivityCtx = document.getElementById('syncActivityChart').getContext('2d');
+        const syncActivityChart = new Chart(syncActivityCtx, {
+          type: 'line',
+          data: {
+            labels: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+            datasets: [{
+              label: 'Sync Operations',
+              data: [12, 19, 3, 5, 2, 3, 7],
+              backgroundColor: 'rgba(78, 115, 223, 0.2)',
+              borderColor: 'rgba(78, 115, 223, 1)',
+              borderWidth: 1
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false
+          }
+        });
+
+        const systemPerformanceCtx = document.getElementById('systemPerformanceChart').getContext('2d');
+        const systemPerformanceChart = new Chart(systemPerformanceCtx, {
+          type: 'bar',
+          data: {
+            labels: ['CPU', 'Memory', 'Disk', 'Network'],
+            datasets: [{
+              label: 'Current Usage (%)',
+              data: [65, 59, 80, 81],
+              backgroundColor: [
+                'rgba(255, 99, 132, 0.2)',
+                'rgba(54, 162, 235, 0.2)',
+                'rgba(255, 206, 86, 0.2)',
+                'rgba(75, 192, 192, 0.2)'
+              ],
+              borderColor: [
+                'rgba(255, 99, 132, 1)',
+                'rgba(54, 162, 235, 1)',
+                'rgba(255, 206, 86, 1)',
+                'rgba(75, 192, 192, 1)'
+              ],
+              borderWidth: 1
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              y: {
+                beginAtZero: true,
+                max: 100
+              }
+            }
+          }
+        });
+      });
+    </script>
+  {{/inline}}
+{{/layout}}
