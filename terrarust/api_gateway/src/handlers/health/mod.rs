@@ -1,74 +1,165 @@
 use actix_web::{web, HttpResponse, Responder};
-use crate::AppState;
 use serde::{Deserialize, Serialize};
+use crate::AppState;
+use std::time::Instant;
 
+/// Health check response model
 #[derive(Debug, Serialize, Deserialize)]
-pub struct HealthCheckResponse {
+pub struct HealthResponse {
     pub status: String,
-    pub api_gateway: ServiceStatus,
-    pub sync_service: ServiceStatus,
-    pub database: ServiceStatus,
-    pub timestamp: chrono::DateTime<chrono::Utc>,
+    pub components: ComponentsStatus,
+    pub version: String,
+    pub uptime_seconds: u64,
 }
 
+/// Status of individual components
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ServiceStatus {
+pub struct ComponentsStatus {
+    pub api_gateway: String,
+    pub database: String,
+    pub sync_service: String,
+    pub gis_export: String,
+}
+
+/// Status API response model
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StatusResponse {
+    pub status: String,
+    pub api_version: String,
+    pub components: Vec<ComponentStatus>,
+    pub environment: String,
+    pub uptime_seconds: u64,
+}
+
+/// Individual component status
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ComponentStatus {
+    pub name: String,
     pub status: String,
     pub version: Option<String>,
-    pub uptime_seconds: Option<i64>,
-    pub details: Option<serde_json::Value>,
+    pub last_check: String,
 }
 
+/// Health check endpoint
 pub async fn health_check(state: web::Data<AppState>) -> impl Responder {
     // Check database connection
     let db_status = match state.database.get_connection() {
-        Ok(_) => ServiceStatus {
-            status: "up".to_string(),
-            version: Some("PostgreSQL 14.0".to_string()), // In a real implementation, get from DB
-            uptime_seconds: None,
-            details: None,
-        },
-        Err(e) => ServiceStatus {
-            status: "down".to_string(),
-            version: None,
-            uptime_seconds: None,
-            details: Some(serde_json::json!({
-                "error": format!("{}", e)
-            })),
-        },
+        Ok(_) => "up",
+        Err(_) => "down",
     };
     
-    // Check SyncService connection
-    // In a real implementation, this would make an HTTP request to the SyncService health endpoint
-    let sync_service_status = ServiceStatus {
-        status: "unknown".to_string(), // We would check this in a real implementation
-        version: None,
-        uptime_seconds: None,
-        details: None,
+    // Check SyncService health
+    let sync_service_status = match state.services.sync_service.health_check().await {
+        Ok(true) => "up",
+        Ok(false) => "degraded",
+        Err(_) => "down",
     };
     
-    // API Gateway status (we're running, so it's up)
-    let api_gateway_status = ServiceStatus {
-        status: "up".to_string(),
-        version: Some(env!("CARGO_PKG_VERSION").to_string()),
-        uptime_seconds: Some(0), // In a real implementation, track uptime
-        details: None,
+    // Check GIS Export service health
+    let gis_export_status = match state.services.gis_export.health_check().await {
+        Ok(true) => "up",
+        Ok(false) => "degraded",
+        Err(_) => "down",
     };
     
-    // Overall status depends on components
-    let overall_status = if db_status.status == "up" && sync_service_status.status != "down" {
+    // Determine overall status
+    let status = if db_status == "up" && sync_service_status == "up" && gis_export_status == "up" {
         "healthy"
-    } else if db_status.status == "down" {
-        "critical"
+    } else if db_status == "down" || sync_service_status == "down" || gis_export_status == "down" {
+        "unhealthy"
     } else {
         "degraded"
     };
     
-    HttpResponse::Ok().json(HealthCheckResponse {
-        status: overall_status.to_string(),
-        api_gateway: api_gateway_status,
-        sync_service: sync_service_status,
-        database: db_status,
-        timestamp: chrono::Utc::now(),
+    // Get uptime
+    let uptime_seconds = state.telemetry.uptime_seconds();
+    
+    HttpResponse::Ok().json(HealthResponse {
+        status: status.to_string(),
+        components: ComponentsStatus {
+            api_gateway: "up".to_string(),
+            database: db_status.to_string(),
+            sync_service: sync_service_status.to_string(),
+            gis_export: gis_export_status.to_string(),
+        },
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        uptime_seconds,
+    })
+}
+
+/// Status API endpoint with more detailed information
+pub async fn status(state: web::Data<AppState>) -> impl Responder {
+    // Check database connection
+    let db_status = match state.database.get_connection() {
+        Ok(_) => "up",
+        Err(_) => "down",
+    };
+    
+    // Check SyncService health
+    let sync_service_status = match state.services.sync_service.health_check().await {
+        Ok(true) => "up",
+        Ok(false) => "degraded",
+        Err(_) => "down",
+    };
+    
+    // Check GIS Export service health
+    let gis_export_status = match state.services.gis_export.health_check().await {
+        Ok(true) => "up",
+        Ok(false) => "degraded",
+        Err(_) => "down",
+    };
+    
+    // Determine overall status
+    let status = if db_status == "up" && sync_service_status == "up" && gis_export_status == "up" {
+        "healthy"
+    } else if db_status == "down" || sync_service_status == "down" || gis_export_status == "down" {
+        "unhealthy"
+    } else {
+        "degraded"
+    };
+    
+    // Get current time for last check
+    let current_time = chrono::Utc::now().to_rfc3339();
+    
+    // Get uptime
+    let uptime_seconds = state.telemetry.uptime_seconds();
+    
+    // Create component status list
+    let components = vec![
+        ComponentStatus {
+            name: "API Gateway".to_string(),
+            status: "up".to_string(),
+            version: Some(env!("CARGO_PKG_VERSION").to_string()),
+            last_check: current_time.clone(),
+        },
+        ComponentStatus {
+            name: "Database".to_string(),
+            status: db_status.to_string(),
+            version: None,
+            last_check: current_time.clone(),
+        },
+        ComponentStatus {
+            name: "Sync Service".to_string(),
+            status: sync_service_status.to_string(),
+            version: None,
+            last_check: current_time.clone(),
+        },
+        ComponentStatus {
+            name: "GIS Export Service".to_string(),
+            status: gis_export_status.to_string(),
+            version: None,
+            last_check: current_time,
+        },
+    ];
+    
+    // Determine environment
+    let environment = std::env::var("APP_ENV").unwrap_or_else(|_| "development".to_string());
+    
+    HttpResponse::Ok().json(StatusResponse {
+        status: status.to_string(),
+        api_version: env!("CARGO_PKG_VERSION").to_string(),
+        components,
+        environment,
+        uptime_seconds,
     })
 }
