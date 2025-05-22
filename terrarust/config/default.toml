@@ -1,0 +1,23 @@
+[database]
+username = "postgres"
+password = "postgres"
+host = "localhost"
+port = 5432
+database_name = "terrafusion"
+max_connections = 10
+
+[server]
+host = "0.0.0.0"
+port = 5000
+workers = 4
+
+[logging]
+level = "info"
+
+[telemetry]
+jaeger_endpoint = "http://localhost:14268/api/traces"
+service_name = "terrafusion"
+
+[security]
+jwt_secret = "development_secret_key_change_in_production"
+token_expiration = 60
