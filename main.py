@@ -41,7 +41,7 @@ def gis_dashboard():
     # In a real implementation, fetch data from database
     # For now, get data directly from the service
     recent_jobs = gis_export_service.list_jobs(limit=10)
-    return render_template('dashboard.html', gis_exports=recent_jobs)
+    return render_template('gis_dashboard.html', gis_exports=recent_jobs)
 
 @app.route('/health')
 def health_check():
@@ -77,9 +77,12 @@ def create_export_job():
         
         # Validate required fields
         required_fields = ['county_id', 'username', 'export_format', 'area_of_interest', 'layers']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({"error": f"Missing required field: {field}"}), 400
+        if data is not None:
+            for field in required_fields:
+                if field not in data:
+                    return jsonify({"error": f"Missing required field: {field}"}), 400
+        else:
+            return jsonify({"error": "Missing request body"}), 400
         
         # Create job
         job = gis_export_service.create_export_job(
@@ -88,7 +91,7 @@ def create_export_job():
             export_format=data['export_format'],
             area_of_interest=data['area_of_interest'],
             layers=data['layers'],
-            parameters=data.get('parameters')
+            parameters=data.get('parameters', {})
         )
         
         # Start processing the job (in a real application, this would be done by a background worker)

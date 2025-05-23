@@ -77,9 +77,12 @@ def create_export_job():
         
         # Validate required fields
         required_fields = ['county_id', 'username', 'export_format', 'area_of_interest', 'layers']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({"error": f"Missing required field: {field}"}), 400
+        if data is not None:
+            for field in required_fields:
+                if field not in data:
+                    return jsonify({"error": f"Missing required field: {field}"}), 400
+        else:
+            return jsonify({"error": "Missing request body"}), 400
         
         # Create job
         job = gis_export_service.create_export_job(
