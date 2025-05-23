@@ -104,7 +104,7 @@ class SystemMetric(db.Model):
     metric_name = db.Column(db.String(100), nullable=False)
     metric_value = db.Column(db.Float)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-    metadata = db.Column(db.JSON)
+    metric_metadata = db.Column(db.JSON)
 
 class AuditEntry(db.Model):
     """Model representing an audit log entry."""
