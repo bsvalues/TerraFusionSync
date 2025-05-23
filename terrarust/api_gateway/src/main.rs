@@ -1,107 +1,126 @@
-use actix_cors::Cors;
-use actix_files::Files;
-use actix_session::{SessionMiddleware, storage::CookieSessionStore};
-use actix_web::{cookie::Key, middleware, web, App, HttpServer};
-use common::config::Config;
-use common::database::Database;
-use common::error::Result;
-use common::telemetry::TelemetryService;
+use actix_web::{web, App, HttpServer};
+use actix_web::middleware::{Logger, NormalizePath};
+use actix_files as fs;
+use env_logger::Env;
+use dotenv::dotenv;
+use std::env;
 use handlebars::Handlebars;
+use std::io;
 use std::sync::Arc;
+use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
 
-mod api;
+mod routes;
 mod handlers;
-mod middleware as app_middleware;
+mod middlewares;
+mod models;
 mod services;
-
-// Define the application state shared across request handlers
-pub struct AppState {
-    pub config: Config,
-    pub database: Database,
-    pub telemetry: Arc<TelemetryService>,
-    pub handlebars: web::Data<Handlebars<'static>>,
-    pub services: services::Services,
-}
+mod config;
+mod errors;
+mod utils;
 
 #[actix_web::main]
-async fn main() -> Result<()> {
-    // Initialize configuration
-    let config = Config::from_env().expect("Failed to load configuration");
+async fn main() -> io::Result<()> {
+    // Load environment variables from .env file
+    dotenv().ok();
     
-    // Initialize logging based on configuration
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(&config.logging.level))
-        .init();
+    // Initialize logger with environment-based configuration
+    env_logger::init_from_env(Env::default().default_filter_or("info"));
     
-    // Initialize telemetry
-    let telemetry = Arc::new(TelemetryService::new(
-        &config.telemetry.service_name,
-        &config.telemetry.jaeger_endpoint,
-    )?);
+    // Print startup banner
+    println!("
+    ████████╗███████╗██████╗ ██████╗  █████╗ ███████╗██╗   ██╗███████╗██╗ ██████╗ ███╗   ██╗
+    ╚══██╔══╝██╔════╝██╔══██╗██╔══██╗██╔══██╗██╔════╝██║   ██║██╔════╝██║██╔═══██╗████╗  ██║
+       ██║   █████╗  ██████╔╝██████╔╝███████║█████╗  ██║   ██║███████╗██║██║   ██║██╔██╗ ██║
+       ██║   ██╔══╝  ██╔══██╗██╔══██╗██╔══██║██╔══╝  ██║   ██║╚════██║██║██║   ██║██║╚██╗██║
+       ██║   ███████╗██║  ██║██║  ██║██║  ██║██║     ╚██████╔╝███████║██║╚██████╔╝██║ ╚████║
+       ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝      ╚═════╝ ╚══════╝╚═╝ ╚═════╝ ╚═╝  ╚═══╝
+       
+    API Gateway - Starting up...
+    ");
     
-    // Initialize database connection
-    let database = Database::new(
-        &config.database.username,
-        &config.database.password,
-        &config.database.host,
-        config.database.port,
-        &config.database.database_name,
-        config.database.max_connections,
-    )?;
+    let config = config::AppConfig::from_env();
+    log::info!("Starting TerraFusion API Gateway on {}:{}", config.host, config.port);
     
-    // Initialize templating engine
+    // Register and configure Handlebars for templates
     let mut handlebars = Handlebars::new();
-    handlebars.register_templates_directory(".hbs", "templates")
-        .expect("Failed to register template directory");
-    let handlebars_data = web::Data::new(handlebars);
+    handlebars.register_templates_directory(".hbs", "./templates").expect("Failed to register Handlebars templates");
+    handlebars.set_dev_mode(config.environment != "production");
     
-    // Initialize services
-    let services = services::Services::new(&config);
-    
-    // Set up application state
+    // Create shared application state
     let app_state = web::Data::new(AppState {
+        handlebars: Arc::new(handlebars),
         config: config.clone(),
-        database: database.clone(),
-        telemetry: telemetry.clone(),
-        handlebars: handlebars_data.clone(),
-        services,
+        sync_service_client: services::SyncServiceClient::new(&config.sync_service_url),
+        gis_export_client: services::GisExportClient::new(&config.gis_export_service_url),
     });
     
-    // Test database connection
-    if let Err(e) = database.test_connection() {
-        log::error!("Database connection test failed: {}", e);
-        return Err(e);
-    }
-    
-    // Generate a key for cookie session
-    let secret_key = Key::generate();
-    
-    // Start HTTP server
-    log::info!("Starting API Gateway on {}:{}", config.server.host, config.server.port);
-    
-    HttpServer::new(move || {
-        let cors = Cors::default()
-            .allow_any_origin()
-            .allow_any_method()
-            .allow_any_header()
-            .max_age(3600);
+    // Configure and start HTTP server
+    let server = if config.use_ssl {
+        // Configure SSL
+        let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
+        builder.set_private_key_file(&config.ssl_key_file, SslFiletype::PEM).unwrap();
+        builder.set_certificate_chain_file(&config.ssl_cert_file).unwrap();
         
-        App::new()
-            .app_data(app_state.clone())
-            .app_data(handlebars_data.clone())
-            .wrap(middleware::Logger::default())
-            .wrap(cors)
-            .wrap(SessionMiddleware::new(
-                CookieSessionStore::default(),
-                secret_key.clone()
-            ))
-            .wrap(app_middleware::auth::AuthMiddleware)
-            .configure(api::configure_routes)
-            .service(Files::new("/static", "static").prefer_utf8(true))
-    })
-    .workers(config.server.workers)
-    .bind((config.server.host.clone(), config.server.port))?
-    .run()
-    .await?;
+        // Start HTTPS server
+        HttpServer::new(move || create_app(app_state.clone()))
+            .bind_openssl(format!("{}:{}", config.host, config.port), builder)?
+    } else {
+        // Start HTTP server
+        HttpServer::new(move || create_app(app_state.clone()))
+            .bind(format!("{}:{}", config.host, config.port))?
+    };
     
-    Ok(())
+    // Run the server with configured workers
+    server
+        .workers(config.worker_threads)
+        .run()
+        .await
+}
+
+fn create_app(app_state: web::Data<AppState>) -> App<
+    impl actix_service::ServiceFactory<
+        actix_web::dev::ServiceRequest,
+        Response = actix_web::dev::ServiceResponse,
+        Error = actix_web::Error,
+        Config = (),
+    >,
+> {
+    App::new()
+        .wrap(Logger::default())
+        .wrap(middlewares::AuthMiddleware::default())
+        .wrap(middlewares::SecurityHeadersMiddleware::default())
+        .wrap(NormalizePath::trim())
+        .app_data(app_state.clone())
+        
+        // Static files
+        .service(fs::Files::new("/static", "./static").show_files_listing(false))
+        
+        // UI Routes
+        .service(routes::ui::configure())
+        
+        // API Routes
+        .service(
+            web::scope("/api/v1")
+                .wrap(middlewares::ApiKeyMiddleware::default())
+                .configure(routes::api::configure)
+        )
+        
+        // Health and metrics endpoints
+        .service(
+            web::scope("/system")
+                .configure(routes::system::configure)
+        )
+        
+        // Error handlers
+        .app_data(web::JsonConfig::default().error_handler(|err, _req| {
+            log::error!("JSON parsing error: {:?}", err);
+            errors::AppError::BadRequest(err.to_string()).into()
+        }))
+}
+
+pub struct AppState {
+    pub handlebars: Arc<Handlebars<'static>>,
+    pub config: config::AppConfig,
+    pub sync_service_client: services::SyncServiceClient,
+    pub gis_export_client: services::GisExportClient,
 }
