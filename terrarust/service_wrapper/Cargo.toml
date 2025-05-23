@@ -1,0 +1,23 @@
+[package]
+name = "terrafusion-service"
+version = "0.1.0"
+edition = "2021"
+authors = ["TerraFusion Team"]
+description = "Windows service wrapper for TerraFusion Platform"
+
+[dependencies]
+terrafusion-common = { path = "../common" }
+
+# Core dependencies
+tokio = { workspace = true }
+serde = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+
+# Windows service
+windows-service = { workspace = true }
+winapi = { workspace = true }
+
+# Process management
+sysinfo = "0.29"

@@ -72,7 +72,7 @@ time = "0.3"
 [dev-dependencies]
 actix-rt = "2.8"
 claim = "0.5"
-fake = { version = "2.5", features ["derive", "chrono", "uuid"] }
+fake = { version = "2.5", features = ["derive", "chrono", "uuid"] }
 quickcheck = "1.0"
 quickcheck_macros = "1.0"
 wiremock = "0.5"

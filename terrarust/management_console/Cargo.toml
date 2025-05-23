@@ -1,0 +1,33 @@
+[package]
+name = "terrafusion-console"
+version = "0.1.0"
+edition = "2021"
+authors = ["TerraFusion Team"]
+description = "Management console for TerraFusion Platform"
+
+[dependencies]
+terrafusion-common = { path = "../common" }
+
+# Core dependencies
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+
+# Command line interface
+clap = { version = "4.3", features = ["derive"] }
+
+# Windows-specific
+winapi = { workspace = true }
+
+# HTTP client for API calls
+reqwest = { workspace = true }
+
+# Terminal UI
+crossterm = "0.26"
+ratatui = "0.21"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.10"
