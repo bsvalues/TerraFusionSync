@@ -1,88 +1,147 @@
-use actix_web::{middleware, web, App, HttpServer};
-use actix_cors::Cors;
-use common::config::Config;
-use common::database::Database;
-use common::error::Result;
-use common::telemetry::TelemetryService;
-use std::sync::Arc;
+use actix_web::{web, App, HttpServer};
+use actix_web::middleware::{Logger, NormalizePath};
+use env_logger::Env;
+use dotenv::dotenv;
+use std::io;
+use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
 
-mod api;
+mod routes;
 mod handlers;
 mod services;
-
-// Define the application state shared across request handlers
-pub struct AppState {
-    pub config: Config,
-    pub database: Database,
-    pub telemetry: Arc<TelemetryService>,
-    pub sync_engine: services::sync_engine::SyncEngine,
-}
+mod models;
+mod config;
 
 #[actix_web::main]
-async fn main() -> Result<()> {
-    // Initialize configuration
-    let config = Config::from_env().expect("Failed to load configuration");
+async fn main() -> io::Result<()> {
+    // Load environment variables from .env file
+    dotenv().ok();
     
-    // Initialize logging based on configuration
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(&config.logging.level))
-        .init();
+    // Initialize logger
+    env_logger::init_from_env(Env::default().default_filter_or("info"));
     
-    // Initialize telemetry
-    let telemetry = Arc::new(TelemetryService::new(
-        &config.telemetry.service_name,
-        &config.telemetry.jaeger_endpoint,
-    )?);
+    // Print startup banner
+    println!("
+    ████████╗███████╗██████╗ ██████╗  █████╗ ███████╗██╗   ██╗███████╗██╗ ██████╗ ███╗   ██╗
+    ╚══██╔══╝██╔════╝██╔══██╗██╔══██╗██╔══██╗██╔════╝██║   ██║██╔════╝██║██╔═══██╗████╗  ██║
+       ██║   █████╗  ██████╔╝██████╔╝███████║█████╗  ██║   ██║███████╗██║██║   ██║██╔██╗ ██║
+       ██║   ██╔══╝  ██╔══██╗██╔══██╗██╔══██║██╔══╝  ██║   ██║╚════██║██║██║   ██║██║╚██╗██║
+       ██║   ███████╗██║  ██║██║  ██║██║  ██║██║     ╚██████╔╝███████║██║╚██████╔╝██║ ╚████║
+       ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝      ╚═════╝ ╚══════╝╚═╝ ╚═════╝ ╚═╝  ╚═══╝
+       
+    Sync Service - Starting up...
+    ");
+    
+    // Load configuration
+    let config = config::Config::from_env();
     
     // Initialize database connection
-    let database = Database::new(
-        &config.database.username,
-        &config.database.password,
-        &config.database.host,
-        config.database.port,
-        &config.database.database_name,
-        config.database.max_connections,
-    )?;
+    let db_pool = terrafusion_common::database::create_pool_from_env().await
+        .expect("Failed to create database pool");
     
-    // Initialize sync engine
-    let sync_engine = services::sync_engine::SyncEngine::new(
-        database.clone(),
-        telemetry.clone(),
-    );
+    // Initialize services
+    let sync_engine = services::sync_engine::SyncEngine::new(db_pool.clone());
     
-    // Set up application state
+    // Create shared application state
     let app_state = web::Data::new(AppState {
+        db_pool: db_pool.clone(),
         config: config.clone(),
-        database: database.clone(),
-        telemetry: telemetry.clone(),
-        sync_engine,
+        sync_engine: sync_engine.clone(),
     });
     
-    // Test database connection
-    if let Err(e) = database.test_connection() {
-        log::error!("Database connection test failed: {}", e);
-        return Err(e);
+    // Run database migrations
+    let mut migrator = terrafusion_common::database::migrations::Migrator::new(db_pool.clone());
+    // Register migrations here
+    // migrations::register_all_migrations(&mut migrator);
+    
+    // Run pending migrations
+    match migrator.run_pending_migrations().await {
+        Ok(_) => log::info!("Database migrations completed successfully"),
+        Err(e) => log::error!("Database migration error: {}", e),
     }
     
-    // Start HTTP server
-    log::info!("Starting Sync Service on {}:{}", config.server.host, config.server.port);
+    // Initialize scheduler
+    let scheduler_handle = services::scheduler::start_scheduler(sync_engine, db_pool.clone())
+        .await
+        .expect("Failed to start scheduler");
     
-    HttpServer::new(move || {
-        let cors = Cors::default()
-            .allow_any_origin()
-            .allow_any_method()
-            .allow_any_header()
-            .max_age(3600);
+    log::info!("Starting Sync Service on {}:{}", config.host, config.port);
+    
+    // Configure and start HTTP server
+    let server = if config.use_ssl {
+        // Configure SSL
+        let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
+        builder.set_private_key_file(&config.ssl_key_file, SslFiletype::PEM).unwrap();
+        builder.set_certificate_chain_file(&config.ssl_cert_file).unwrap();
         
-        App::new()
-            .app_data(app_state.clone())
-            .wrap(middleware::Logger::default())
-            .wrap(cors)
-            .configure(api::configure_routes)
-    })
-    .workers(config.server.workers)
-    .bind((config.server.host.clone(), config.server.port))?
-    .run()
-    .await?;
+        // Start HTTPS server
+        HttpServer::new(move || create_app(app_state.clone()))
+            .bind_openssl(format!("{}:{}", config.host, config.port), builder)?
+    } else {
+        // Start HTTP server
+        HttpServer::new(move || create_app(app_state.clone()))
+            .bind(format!("{}:{}", config.host, config.port))?
+    };
+    
+    // Run the server with configured workers
+    let server_handle = server
+        .workers(config.worker_threads)
+        .run();
+    
+    // Wait for server to complete
+    server_handle.await?;
+    
+    // Shutdown scheduler gracefully
+    scheduler_handle.shutdown().await;
     
     Ok(())
+}
+
+fn create_app(app_state: web::Data<AppState>) -> App<
+    impl actix_service::ServiceFactory<
+        actix_web::dev::ServiceRequest,
+        Response = actix_web::dev::ServiceResponse,
+        Error = actix_web::Error,
+        Config = (),
+    >,
+> {
+    App::new()
+        .wrap(Logger::default())
+        .wrap(NormalizePath::trim())
+        .app_data(app_state.clone())
+        
+        // API Routes
+        .service(
+            web::scope("/api/v1")
+                .configure(routes::api::configure)
+        )
+        
+        // Health and metrics endpoints
+        .service(
+            web::scope("/system")
+                .configure(routes::system::configure)
+        )
+        
+        // Sync operations
+        .service(
+            web::scope("/sync-pairs")
+                .configure(routes::sync_pairs::configure)
+        )
+        .service(
+            web::scope("/sync-operations")
+                .configure(routes::sync_operations::configure)
+        )
+        
+        // Error handlers
+        .app_data(web::JsonConfig::default().error_handler(|err, _req| {
+            log::error!("JSON parsing error: {:?}", err);
+            actix_web::error::ErrorBadRequest(format!("JSON parsing error: {}", err))
+        }))
+}
+
+/// Application state shared across all handlers
+#[derive(Clone)]
+pub struct AppState {
+    pub db_pool: terrafusion_common::database::DbPool,
+    pub config: config::Config,
+    pub sync_engine: services::sync_engine::SyncEngine,
 }
