@@ -1,0 +1,25 @@
+{
+  "job_id": "014a5d69-0d17-4d23-80c8-9e1e473b1d27",
+  "county_id": "benton-wa",
+  "username": "admin@benton.wa.gov",
+  "data_types": [
+    "parcels",
+    "buildings",
+    "owners"
+  ],
+  "source_system": "county-assessor",
+  "target_system": "terrafusion",
+  "parameters": {},
+  "status": "COMPLETED",
+  "created_at": "2025-05-23T22:05:03.187433",
+  "started_at": "2025-05-23T22:05:03.188201",
+  "completed_at": "2025-05-23T22:05:04.234213",
+  "stats": {
+    "records_read": 21821,
+    "records_processed": 21821,
+    "records_written": 21773,
+    "warnings": 84,
+    "errors": 48
+  },
+  "message": "Sync completed successfully with 21773 records processed."
+}
