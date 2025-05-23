@@ -1,0 +1,42 @@
+[package]
+name = "terrafusion-setup"
+version = "0.1.0"
+edition = "2021"
+authors = ["TerraFusion Team"]
+description = "Setup utility for TerraFusion Platform enterprise installation"
+
+[dependencies]
+terrafusion-common = { path = "../common" }
+
+# Core dependencies
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+
+# Windows-specific
+winapi = { workspace = true }
+windows-service = { workspace = true }
+
+# Command line interface
+clap = { version = "4.3", features = ["derive"] }
+
+# File operations
+std-semver = "0.1"
+zip = "0.6"
+tempfile = "3.5"
+
+# Network operations
+reqwest = { workspace = true }
+url = "2.3"
+
+# Database setup
+sqlx = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.10"

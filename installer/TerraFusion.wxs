@@ -1,0 +1,287 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
+     xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
+  
+  <Product Id="*" 
+           Name="TerraFusion Platform" 
+           Language="1033" 
+           Version="1.0.0" 
+           Manufacturer="TerraFusion Inc." 
+           UpgradeCode="12345678-1234-1234-1234-123456789012">
+    
+    <Package InstallerVersion="500" 
+             Compressed="yes" 
+             InstallScope="perMachine" 
+             Description="TerraFusion Platform - Enterprise GIS Data Synchronization"
+             Comments="Enterprise-grade geospatial data synchronization for county assessor offices" 
+             Manufacturer="TerraFusion Inc." 
+             Platform="x64" />
+
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <!-- Feature definition -->
+    <Feature Id="ProductFeature" Title="TerraFusion Platform" Level="1" Description="Complete TerraFusion Platform installation">
+      <ComponentGroupRef Id="ProductComponents" />
+      <ComponentGroupRef Id="DatabaseComponents" />
+      <ComponentGroupRef Id="ConfigurationComponents" />
+      <ComponentGroupRef Id="ServiceComponents" />
+      <ComponentGroupRef Id="WebInterfaceComponents" />
+    </Feature>
+
+    <!-- Upgrade logic -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of TerraFusion Platform is already installed." />
+
+    <!-- Installation directory structure -->
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="TerraFusion Platform">
+          <Directory Id="BinFolder" Name="bin" />
+          <Directory Id="DataFolder" Name="data" />
+          <Directory Id="LogsFolder" Name="logs" />
+          <Directory Id="ConfigFolder" Name="config" />
+          <Directory Id="DatabaseFolder" Name="database" />
+          <Directory Id="ExportsFolder" Name="exports" />
+          <Directory Id="TempFolder" Name="temp" />
+          <Directory Id="WebFolder" Name="web" />
+          <Directory Id="LibsFolder" Name="libs" />
+        </Directory>
+      </Directory>
+      
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="ApplicationProgramsFolder" Name="TerraFusion Platform" />
+      </Directory>
+      
+      <Directory Id="DesktopFolder" Name="Desktop" />
+    </Directory>
+
+    <!-- Properties for configuration -->
+    <Property Id="COUNTY_ID" Value="example-county" />
+    <Property Id="ADMIN_EMAIL" Value="admin@county.gov" />
+    <Property Id="DATABASE_PASSWORD" Value="[PASSWORD]" />
+    <Property Id="WEB_PORT" Value="8000" />
+    <Property Id="ARPPRODUCTICON" Value="TerraFusionIcon.ico" />
+    <Property Id="ARPHELPLINK" Value="https://docs.terrafusion.com" />
+    <Property Id="ARPURLINFOABOUT" Value="https://www.terrafusion.com" />
+
+    <!-- Custom Actions -->
+    <CustomAction Id="CreateDatabaseAction" 
+                  ExeCommand="[INSTALLFOLDER]bin\terrafusion-setup.exe --create-database --county=[COUNTY_ID]"
+                  Directory="INSTALLFOLDER"
+                  Execute="deferred" 
+                  Impersonate="no" 
+                  Return="check" />
+    
+    <CustomAction Id="StartServicesAction" 
+                  ExeCommand="[INSTALLFOLDER]bin\terrafusion-setup.exe --start-services"
+                  Directory="INSTALLFOLDER"
+                  Execute="deferred" 
+                  Impersonate="no" 
+                  Return="check" />
+    
+    <CustomAction Id="StopServicesAction" 
+                  ExeCommand="[INSTALLFOLDER]bin\terrafusion-setup.exe --stop-services"
+                  Directory="INSTALLFOLDER"
+                  Execute="deferred" 
+                  Impersonate="no" 
+                  Return="ignore" />
+
+    <CustomAction Id="ConfigureFirewallAction"
+                  ExeCommand="[INSTALLFOLDER]bin\terrafusion-setup.exe --configure-firewall --port=[WEB_PORT]"
+                  Directory="INSTALLFOLDER"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!-- Installation sequence -->
+    <InstallExecuteSequence>
+      <Custom Action="StopServicesAction" Before="RemoveFiles">Installed AND NOT REINSTALL</Custom>
+      <Custom Action="CreateDatabaseAction" After="InstallFiles">NOT Installed</Custom>
+      <Custom Action="ConfigureFirewallAction" After="CreateDatabaseAction">NOT Installed</Custom>
+      <Custom Action="StartServicesAction" After="ConfigureFirewallAction">NOT Installed</Custom>
+    </InstallExecuteSequence>
+
+    <!-- User Interface -->
+    <UI>
+      <UIRef Id="WixUI_InstallDir" />
+      <UIRef Id="WixUI_ErrorProgressText" />
+      
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="CountyConfigDlg">1</Publish>
+      <Publish Dialog="CountyConfigDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg">1</Publish>
+      <Publish Dialog="CountyConfigDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg">1</Publish>
+    </UI>
+
+    <!-- License -->
+    <WixVariable Id="WixUILicenseRtf" Value="assets\License.rtf" />
+    <WixVariable Id="WixUIBannerBmp" Value="assets\Banner.bmp" />
+    <WixVariable Id="WixUIDialogBmp" Value="assets\Dialog.bmp" />
+  </Product>
+
+  <!-- Custom Dialog for County Configuration -->
+  <Fragment>
+    <UI>
+      <Dialog Id="CountyConfigDlg" Width="370" Height="270" Title="County Configuration">
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="200" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}County Setup" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="Configure your county-specific settings for TerraFusion Platform." />
+        
+        <Control Id="CountyLabel" Type="Text" X="25" Y="60" Width="100" Height="10" TabSkip="no" Text="&amp;County ID:" />
+        <Control Id="CountyEdit" Type="Edit" X="25" Y="72" Width="200" Height="18" Property="COUNTY_ID" />
+        <Control Id="CountyNote" Type="Text" X="25" Y="92" Width="250" Height="20" TabSkip="no" Text="Example: benton-wa, franklin-wa, king-wa" />
+        
+        <Control Id="EmailLabel" Type="Text" X="25" Y="125" Width="100" Height="10" TabSkip="no" Text="&amp;Administrator Email:" />
+        <Control Id="EmailEdit" Type="Edit" X="25" Y="137" Width="200" Height="18" Property="ADMIN_EMAIL" />
+        
+        <Control Id="PortLabel" Type="Text" X="25" Y="170" Width="100" Height="10" TabSkip="no" Text="&amp;Web Interface Port:" />
+        <Control Id="PortEdit" Type="Edit" X="25" Y="182" Width="80" Height="18" Property="WEB_PORT" />
+        
+        <Control Id="Line" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="&amp;Back" />
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="&amp;Next" />
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="Cancel" />
+      </Dialog>
+    </UI>
+  </Fragment>
+
+  <!-- Component Groups -->
+  <Fragment>
+    <ComponentGroup Id="ProductComponents" Directory="BinFolder">
+      <!-- Core executables -->
+      <Component Id="ApiGateway" Guid="*">
+        <File Id="ApiGatewayExe" Source="$(var.BuildOutputDir)\terrafusion-api-gateway.exe" KeyPath="yes" />
+      </Component>
+      
+      <Component Id="SyncService" Guid="*">
+        <File Id="SyncServiceExe" Source="$(var.BuildOutputDir)\terrafusion-sync-service.exe" KeyPath="yes" />
+      </Component>
+      
+      <Component Id="GisExportService" Guid="*">
+        <File Id="GisExportServiceExe" Source="$(var.BuildOutputDir)\terrafusion-gis-export.exe" KeyPath="yes" />
+      </Component>
+      
+      <!-- Setup utility -->
+      <Component Id="SetupUtility" Guid="*">
+        <File Id="SetupExe" Source="$(var.BuildOutputDir)\terrafusion-setup.exe" KeyPath="yes" />
+      </Component>
+      
+      <!-- Management console -->
+      <Component Id="ManagementConsole" Guid="*">
+        <File Id="ConsoleExe" Source="$(var.BuildOutputDir)\terrafusion-console.exe" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="DatabaseComponents" Directory="DatabaseFolder">
+      <Component Id="PostgreSQLPortable" Guid="*">
+        <File Id="PostgreSQLExe" Source="$(var.PostgreSQLDir)\bin\postgres.exe" KeyPath="yes" />
+        <File Id="PostgreSQLInitDb" Source="$(var.PostgreSQLDir)\bin\initdb.exe" />
+        <File Id="PostgreSQLPsql" Source="$(var.PostgreSQLDir)\bin\psql.exe" />
+      </Component>
+      
+      <Component Id="DatabaseSchema" Guid="*">
+        <File Id="SchemaSQL" Source="database\schema.sql" KeyPath="yes" />
+        <File Id="SeedDataSQL" Source="database\seed-data.sql" />
+        <File Id="MigrationsSQL" Source="database\migrations\*.sql" />
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="ConfigurationComponents" Directory="ConfigFolder">
+      <Component Id="DefaultConfig" Guid="*">
+        <File Id="AppConfig" Source="config\app.toml" KeyPath="yes" />
+        <File Id="DatabaseConfig" Source="config\database.toml" />
+        <File Id="LoggingConfig" Source="config\logging.toml" />
+      </Component>
+      
+      <Component Id="CountyConfigs" Guid="*">
+        <File Id="CountyTemplate" Source="config\county-template.toml" KeyPath="yes" />
+        <File Id="BentonConfig" Source="config\counties\benton-wa.toml" />
+        <File Id="FranklinConfig" Source="config\counties\franklin-wa.toml" />
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="WebInterfaceComponents" Directory="WebFolder">
+      <Component Id="StaticAssets" Guid="*">
+        <File Id="IndexHtml" Source="web\index.html" KeyPath="yes" />
+        <File Id="AppCSS" Source="web\css\app.css" />
+        <File Id="AppJS" Source="web\js\app.js" />
+        <File Id="Logo" Source="web\images\logo.png" />
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="ServiceComponents" Directory="INSTALLFOLDER">
+      <!-- Windows Service -->
+      <Component Id="TerraFusionService" Guid="*" Win64="yes">
+        <File Id="ServiceWrapper" Source="$(var.BuildOutputDir)\terrafusion-service.exe" KeyPath="yes" />
+        
+        <ServiceInstall Id="TerraFusionServiceInstall"
+                        Type="ownProcess"
+                        Name="TerraFusionPlatform"
+                        DisplayName="TerraFusion Platform"
+                        Description="TerraFusion Platform - Enterprise GIS Data Synchronization Services"
+                        Start="auto"
+                        Account="LocalSystem"
+                        ErrorControl="normal"
+                        Interactive="no" />
+        
+        <ServiceControl Id="TerraFusionServiceControl"
+                        Start="install"
+                        Stop="both"
+                        Remove="uninstall"
+                        Name="TerraFusionPlatform"
+                        Wait="yes" />
+        
+        <!-- Event Log -->
+        <util:EventSource Log="Application" 
+                         Name="TerraFusion Platform" 
+                         EventMessageFile="[#ServiceWrapper]" />
+      </Component>
+      
+      <!-- Registry entries -->
+      <Component Id="RegistryEntries" Guid="*">
+        <RegistryKey Root="HKLM" Key="SOFTWARE\TerraFusion\Platform">
+          <RegistryValue Name="InstallPath" Type="string" Value="[INSTALLFOLDER]" />
+          <RegistryValue Name="Version" Type="string" Value="1.0.0" />
+          <RegistryValue Name="CountyId" Type="string" Value="[COUNTY_ID]" />
+          <RegistryValue Name="WebPort" Type="string" Value="[WEB_PORT]" />
+        </RegistryKey>
+      </Component>
+      
+      <!-- Start menu shortcuts -->
+      <Component Id="StartMenuShortcuts" Directory="ApplicationProgramsFolder" Guid="*">
+        <Shortcut Id="TerraFusionShortcut"
+                  Name="TerraFusion Platform"
+                  Description="TerraFusion Platform Management Console"
+                  Target="[#ConsoleExe]"
+                  WorkingDirectory="BinFolder"
+                  Icon="TerraFusionIcon.ico" />
+        
+        <Shortcut Id="WebInterfaceShortcut"
+                  Name="TerraFusion Web Interface"
+                  Description="Open TerraFusion Platform in Web Browser"
+                  Target="http://localhost:[WEB_PORT]" />
+        
+        <Shortcut Id="UninstallShortcut"
+                  Name="Uninstall TerraFusion Platform"
+                  Description="Uninstall TerraFusion Platform"
+                  Target="[SystemFolder]msiexec.exe"
+                  Arguments="/x [ProductCode]" />
+        
+        <RemoveFolder Id="ApplicationProgramsFolder" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\TerraFusion" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+      
+      <!-- Desktop shortcut -->
+      <Component Id="DesktopShortcut" Directory="DesktopFolder" Guid="*">
+        <Shortcut Id="DesktopShortcut"
+                  Name="TerraFusion Platform"
+                  Description="TerraFusion Platform Management Console"
+                  Target="[#ConsoleExe]"
+                  WorkingDirectory="BinFolder"
+                  Icon="TerraFusionIcon.ico" />
+        <RegistryValue Root="HKCU" Key="Software\TerraFusion" Name="desktop" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+
+  <!-- Icon definition -->
+  <Fragment>
+    <Icon Id="TerraFusionIcon.ico" SourceFile="assets\TerraFusion.ico" />
+  </Fragment>
+</Wix>

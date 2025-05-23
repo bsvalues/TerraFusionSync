@@ -1,14 +1,17 @@
 [workspace]
 members = [
     "common",
-    "api_gateway",
+    "api_gateway", 
     "sync_service",
     "gis_export",
+    "setup_utility",
+    "management_console",
+    "service_wrapper"
 ]
 
 [workspace.dependencies]
-# Shared dependencies across all workspace members
-tokio = { version = "1.28", features = ["full"] }
+# Core dependencies with optimized versions
+tokio = { version = "1.28", features = ["rt-multi-thread", "macros", "fs", "net", "time"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
@@ -20,21 +23,19 @@ env_logger = "0.10"
 dotenv = "0.15"
 
 # Database dependencies
-sqlx = { version = "0.6", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate", "offline"] }
-diesel = { version = "2.1", features = ["postgres", "r2d2", "chrono", "uuid", "serde_json"] }
+sqlx = { version = "0.6", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json"] }
 
-# Web framework dependencies
-actix-web = { version = "4.3", features = ["openssl"] }
+# Web framework dependencies  
+actix-web = { version = "4.3", features = ["rustls"] }
 actix-service = "2.0"
 actix-http = "3.3"
 
 # HTTP client
-reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
 
-# Geospatial processing
-geo = "0.23"
-geojson = "0.24"
-gdal = "0.14"
+# Windows-specific dependencies
+windows-service = "0.6"
+winapi = { version = "0.3", features = ["winsvc", "winuser", "shellapi"] }
 
 [profile.dev]
 opt-level = 0
@@ -43,11 +44,13 @@ incremental = true
 
 [profile.release]
 opt-level = 3
-lto = true
+lto = "fat"
 codegen-units = 1
 panic = "abort"
-strip = true
+strip = "symbols"
+debug = false
 
-[profile.test]
-opt-level = 0
+[profile.release-with-debug]
+inherits = "release"
 debug = true
+strip = "none"
