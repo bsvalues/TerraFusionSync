@@ -41,3 +41,12 @@ httpx
 aiosqlite
 opencensus
 pyjwt
+flask
+flask-sqlalchemy
+gunicorn
+prometheus-client
+psycopg2-binary
+pyjwt
+python-dotenv
+requests
+sqlalchemy
