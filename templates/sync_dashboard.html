@@ -114,7 +114,7 @@
                             </div>
                             <div>
                                 <h3 class="text-gray-500 text-sm">Total Sync Jobs</h3>
-                                <p class="text-2xl font-bold">{{ total_jobs|default(18) }}</p>
+                                <p class="text-2xl font-bold" data-stat="total">{{ total_jobs|default(0) }}</p>
                             </div>
                         </div>
                     </div>
@@ -125,7 +125,7 @@
                             </div>
                             <div>
                                 <h3 class="text-gray-500 text-sm">Completed</h3>
-                                <p class="text-2xl font-bold">{{ completed_jobs|default(15) }}</p>
+                                <p class="text-2xl font-bold" data-stat="completed">{{ completed_jobs|default(0) }}</p>
                             </div>
                         </div>
                     </div>
@@ -136,7 +136,7 @@
                             </div>
                             <div>
                                 <h3 class="text-gray-500 text-sm">In Progress</h3>
-                                <p class="text-2xl font-bold">{{ in_progress_jobs|default(2) }}</p>
+                                <p class="text-2xl font-bold" data-stat="in-progress">{{ in_progress_jobs|default(0) }}</p>
                             </div>
                         </div>
                     </div>
@@ -355,8 +355,14 @@
 
         // Format date
         function formatDate(dateString) {
-            const date = new Date(dateString);
-            return date.toLocaleString();
+            if (!dateString) return 'N/A';
+            try {
+                const date = new Date(dateString);
+                return date.toLocaleString();
+            } catch (e) {
+                console.error('Error formatting date:', e);
+                return dateString;
+            }
         }
 
         // Status badge class
@@ -379,12 +385,29 @@
 
         // Fetch sync jobs
         function fetchSyncJobs() {
+            console.log('Fetching sync jobs...');
+            
+            // Show loading indicator
+            document.getElementById('syncJobsList').innerHTML = `
+                <tr>
+                    <td colspan="6" class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
+                        <i class="fas fa-spinner fa-spin mr-2"></i> Loading sync jobs...
+                    </td>
+                </tr>
+            `;
+            
             fetch('/api/v1/sync/jobs')
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
                 .then(jobs => {
+                    console.log('Jobs loaded:', jobs);
                     const tableBody = document.getElementById('syncJobsList');
                     
-                    if (jobs.length === 0) {
+                    if (!jobs || jobs.length === 0) {
                         tableBody.innerHTML = `
                             <tr>
                                 <td colspan="6" class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
@@ -398,6 +421,11 @@
                     let html = '';
                     
                     jobs.forEach(job => {
+                        if (!job || !job.job_id) {
+                            console.error('Invalid job data:', job);
+                            return;
+                        }
+                        
                         const shortId = job.job_id.substring(0, 8) + '...';
                         const statusClass = getStatusBadgeClass(job.status);
                         
@@ -407,17 +435,17 @@
                                     ${shortId}
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    ${job.county_id}
+                                    ${job.county_id || 'Unknown'}
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    ${job.source_system} → ${job.target_system}
+                                    ${job.source_system || 'N/A'} → ${job.target_system || 'N/A'}
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                     ${formatDate(job.created_at)}
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusClass}">
-                                        ${job.status}
+                                        ${job.status || 'Unknown'}
                                     </span>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -440,13 +468,24 @@
                     });
                     
                     tableBody.innerHTML = html;
+                    
+                    // Update stats counters
+                    const total = jobs.length;
+                    const completed = jobs.filter(job => job.status === 'COMPLETED').length;
+                    const inProgress = jobs.filter(job => job.status === 'PENDING' || job.status === 'PROCESSING').length;
+                    const failed = jobs.filter(job => job.status === 'FAILED').length;
+                    
+                    document.querySelector('[data-stat="total"]').textContent = total;
+                    document.querySelector('[data-stat="completed"]').textContent = completed;
+                    document.querySelector('[data-stat="in-progress"]').textContent = inProgress;
+                    document.querySelector('[data-stat="failed"]').textContent = failed;
                 })
                 .catch(error => {
                     console.error('Error fetching sync jobs:', error);
                     document.getElementById('syncJobsList').innerHTML = `
                         <tr>
                             <td colspan="6" class="px-6 py-4 whitespace-nowrap text-sm text-red-500 text-center">
-                                Error loading sync jobs. Please try again later.
+                                Error loading sync jobs: ${error.message}. Please try again later.
                             </td>
                         </tr>
                     `;
