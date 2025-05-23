@@ -1,0 +1,122 @@
+# TerraFusion Platform - County Configuration Template
+# This template is used to generate county-specific configurations
+
+[county]
+id = "{{COUNTY_ID}}"
+name = "{{COUNTY_NAME}}"
+state = "{{STATE}}"
+admin_email = "{{ADMIN_EMAIL}}"
+timezone = "America/Los_Angeles"
+installation_date = "{{INSTALLATION_DATE}}"
+
+[database]
+name = "terrafusion_{{COUNTY_ID_SAFE}}"
+host = "localhost"
+port = 5433
+user = "terrafusion"
+max_connections = 20
+connection_timeout = 30
+
+[server]
+api_gateway_port = 8000
+sync_service_port = 8001
+gis_export_port = 8002
+web_interface_url = "http://localhost:8000"
+
+[security]
+jwt_secret_key = "{{JWT_SECRET}}"
+session_timeout_hours = 8
+max_login_attempts = 5
+lockout_duration_minutes = 15
+password_min_length = 8
+
+[sync]
+max_concurrent_jobs = 5
+job_timeout_minutes = 60
+retry_attempts = 3
+retry_delay_seconds = 30
+sync_schedule = "0 2 * * *"  # Daily at 2 AM
+
+[gis_export]
+max_export_size_mb = 500
+temp_directory = "temp/exports"
+cleanup_after_hours = 24
+default_format = "shapefile"
+coordinate_system = "EPSG:4326"
+max_features_per_export = 50000
+
+[notifications]
+email_enabled = true
+admin_notifications = true
+error_notifications = true
+sync_completion_notifications = false
+smtp_server = ""
+smtp_port = 587
+smtp_username = ""
+smtp_password = ""
+
+[logging]
+level = "info"
+file_enabled = true
+console_enabled = true
+max_file_size_mb = 50
+max_files = 10
+log_directory = "logs"
+
+[data_sources]
+# Template for data source configurations
+# These will be customized per county during installation
+
+[[data_sources.assessment]]
+name = "Assessment Database"
+type = "postgresql"
+connection_string = ""
+enabled = false
+sync_frequency_hours = 24
+table_mappings = []
+
+[[data_sources.gis]]
+name = "GIS Database"
+type = "postgresql"
+connection_string = ""
+enabled = false
+sync_frequency_hours = 6
+table_mappings = []
+
+[features]
+# Feature flags for county-specific functionality
+enable_market_analysis = true
+enable_gis_export = true
+enable_reporting = true
+enable_audit_trail = true
+enable_user_management = true
+enable_api_access = true
+
+[compliance]
+# Compliance settings for state and county requirements
+gdpr_enabled = true
+audit_retention_days = 2555  # 7 years
+data_retention_policy = "county_specific"
+privacy_policy_url = ""
+terms_of_service_url = ""
+
+[ui]
+# User interface customization
+theme = "county_default"
+logo_url = ""
+primary_color = "#2563eb"
+secondary_color = "#64748b"
+county_branding = true
+
+[integrations]
+# External system integrations
+enable_external_apis = false
+api_rate_limit = 1000
+api_timeout_seconds = 30
+
+[monitoring]
+# Monitoring and health check configuration
+health_check_interval_seconds = 30
+metrics_retention_days = 90
+enable_performance_monitoring = true
+enable_error_tracking = true
