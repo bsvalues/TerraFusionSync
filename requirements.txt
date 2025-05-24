@@ -50,3 +50,5 @@ pyjwt
 python-dotenv
 requests
 sqlalchemy
+prometheus-client
+psutil

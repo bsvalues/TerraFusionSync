@@ -22,6 +22,9 @@ from sync_service import sync_service
 # Import database models
 from models import db, init_db, County, User, GisExportJob, SyncJob, model_to_dict
 
+# Import monitoring module
+from monitoring import monitoring, track_gis_export_job, track_sync_job, track_export_file_size
+
 # Initialize Flask app
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "terrafusion-dev-key")
@@ -36,6 +39,9 @@ app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
 
 # Initialize database
 init_db(app)
+
+# Initialize monitoring
+monitoring.init_app(app)
 
 # Ensure directories exist
 os.makedirs("exports", exist_ok=True)
@@ -119,6 +125,13 @@ def create_export_job():
             parameters=data.get('parameters', {})
         )
         
+        # Track the GIS export job creation in metrics
+        track_gis_export_job(
+            status="created",
+            county=data['county_id'],
+            export_format=data['export_format']
+        )
+        
         # Start processing the job (in a real application, this would be done by a background worker)
         processed_job = gis_export_service.process_job(job['job_id'])
         
@@ -170,6 +183,10 @@ def download_export(job_id):
         county_id = result.get('county_id', 'unknown')
         export_format = result.get('export_format', 'unknown')
         filename = f"{county_id}_export.{export_format}"
+        
+        # Track file size metrics
+        file_size = os.path.getsize(file_path)
+        track_export_file_size(export_format, file_size)
         
         return send_file(file_path, as_attachment=True, download_name=filename)
     except FileNotFoundError:
@@ -224,6 +241,14 @@ def create_sync_job():
             source_system=data['source_system'],
             target_system=data['target_system'],
             parameters=data.get('parameters', {})
+        )
+        
+        # Track the sync job creation in metrics
+        track_sync_job(
+            status="created",
+            county=data['county_id'],
+            source=data['source_system'],
+            target=data['target_system']
         )
         
         # Start processing the job (in a real application, this would be done by a background worker)
