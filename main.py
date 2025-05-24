@@ -9,6 +9,7 @@ import os
 import logging
 from datetime import datetime
 from flask import Flask, render_template, redirect, url_for, request, jsonify, send_file, abort
+from flask_sqlalchemy import SQLAlchemy
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -18,9 +19,23 @@ logger = logging.getLogger(__name__)
 from gis_export import gis_export_service
 from sync_service import sync_service
 
+# Import database models
+from models import db, init_db, County, User, GisExportJob, SyncJob, model_to_dict
+
 # Initialize Flask app
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "terrafusion-dev-key")
+
+# Configure database
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL")
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    "pool_recycle": 300,
+    "pool_pre_ping": True,
+}
+
+# Initialize database
+init_db(app)
 
 # Ensure directories exist
 os.makedirs("exports", exist_ok=True)
