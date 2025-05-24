@@ -74,6 +74,11 @@ def sync_dashboard():
     recent_jobs = sync_service.list_jobs(limit=10)
     return render_template('sync_dashboard.html', sync_jobs=recent_jobs)
 
+@app.route('/monitoring/dashboard')
+def monitoring_dashboard():
+    """Monitoring dashboard view for system performance and metrics."""
+    return render_template('monitoring_dashboard.html')
+
 @app.route('/health')
 def health_check():
     """Health check endpoint."""
