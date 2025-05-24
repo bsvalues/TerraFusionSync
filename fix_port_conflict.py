@@ -1,185 +1,73 @@
+#!/usr/bin/env python3
 """
-Utility to fix port conflicts in the TerraFusion project.
+TerraFusion Platform - Port Conflict Resolver
 
-This script detects and resolves port conflicts by:
-1. Checking if a process is using port 5000
-2. Safely terminating the process if it exists
-3. Starting the API Gateway workflow
+This script identifies and terminates processes using port 5000 to allow
+the application to start properly.
 """
 
 import os
-import subprocess
 import sys
-import time
+import subprocess
 import logging
-import signal
-import psutil
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, 
-                   format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger("port_conflict_resolver")
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-def find_process_using_port(port):
-    """
-    Find the process ID using the specified port.
-    
-    Args:
-        port: Port number to check
-        
-    Returns:
-        Process ID or None if no process is using the port
-    """
+def find_processes_using_port(port):
+    """Find processes using a specific port."""
     try:
-        # Use lsof command to find the process using the port
-        cmd = f"lsof -i :{port} -t"
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        # Find process IDs using the port
+        result = subprocess.run(
+            ["lsof", "-i", f":{port}", "-t"],
+            capture_output=True,
+            text=True,
+            check=False
+        )
         
-        if result.returncode == 0 and result.stdout.strip():
-            # Return the first PID found
-            return int(result.stdout.strip().split('\n')[0])
-        else:
-            # Try netstat as an alternative
-            cmd = f"netstat -nlp | grep :{port} | awk '{{print $7}}' | cut -d/ -f1 | head -n1"
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-            
-            if result.returncode == 0 and result.stdout.strip() and result.stdout.strip() != "":
-                try:
-                    return int(result.stdout.strip())
-                except ValueError:
-                    logger.warning(f"Could not parse PID from netstat: {result.stdout.strip()}")
-                    return None
-            
-            return None
+        if result.stdout:
+            return [int(pid) for pid in result.stdout.strip().split('\n')]
+        return []
     except Exception as e:
-        logger.error(f"Error finding process using port {port}: {e}")
-        return None
+        logger.error(f"Error finding processes on port {port}: {str(e)}")
+        return []
 
-def terminate_process(pid, force=False):
-    """
-    Safely terminate a process by its PID.
-    
-    Args:
-        pid: Process ID to terminate
-        force: Whether to force termination (SIGKILL)
-        
-    Returns:
-        True if successful, False otherwise
-    """
+def kill_process(pid):
+    """Kill a process by PID."""
     try:
-        if not psutil.pid_exists(pid):
-            logger.warning(f"Process {pid} doesn't exist")
-            return True
-            
-        process = psutil.Process(pid)
-        process_name = process.name()
-        
-        logger.info(f"Attempting to terminate process {pid} ({process_name})")
-        
-        # First try SIGTERM
-        process.terminate()
-        
-        # Give it a moment to terminate gracefully
-        gone, alive = psutil.wait_procs([process], timeout=3)
-        
-        if not alive:
-            logger.info(f"Successfully terminated process {pid}")
-            return True
-            
-        # If still alive and force is True, use SIGKILL
-        if force:
-            logger.warning(f"Process {pid} did not terminate gracefully, using SIGKILL")
-            process.kill()
-            
-            gone, alive = psutil.wait_procs([process], timeout=3)
-            
-            if not alive:
-                logger.info(f"Successfully killed process {pid}")
-                return True
-            else:
-                logger.error(f"Failed to kill process {pid}")
-                return False
-        else:
-            logger.warning(f"Process {pid} did not terminate gracefully")
-            return False
-            
-    except psutil.NoSuchProcess:
-        logger.warning(f"Process {pid} no longer exists")
+        logger.info(f"Attempting to terminate process {pid}")
+        os.kill(pid, 15)  # SIGTERM
+        logger.info(f"Successfully terminated process {pid}")
         return True
-    except psutil.AccessDenied:
-        logger.error(f"Access denied when trying to terminate process {pid}")
-        return False
     except Exception as e:
-        logger.error(f"Error terminating process {pid}: {e}")
-        return False
-
-def start_api_gateway():
-    """
-    Start the API Gateway workflow.
-    
-    Returns:
-        True if successful, False otherwise
-    """
-    try:
-        # Get current script directory
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        
-        # Construct command to start the API Gateway
-        cmd = ["gunicorn", "--bind", "0.0.0.0:5000", "--reuse-port", "--reload", "main:app"]
-        
-        # Start the API Gateway process
-        logger.info("Starting API Gateway with command: " + " ".join(cmd))
-        subprocess.Popen(cmd, cwd=script_dir)
-        
-        # Give it a moment to start
-        time.sleep(2)
-        
-        # Check if it's running
-        if find_process_using_port(5000):
-            logger.info("API Gateway started successfully")
-            return True
-        else:
-            logger.error("API Gateway failed to start")
-            return False
-    except Exception as e:
-        logger.error(f"Error starting API Gateway: {e}")
+        logger.error(f"Error terminating process {pid}: {str(e)}")
         return False
 
 def main():
-    """
-    Main entry point for the port conflict resolver.
-    """
-    logger.info("Starting port conflict resolution for TerraFusion API Gateway")
+    """Main function to find and kill processes on port 5000."""
+    port = 5000
+    logger.info(f"Looking for processes using port {port}")
     
-    # Check if port 5000 is in use
-    pid = find_process_using_port(5000)
+    pids = find_processes_using_port(port)
     
-    if pid:
-        logger.info(f"Port 5000 is being used by process {pid}")
-        
-        # Try to terminate the process
-        if terminate_process(pid, force=False):
-            logger.info("Successfully terminated the process using port 5000")
-        else:
-            logger.warning("Failed to gracefully terminate the process, trying force kill")
-            
-            if terminate_process(pid, force=True):
-                logger.info("Successfully force killed the process using port 5000")
-            else:
-                logger.error("Failed to kill the process using port 5000")
-                sys.exit(1)
+    if not pids:
+        logger.info(f"No processes found using port {port}")
+        return
+    
+    logger.info(f"Found {len(pids)} processes using port {port}: {pids}")
+    
+    # Kill each process
+    for pid in pids:
+        kill_process(pid)
+    
+    # Verify port is now free
+    remaining_pids = find_processes_using_port(port)
+    if remaining_pids:
+        logger.warning(f"Some processes still using port {port}: {remaining_pids}")
+        logger.warning("Try running 'sudo lsof -i :5000' and 'sudo kill <PID>' manually")
     else:
-        logger.info("No process found using port 5000")
-    
-    # Wait a moment to ensure the port is released
-    time.sleep(2)
-    
-    # Start the API Gateway
-    if start_api_gateway():
-        logger.info("Port conflict resolution completed successfully")
-    else:
-        logger.error("Failed to start API Gateway after resolving port conflict")
-        sys.exit(1)
+        logger.info(f"Port {port} is now free!")
 
 if __name__ == "__main__":
     main()
