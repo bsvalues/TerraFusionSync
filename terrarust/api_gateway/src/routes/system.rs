@@ -1,75 +1,74 @@
-use actix_web::{web, HttpResponse, Responder, get};
-use crate::errors::{AppError, AppResult};
-use crate::handlers;
+use actix_web::{web, HttpResponse, Result};
 use serde_json::json;
+use crate::AppState;
 
 /// Configure system routes
 pub fn configure(cfg: &mut web::ServiceConfig) {
-    cfg.service(health)
-       .service(metrics)
-       .service(liveness)
-       .service(readiness);
+    cfg.service(
+        web::resource("/health")
+            .route(web::get().to(health_check))
+    )
+    .service(
+        web::resource("/metrics")
+            .route(web::get().to(metrics))
+    )
+    .service(
+        web::resource("/status")
+            .route(web::get().to(status))
+    );
 }
 
 /// Health check endpoint
-#[get("/health")]
-async fn health() -> AppResult<impl Responder> {
-    let health_status = handlers::system::check_health().await?;
-    
-    Ok(web::Json(json!({
-        "status": health_status.status,
-        "version": health_status.version,
-        "services": health_status.services,
-        "timestamp": health_status.timestamp,
+async fn health_check() -> Result<HttpResponse> {
+    Ok(HttpResponse::Ok().json(json!({
+        "status": "healthy",
+        "service": "TerraFusion Rust Gateway",
+        "version": "0.1.0",
+        "timestamp": chrono::Utc::now().to_rfc3339()
     })))
 }
 
-/// Metrics endpoint
-#[get("/metrics")]
-async fn metrics() -> AppResult<impl Responder> {
-    let metrics_data = handlers::system::get_metrics().await?;
-    
-    // For Prometheus format, return plain text
-    if metrics_data.format == "prometheus" {
-        return Ok(HttpResponse::Ok()
-            .content_type("text/plain")
-            .body(metrics_data.prometheus_data));
-    }
-    
-    // For JSON format, return JSON
-    Ok(web::Json(json!({
-        "metrics": metrics_data.metrics,
-        "timestamp": metrics_data.timestamp,
-    })))
-}
+/// Metrics endpoint for monitoring
+async fn metrics(data: web::Data<AppState>) -> Result<HttpResponse> {
+    let uptime = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
 
-/// Kubernetes liveness probe endpoint
-#[get("/liveness")]
-async fn liveness() -> AppResult<impl Responder> {
-    // Simple check if the service is running
-    Ok(web::Json(json!({
-        "status": "UP",
+    Ok(HttpResponse::Ok().json(json!({
+        "service": "TerraFusion Rust Gateway",
+        "version": "0.1.0",
+        "uptime_seconds": uptime,
+        "environment": data.config.environment,
         "timestamp": chrono::Utc::now().to_rfc3339(),
+        "system": {
+            "rust_version": env!("CARGO_PKG_RUST_VERSION"),
+            "target": env!("TARGET"),
+            "workers": data.config.worker_threads
+        }
     })))
 }
 
-/// Kubernetes readiness probe endpoint
-#[get("/readiness")]
-async fn readiness() -> AppResult<impl Responder> {
-    // Check if the service is ready to handle requests
-    let readiness_status = handlers::system::check_readiness().await?;
-    
-    if readiness_status.is_ready {
-        Ok(web::Json(json!({
-            "status": "READY",
-            "checks": readiness_status.checks,
-            "timestamp": readiness_status.timestamp,
-        })))
-    } else {
-        // Return 503 Service Unavailable if not ready
-        Err(AppError::ServiceUnavailable(format!(
-            "Service not ready: {}",
-            readiness_status.message.unwrap_or_else(|| "Unknown reason".to_string())
-        )))
+/// Overall system status
+async fn status(data: web::Data<AppState>) -> Result<HttpResponse> {
+    // Check connectivity to Python services
+    let sync_status = check_service_health(&data.config.sync_service_url).await;
+    let gis_status = check_service_health(&data.config.gis_export_service_url).await;
+
+    Ok(HttpResponse::Ok().json(json!({
+        "gateway": "healthy",
+        "services": {
+            "sync_service": sync_status,
+            "gis_export": gis_status
+        },
+        "timestamp": chrono::Utc::now().to_rfc3339()
+    })))
+}
+
+/// Helper function to check service health
+async fn check_service_health(url: &str) -> &'static str {
+    match reqwest::get(&format!("{}/health", url)).await {
+        Ok(response) if response.status().is_success() => "healthy",
+        _ => "unavailable"
     }
 }

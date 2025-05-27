@@ -156,12 +156,29 @@ class BackupScheduler:
             db_user = parsed.username
             db_password = parsed.password
             
-            # Create pg_dump command
+            # Create pg_dump command with version compatibility
             env = os.environ.copy()
             env['PGPASSWORD'] = db_password
             
+            # Try to use PostgreSQL 16 pg_dump if available, fall back to default
+            pg_dump_cmd = 'pg_dump'
+            possible_paths = [
+                '/usr/lib/postgresql/16/bin/pg_dump',
+                '/usr/pgsql-16/bin/pg_dump', 
+                '/opt/postgresql/16/bin/pg_dump',
+                'pg_dump'
+            ]
+            
+            for path in possible_paths:
+                try:
+                    if subprocess.run(['which', path], capture_output=True, text=True).returncode == 0:
+                        pg_dump_cmd = path
+                        break
+                except:
+                    continue
+            
             cmd = [
-                'pg_dump',
+                pg_dump_cmd,
                 '-h', str(db_host),
                 '-p', str(db_port),
                 '-U', db_user,

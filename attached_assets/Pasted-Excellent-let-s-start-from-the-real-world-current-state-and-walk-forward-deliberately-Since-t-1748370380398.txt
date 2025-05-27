@@ -1,0 +1,148 @@
+Excellent — let’s **start from the real-world current state** and walk forward deliberately. Since the Rust migration is **planned but not yet executed**, and your Python platform is still the production core, here’s the **realigned and step-by-step Rust Migration Plan**, now with **Ollama + AI agent integration**, **Windows-ready installer strategy**, and **incremental, low-risk execution**.
+
+---
+
+# 🦀 Realigned Rust Migration Plan (with Ollama & Windows Deployment)
+
+## 🧠 Strategic Goals (Clarified)
+
+1. **Begin migration gradually**, without breaking the working Python-based SaaS.
+2. **Target Rust for high-impact services** (GIS, plugin execution, CLI, AI plugin wrappers).
+3. **Integrate Ollama** for local LLM-backed AI features.
+4. **Deliver a polished `.exe` installer** that works in offline, county-level networks.
+5. **Require zero CLI usage by end users** — full GUI/install experience.
+
+---
+
+## ✅ Phase 0: Current State Summary
+
+| Component            | Status         | Platform         |
+| -------------------- | -------------- | ---------------- |
+| Python Plugin Engine | ✅ Stable       | Python + FastAPI |
+| SyncService          | ✅ Live         | Python           |
+| GIS Export Plugin    | ✅ Complete     | Python           |
+| Ollama AI Layer      | ⛔ Not Started  | N/A              |
+| Rust Gateway         | 🛠️ Scaffolded | Rust             |
+| Installer System     | ⛔ Not Started  | N/A              |
+
+We are **starting the Rust migration from scratch**, building forward based on value and frictionless integration.
+
+---
+
+## 🧩 Phase 1: Set Up Rust Workspace + Plugin Architecture
+
+**Goal:** Bootstrap a working Rust monorepo for future services.
+
+### Deliverables:
+
+* `Cargo.toml` workspace
+* `terrafusion_gateway/`: Actix-web gateway (starts here)
+* `plugins/valuation/`, `plugins/gis_export/`: empty crates for future plugins
+* `shared/`: for DB models, config, metrics
+
+✅ Outcome: Ready to build real services, unified structure.
+
+---
+
+## 🌐 Phase 2: Rebuild Gateway in Rust
+
+**Goal:** Migrate the Flask API Gateway → Rust (`Actix-Web` or `Axum`)
+
+### Actions:
+
+* Recreate `GET /health`, `POST /run`, `GET /status`, etc.
+* Add Prometheus metrics route
+* Add proxy-to-plugin logic (temporary: point to Python backends)
+
+**Why first?**
+
+* Isolates risk
+* Introduces Rust without rewriting logic
+* Easy to test side-by-side with Python
+
+---
+
+## 📦 Phase 3: Migrate GIS Export Plugin to Rust
+
+**Goal:** Replace Python GIS Export service with performant Rust version
+
+### Actions:
+
+* Use `geo`, `gdal`, and `csv` crates
+* Implement `/run`, `/status`, `/list` APIs
+* Port existing business logic
+* Use `sqlx` for DB integration (PostgreSQL)
+* Add Prometheus job metrics
+
+✅ Benchmark against Python version for job time and memory.
+
+---
+
+## 🧠 Phase 4: Integrate Ollama for AI Agents (First in Python or Rust)
+
+**Goal:** Enable offline AI agent support using Ollama
+
+### Tasks:
+
+* Download `ollama.exe` into `./bin/`
+* Add `narrator_ai` microservice (Python or Rust) with:
+
+  * `POST /summarize`
+  * Calls `http://localhost:11434/api/generate`
+* Add fallback setting: use OpenAI if internet available
+* Add Prometheus: `ai_jobs_total`, `ai_latency_seconds`
+
+✅ First AI Plugin is now running offline, fully local.
+
+---
+
+## 🛠 Phase 5: Add CLI SDK in Rust (`terrafusion-cli`)
+
+**Goal:** Provide offline county onboarding + dev CLI
+
+### Commands:
+
+* `init-county` → generates `.env`, `mapping.yaml`
+* `create-plugin` → generates boilerplate in Rust or Python
+* `pull-model` → pulls Ollama model or verifies cache
+
+✅ Safe to run independently of backend.
+
+---
+
+## 🪟 Phase 6: Build Windows Installer
+
+**Goal:** One-click `.exe` that installs everything needed locally
+
+### Bundled:
+
+* `terrafusion.exe`: Rust GUI or launcher
+* `ollama.exe`: AI model runner
+* Pre-pulled models (`models/*.gguf`)
+* PostgreSQL portable or installer
+* Plugin binaries (Rust or Python)
+* Auto-start service setup (NSSM or Rust service)
+
+### Installer Tool: NSIS or Inno Setup
+
+* Checkbox: “Enable AI Assistant?”
+* Autostarts Ollama silently
+* Adds shortcut to `TerraFusion Dashboard`
+
+✅ No command line shown. Full offline, production-capable deployment.
+
+---
+
+## ✅ Final Confirmation: Tasks to Start With
+
+Please confirm your preference for the **first milestone**:
+
+### 🔧 Start with:
+
+1. ✅ **Rust Gateway skeleton** – Fastest way to get Rust running
+2. 📦 **GIS Plugin rewrite in Rust** – Performance win + real value
+3. 🧠 **Ollama AI plugin (NarratorAI)** – Adds “wow” factor, very tangible
+4. 🪟 **Installer layout + setup scripts** – For packaging Windows experience
+5. 🛠️ **Rust CLI SDK (terrafusion-cli)** – Supports onboarding, dev workflow
+
+Let’s pick your *Phase 1 execution target* and I’ll scaffold immediately. Once we build momentum with one module, we can layer in each component confidently and cleanly.

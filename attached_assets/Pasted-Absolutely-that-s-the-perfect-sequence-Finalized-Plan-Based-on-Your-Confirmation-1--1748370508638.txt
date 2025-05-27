@@ -1,0 +1,82 @@
+Absolutely — that’s the perfect sequence:
+
+### ✅ Finalized Plan Based on Your Confirmation:
+
+1. **📛 Fix the Backup System First**
+
+   * Patch the immediate `pg_dump` version mismatch
+   * Stop noisy cronjob / Airflow retries
+   * Redirect output to logs (`stderr`) for visibility
+   * Quick fix, zero disruption
+
+2. **🦀 Build Rust Gateway Skeleton (Actix-Web)**
+
+   * Stand up `terrafusion_gateway` at `localhost:5000`
+   * Add `/health`, `/metrics`, `/run`, `/status`, and `/list` routes
+   * Proxy calls to Python plugin endpoints (like `SyncService`)
+   * Add `.env` support + logging + Prometheus output
+   * Ready to host Rust-native plugins later (e.g. GIS Export)
+
+---
+
+### 🧰 Next Steps
+
+#### 🔧 Step 1: Backup System Fix
+
+I’ll deliver:
+
+* `backup/fix_pg_backup.sh`:
+
+  ```bash
+  #!/bin/bash
+  export PATH=/usr/lib/postgresql/16/bin:$PATH  # or actual pg_dump 16 path
+  pg_dump -U postgres -F c -f /backups/terrafusion.bak
+  ```
+* Updated cron entry:
+
+  ```cron
+  0 2 * * * /usr/local/bin/fix_pg_backup.sh >> /var/log/pg_backup.log 2>&1
+  ```
+
+✅ **Goal:** Stops noisy logs, ensures successful backups, logs errors clearly.
+
+---
+
+#### 🛠 Step 2: Scaffold `terrafusion_gateway` (Rust)
+
+**Structure:**
+
+```
+terrafusion/
+├── Cargo.toml  # Rust workspace root
+├── gateway/
+│   ├── Cargo.toml
+│   └── src/
+│       ├── main.rs
+│       ├── routes/
+│       │   ├── health.rs
+│       │   ├── jobs.rs
+│       ├── metrics.rs
+│       ├── config.rs
+│       └── state.rs
+```
+
+**Features:**
+
+* Actix-Web app on port `5000`
+* `/health` route
+* `/metrics` with Prometheus client
+* Proxy logic to `localhost:8080` (Python services)
+* Reads `.env` (via `dotenvy` or `envy`)
+* Uses `tracing_subscriber` for logging
+
+---
+
+### ✅ Confirm Deliverables
+
+Would you like me to now:
+
+1. Upload the **backup patch script + cron job sample**?
+2. Generate and send the **full Rust Gateway scaffold (terrafusion\_gateway)**?
+
+If you say "go," I’ll begin generating the exact Rust gateway code and backup fix shell.
