@@ -1,0 +1,84 @@
+# TerraFusion Platform Prometheus Configuration
+# This configuration scrapes metrics from all TerraFusion services
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # TerraFusion API Gateway (Flask)
+  - job_name: 'terrafusion_api_gateway'
+    metrics_path: '/gateway-metrics'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['localhost:5000']
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'flask_.*'
+        target_label: service
+        replacement: 'api_gateway'
+
+  # TerraFusion Sync Service (FastAPI)
+  - job_name: 'terrafusion_sync_service'
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['localhost:8080']
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'fastapi_.*'
+        target_label: service
+        replacement: 'sync_service'
+
+  # GIS Export Plugin (if running separately)
+  - job_name: 'gis_export_plugin'
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['localhost:8081']
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'gis_export_.*'
+        target_label: service
+        replacement: 'gis_export'
+
+  # NarratorAI Service (if running separately)
+  - job_name: 'narrator_ai'
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['localhost:8082']
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'ai_.*'
+        target_label: service
+        replacement: 'narrator_ai'
+
+  # System metrics (if node_exporter is available)
+  - job_name: 'node_exporter'
+    static_configs:
+      - targets: ['localhost:9100']
+    scrape_interval: 60s
+
+# Optional: Docker-based configuration
+# Uncomment these sections if running in Docker environment
+#
+# scrape_configs:
+#   - job_name: 'terrafusion_api_gateway_docker'
+#     metrics_path: '/gateway-metrics'
+#     static_configs:
+#       - targets: ['terrafusion_api_gateway:5000']
+#
+#   - job_name: 'terrafusion_sync_service_docker'
+#     metrics_path: '/metrics'
+#     static_configs:
+#       - targets: ['terrafusion_sync_core:8080']
