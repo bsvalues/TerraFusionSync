@@ -448,9 +448,12 @@ def ai_demo():
 
 # Register enhanced UX endpoints and error handlers
 if ENHANCED_ENDPOINTS_AVAILABLE:
-    register_enhanced_endpoints(app)
-    register_error_handlers(app)
-    logger.info("✅ Enhanced UX endpoints registered")
+    try:
+        register_enhanced_endpoints(app)
+        register_error_handlers(app)
+        logger.info("✅ Enhanced UX endpoints registered")
+    except Exception as e:
+        logger.warning(f"Failed to register enhanced endpoints: {e}")
 else:
     logger.info("ℹ️  Running with basic endpoints only")
 
