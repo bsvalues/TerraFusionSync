@@ -270,5 +270,21 @@
     "file_size": 3919,
     "path": "backups/config_backup_20250527_191508.tar.gz",
     "created_at": "2025-05-27T19:15:08.249501"
+  },
+  {
+    "timestamp": "2025-05-27T22:07:22.072531",
+    "type": "files",
+    "filename": "files_backup_20250527_220721.tar.gz",
+    "file_size": 156205,
+    "path": "backups/files_backup_20250527_220721.tar.gz",
+    "created_at": "2025-05-27T22:07:22.072545"
+  },
+  {
+    "timestamp": "2025-05-27T22:07:22.077946",
+    "type": "config",
+    "filename": "config_backup_20250527_220722.tar.gz",
+    "file_size": 3919,
+    "path": "backups/config_backup_20250527_220722.tar.gz",
+    "created_at": "2025-05-27T22:07:22.077956"
   }
 ]
