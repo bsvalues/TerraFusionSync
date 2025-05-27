@@ -52,3 +52,6 @@ requests
 sqlalchemy
 prometheus-client
 psutil
+geopandas
+pandas
+shapely
