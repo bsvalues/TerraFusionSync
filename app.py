@@ -31,6 +31,14 @@ except ImportError as e:
     logger.warning(f"Enhanced endpoints not available: {e}")
     ENHANCED_ENDPOINTS_AVAILABLE = False
 
+# Import public API extensions
+try:
+    from api_extensions import register_public_api_endpoints
+    PUBLIC_API_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Public API extensions not available: {e}")
+    PUBLIC_API_AVAILABLE = False
+
 # Initialize Flask app
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "terrafusion-dev-key")
@@ -456,6 +464,16 @@ if ENHANCED_ENDPOINTS_AVAILABLE:
         logger.warning(f"Failed to register enhanced endpoints: {e}")
 else:
     logger.info("ℹ️  Running with basic endpoints only")
+
+# Register public API endpoints for vendor ecosystem
+if PUBLIC_API_AVAILABLE:
+    try:
+        register_public_api_endpoints(app)
+        logger.info("✅ Public API endpoints registered for vendor access")
+    except Exception as e:
+        logger.warning(f"Failed to register public API endpoints: {e}")
+else:
+    logger.info("ℹ️  Running without public API extensions")
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

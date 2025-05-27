@@ -55,3 +55,7 @@ psutil
 geopandas
 pandas
 shapely
+flask-graphql
+flask-limiter
+graphene
+pyjwt
