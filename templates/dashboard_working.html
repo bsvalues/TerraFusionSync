@@ -467,8 +467,13 @@
     // AI Assistant Functions
     function testAIDemo() {
         showLoadingInAI();
-        fetch('/api/v1/ai/demo')
-            .then(response => response.json())
+        fetch(`${window.location.origin}/api/v1/ai/demo`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            })
             .then(data => {
                 displayAIResponse(data);
             })
@@ -479,8 +484,13 @@
     
     function checkAIHealth() {
         showLoadingInAI();
-        fetch('/api/v1/ai/health')
-            .then(response => response.json())
+        fetch(`${window.location.origin}/api/v1/ai/health`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            })
             .then(data => {
                 displayAIResponse(data);
             })
