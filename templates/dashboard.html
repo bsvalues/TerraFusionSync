@@ -1,560 +1,442 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TerraFusion Platform - County Dashboard</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <style>
-        .sidebar {
-            width: 250px;
-            transition: all 0.3s;
-        }
-        .main-content {
-            margin-left: 250px;
-            transition: all 0.3s;
-        }
-        .sidebar.collapsed {
-            width: 70px;
-        }
-        .main-content.expanded {
-            margin-left: 70px;
-        }
-        .menu-item-text {
-            transition: opacity 0.2s;
-        }
-        .collapsed .menu-item-text {
-            opacity: 0;
-            width: 0;
-            overflow: hidden;
-        }
-        .metric-card {
-            transition: all 0.3s;
-        }
-        .metric-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-        }
-        .alert-banner {
-            animation: slideDown 0.5s ease-in-out;
-        }
-        @keyframes slideDown {
-            from { transform: translateY(-100%); }
-            to { transform: translateY(0); }
-        }
-        .status-healthy {
-            color: #10B981;
-        }
-        .status-warning {
-            color: #F59E0B;
-        }
-        .status-error {
-            color: #EF4444;
-        }
-        .chart-container {
-            height: 300px;
-            position: relative;
-        }
-    </style>
-</head>
-<body class="bg-gray-100">
-    <!-- Header -->
-    <header class="bg-blue-600 text-white shadow-md fixed w-full z-10">
-        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
-            <div class="flex items-center">
-                <button id="sidebar-toggle" class="mr-3 text-white focus:outline-none">
-                    <i class="fas fa-bars"></i>
-                </button>
-                <h1 class="text-xl font-bold">TerraFusion Platform</h1>
+{% extends "base.html" %}
+
+{% block title %}TerraFusion Platform - Dashboard{% endblock %}
+
+{% block head %}
+  {{ super() }}
+  <!-- Include Bootstrap Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+  
+  <!-- Include Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <style>
+    /* Professional dashboard styles matching market analysis */
+    .dashboard-header {
+      margin-bottom: 2rem;
+    }
+    
+    .kpi-card {
+      transition: all 0.3s ease;
+      height: 100%;
+      border-left: 4px solid transparent;
+    }
+    
+    .kpi-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+    }
+    
+    .kpi-card.status-healthy {
+      border-left-color: #198754;
+    }
+    
+    .kpi-card.status-warning {
+      border-left-color: #ffc107;
+    }
+    
+    .kpi-card.status-info {
+      border-left-color: #0dcaf0;
+    }
+    
+    .kpi-card.status-primary {
+      border-left-color: #0d6efd;
+    }
+    
+    .trend-up {
+      color: #198754;
+    }
+    
+    .trend-down {
+      color: #dc3545;
+    }
+    
+    .trend-neutral {
+      color: #6c757d;
+    }
+    
+    .chart-container {
+      position: relative;
+      height: 300px;
+      width: 100%;
+      margin-bottom: 2rem;
+    }
+    
+    .activity-item {
+      transition: all 0.2s ease;
+    }
+    
+    .activity-item:hover {
+      background-color: #f8f9fa;
+      border-radius: 0.375rem;
+    }
+    
+    .status-badge {
+      font-size: 0.75rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.375rem;
+      font-weight: 500;
+    }
+    
+    .status-completed {
+      background-color: #d1e7dd;
+      color: #0f5132;
+    }
+    
+    .status-running {
+      background-color: #cff4fc;
+      color: #055160;
+    }
+    
+    .status-pending {
+      background-color: #fff3cd;
+      color: #664d03;
+    }
+    
+    .status-failed {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="row mb-4">
+    <div class="col">
+      <h1 class="dashboard-header">TerraFusion Platform Dashboard</h1>
+      <p class="lead">Real estate data synchronization and analysis platform for professionals</p>
+    </div>
+    <div class="col-auto">
+      <button class="btn btn-primary">
+        <i class="bi bi-plus-circle me-2"></i>New Sync Operation
+      </button>
+    </div>
+  </div>
+  
+  <!-- System Status Alert -->
+  <div class="row mb-4">
+    <div class="col">
+      <div class="alert alert-info alert-dismissible fade show" role="alert">
+        <i class="bi bi-info-circle me-2"></i>
+        <strong>System Status:</strong> All services operational. Platform v1.0.0 running smoothly.
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI Cards with Professional Real Estate Metrics -->
+  <div class="row mb-4">
+    <div class="col-md-3">
+      <div class="card kpi-card status-healthy">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <h6 class="card-subtitle mb-2 text-muted">System Health</h6>
+              <h4 class="card-title text-success mb-0">Operational</h4>
+              <small class="text-muted">All services running</small>
             </div>
-            <div class="flex items-center">
-                <span class="mr-4">Benton County, WA</span>
-                <div class="relative">
-                    <button id="user-menu" class="flex items-center focus:outline-none">
-                        <img src="https://randomuser.me/api/portraits/men/41.jpg" alt="User" class="w-8 h-8 rounded-full mr-2">
-                        <span>Admin User</span>
-                        <i class="fas fa-chevron-down ml-2"></i>
-                    </button>
-                    <div id="user-dropdown" class="absolute right-0 mt-2 py-2 w-48 bg-white rounded-md shadow-xl hidden">
-                        <a href="#" class="block px-4 py-2 text-gray-700 hover:bg-gray-100">
-                            <i class="fas fa-user mr-2"></i> Profile
-                        </a>
-                        <a href="#" class="block px-4 py-2 text-gray-700 hover:bg-gray-100">
-                            <i class="fas fa-cog mr-2"></i> Settings
-                        </a>
-                        <div class="border-t border-gray-200 my-1"></div>
-                        <a href="#" class="block px-4 py-2 text-gray-700 hover:bg-gray-100">
-                            <i class="fas fa-sign-out-alt mr-2"></i> Logout
-                        </a>
-                    </div>
-                </div>
+            <div class="text-success">
+              <i class="bi bi-check-circle-fill fs-2"></i>
             </div>
+          </div>
         </div>
-    </header>
-
-    <!-- Sidebar -->
-    <nav id="sidebar" class="sidebar bg-gray-800 text-white fixed h-full pt-16 z-0">
-        <div class="py-4">
-            <ul>
-                <li>
-                    <a href="#" class="flex items-center py-3 px-4 text-gray-300 hover:bg-gray-700 hover:text-white">
-                        <i class="fas fa-tachometer-alt w-6"></i>
-                        <span class="menu-item-text ml-2">Dashboard</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="#" class="flex items-center py-3 px-4 text-gray-300 hover:bg-gray-700 hover:text-white">
-                        <i class="fas fa-sync-alt w-6"></i>
-                        <span class="menu-item-text ml-2">Sync Operations</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="#" class="flex items-center py-3 px-4 text-gray-300 hover:bg-gray-700 hover:text-white">
-                        <i class="fas fa-map w-6"></i>
-                        <span class="menu-item-text ml-2">GIS Exports</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="#" class="flex items-center py-3 px-4 text-gray-300 hover:bg-gray-700 hover:text-white">
-                        <i class="fas fa-chart-bar w-6"></i>
-                        <span class="menu-item-text ml-2">Analytics</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="#" class="flex items-center py-3 px-4 text-gray-300 hover:bg-gray-700 hover:text-white">
-                        <i class="fas fa-cog w-6"></i>
-                        <span class="menu-item-text ml-2">Settings</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="#" class="flex items-center py-3 px-4 text-gray-300 hover:bg-gray-700 hover:text-white">
-                        <i class="fas fa-question-circle w-6"></i>
-                        <span class="menu-item-text ml-2">Help</span>
-                    </a>
-                </li>
-            </ul>
+      </div>
+    </div>
+    
+    <div class="col-md-3">
+      <div class="card kpi-card status-primary">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <h6 class="card-subtitle mb-2 text-muted">Active Data Sync</h6>
+              <h4 class="card-title mb-0">8 <small class="text-success">+2</small></h4>
+              <small class="text-muted">County systems connected</small>
+            </div>
+            <div class="text-primary">
+              <i class="bi bi-arrow-repeat fs-2"></i>
+            </div>
+          </div>
         </div>
-    </nav>
-
-    <!-- Main Content -->
-    <main id="main-content" class="main-content pt-16 pb-8 min-h-screen">
-        <div class="container mx-auto px-4">
-            <!-- Alert Banner -->
-            <div class="alert-banner bg-blue-500 text-white px-4 py-3 rounded-md shadow-md mb-6 flex justify-between items-center">
-                <div class="flex items-center">
-                    <i class="fas fa-info-circle mr-2"></i>
-                    <span>Welcome to TerraFusion Platform v1.0.0 - Your enterprise GIS data synchronization solution.</span>
-                </div>
-                <button class="focus:outline-none">
-                    <i class="fas fa-times"></i>
-                </button>
+      </div>
+    </div>
+    
+    <div class="col-md-3">
+      <div class="card kpi-card status-info">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <h6 class="card-subtitle mb-2 text-muted">Today's Exports</h6>
+              <h4 class="card-title mb-0">12 <small class="text-success">100%</small></h4>
+              <small class="text-muted">5.2 GB processed</small>
             </div>
-
-            <!-- Page Title -->
-            <div class="flex justify-between items-center mb-6">
-                <h2 class="text-2xl font-bold text-gray-800">County Dashboard</h2>
-                <div>
-                    <button class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md shadow-sm">
-                        <i class="fas fa-plus mr-2"></i>New Sync Operation
-                    </button>
-                </div>
+            <div class="text-info">
+              <i class="bi bi-map fs-2"></i>
             </div>
-
-            <!-- Status Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                <div class="bg-white rounded-lg shadow-md p-6 metric-card">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <h3 class="text-gray-500 text-sm font-medium mb-1">System Status</h3>
-                            <div class="flex items-center">
-                                <span class="text-2xl font-bold status-healthy">Healthy</span>
-                                <i class="fas fa-check-circle ml-2 status-healthy"></i>
-                            </div>
-                        </div>
-                        <div class="bg-green-100 p-3 rounded-full">
-                            <i class="fas fa-server text-green-500"></i>
-                        </div>
-                    </div>
-                    <p class="text-gray-600 mt-2 text-sm">All services operational</p>
-                </div>
-                
-                <div class="bg-white rounded-lg shadow-md p-6 metric-card">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <h3 class="text-gray-500 text-sm font-medium mb-1">Active Sync Pairs</h3>
-                            <div class="flex items-center">
-                                <span class="text-2xl font-bold">8</span>
-                                <span class="text-green-500 ml-2 text-sm">+2 this week</span>
-                            </div>
-                        </div>
-                        <div class="bg-blue-100 p-3 rounded-full">
-                            <i class="fas fa-sync-alt text-blue-500"></i>
-                        </div>
-                    </div>
-                    <p class="text-gray-600 mt-2 text-sm">Syncing 4 systems</p>
-                </div>
-                
-                <div class="bg-white rounded-lg shadow-md p-6 metric-card">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <h3 class="text-gray-500 text-sm font-medium mb-1">GIS Exports (Today)</h3>
-                            <div class="flex items-center">
-                                <span class="text-2xl font-bold">12</span>
-                                <span class="text-green-500 ml-2 text-sm">100% success</span>
-                            </div>
-                        </div>
-                        <div class="bg-purple-100 p-3 rounded-full">
-                            <i class="fas fa-map text-purple-500"></i>
-                        </div>
-                    </div>
-                    <p class="text-gray-600 mt-2 text-sm">5.2 GB of data exported</p>
-                </div>
-                
-                <div class="bg-white rounded-lg shadow-md p-6 metric-card">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <h3 class="text-gray-500 text-sm font-medium mb-1">System Performance</h3>
-                            <div class="flex items-center">
-                                <span class="text-2xl font-bold">Excellent</span>
-                                <i class="fas fa-bolt ml-2 text-yellow-500"></i>
-                            </div>
-                        </div>
-                        <div class="bg-yellow-100 p-3 rounded-full">
-                            <i class="fas fa-tachometer-alt text-yellow-500"></i>
-                        </div>
-                    </div>
-                    <p class="text-gray-600 mt-2 text-sm">150ms avg. response time</p>
-                </div>
-            </div>
-
-            <!-- Charts Section -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-                <div class="bg-white rounded-lg shadow-md p-6">
-                    <h3 class="text-lg font-semibold text-gray-700 mb-4">Sync Operations History</h3>
-                    <div class="chart-container">
-                        <canvas id="syncChart"></canvas>
-                    </div>
-                </div>
-                
-                <div class="bg-white rounded-lg shadow-md p-6">
-                    <h3 class="text-lg font-semibold text-gray-700 mb-4">Resource Utilization</h3>
-                    <div class="chart-container">
-                        <canvas id="resourceChart"></canvas>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Recent Activity Section -->
-            <div class="bg-white rounded-lg shadow-md p-6 mb-8">
-                <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-lg font-semibold text-gray-700">Recent Activity</h3>
-                    <a href="#" class="text-blue-500 hover:text-blue-600 text-sm">View All</a>
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead>
-                            <tr>
-                                <th class="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                                <th class="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
-                                <th class="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                <th class="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                                <th class="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">
-                            <tr>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="flex items-center">
-                                        <div class="bg-blue-100 p-2 rounded-full">
-                                            <i class="fas fa-sync-alt text-blue-500"></i>
-                                        </div>
-                                        <span class="ml-2 text-sm text-gray-900">Sync Operation</span>
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    Tax Assessment Data Synchronization
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">Completed</span>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    systems@benton.wa.gov
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    10 minutes ago
-                                </td>
-                            </tr>
-                            <tr>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="flex items-center">
-                                        <div class="bg-purple-100 p-2 rounded-full">
-                                            <i class="fas fa-map text-purple-500"></i>
-                                        </div>
-                                        <span class="ml-2 text-sm text-gray-900">GIS Export</span>
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    Parcel Boundaries Export (SHAPEFILE)
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">Completed</span>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    jdoe@benton.wa.gov
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    45 minutes ago
-                                </td>
-                            </tr>
-                            <tr>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="flex items-center">
-                                        <div class="bg-yellow-100 p-2 rounded-full">
-                                            <i class="fas fa-cog text-yellow-500"></i>
-                                        </div>
-                                        <span class="ml-2 text-sm text-gray-900">System Update</span>
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    Platform Updated to v1.0.0
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">Completed</span>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    admin@terrafusion.com
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    2 hours ago
-                                </td>
-                            </tr>
-                            <tr>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="flex items-center">
-                                        <div class="bg-red-100 p-2 rounded-full">
-                                            <i class="fas fa-exclamation-triangle text-red-500"></i>
-                                        </div>
-                                        <span class="ml-2 text-sm text-gray-900">Alert</span>
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    Database Connection Warning
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <span class="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-800">Resolved</span>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    system
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    3 hours ago
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- County Systems Section -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-                <div class="bg-white rounded-lg shadow-md overflow-hidden">
-                    <div class="p-4 bg-blue-500 text-white">
-                        <h3 class="font-semibold">PACS</h3>
-                        <p class="text-sm">Property Assessment System</p>
-                    </div>
-                    <div class="p-4">
-                        <div class="flex items-center justify-between mb-3">
-                            <span class="text-gray-600 text-sm">Status</span>
-                            <span class="text-green-500 font-medium flex items-center">
-                                <i class="fas fa-circle text-xs mr-1"></i> Connected
-                            </span>
-                        </div>
-                        <div class="flex items-center justify-between mb-3">
-                            <span class="text-gray-600 text-sm">Last Sync</span>
-                            <span class="text-gray-800">30 minutes ago</span>
-                        </div>
-                        <div class="flex items-center justify-between">
-                            <span class="text-gray-600 text-sm">Records</span>
-                            <span class="text-gray-800">125,742</span>
-                        </div>
-                        <div class="mt-4 pt-4 border-t border-gray-200">
-                            <a href="#" class="text-blue-500 hover:text-blue-600 text-sm font-medium">
-                                View Details <i class="fas fa-arrow-right ml-1"></i>
-                            </a>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="bg-white rounded-lg shadow-md overflow-hidden">
-                    <div class="p-4 bg-green-500 text-white">
-                        <h3 class="font-semibold">CAMA</h3>
-                        <p class="text-sm">Computer Assisted Mass Appraisal</p>
-                    </div>
-                    <div class="p-4">
-                        <div class="flex items-center justify-between mb-3">
-                            <span class="text-gray-600 text-sm">Status</span>
-                            <span class="text-green-500 font-medium flex items-center">
-                                <i class="fas fa-circle text-xs mr-1"></i> Connected
-                            </span>
-                        </div>
-                        <div class="flex items-center justify-between mb-3">
-                            <span class="text-gray-600 text-sm">Last Sync</span>
-                            <span class="text-gray-800">1 hour ago</span>
-                        </div>
-                        <div class="flex items-center justify-between">
-                            <span class="text-gray-600 text-sm">Records</span>
-                            <span class="text-gray-800">98,516</span>
-                        </div>
-                        <div class="mt-4 pt-4 border-t border-gray-200">
-                            <a href="#" class="text-blue-500 hover:text-blue-600 text-sm font-medium">
-                                View Details <i class="fas fa-arrow-right ml-1"></i>
-                            </a>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="bg-white rounded-lg shadow-md overflow-hidden">
-                    <div class="p-4 bg-purple-500 text-white">
-                        <h3 class="font-semibold">GIS</h3>
-                        <p class="text-sm">Geographic Information System</p>
-                    </div>
-                    <div class="p-4">
-                        <div class="flex items-center justify-between mb-3">
-                            <span class="text-gray-600 text-sm">Status</span>
-                            <span class="text-green-500 font-medium flex items-center">
-                                <i class="fas fa-circle text-xs mr-1"></i> Connected
-                            </span>
-                        </div>
-                        <div class="flex items-center justify-between mb-3">
-                            <span class="text-gray-600 text-sm">Last Sync</span>
-                            <span class="text-gray-800">45 minutes ago</span>
-                        </div>
-                        <div class="flex items-center justify-between">
-                            <span class="text-gray-600 text-sm">Records</span>
-                            <span class="text-gray-800">57,823</span>
-                        </div>
-                        <div class="mt-4 pt-4 border-t border-gray-200">
-                            <a href="#" class="text-blue-500 hover:text-blue-600 text-sm font-medium">
-                                View Details <i class="fas fa-arrow-right ml-1"></i>
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            </div>
+          </div>
         </div>
-    </main>
+      </div>
+    </div>
+    
+    <div class="col-md-3">
+      <div class="card kpi-card status-warning">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <h6 class="card-subtitle mb-2 text-muted">Performance</h6>
+              <h4 class="card-title mb-0">Excellent</h4>
+              <small class="text-muted">150ms avg response</small>
+            </div>
+            <div class="text-warning">
+              <i class="bi bi-speedometer2 fs-2"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
-    <!-- JavaScript -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js"></script>
-    <script>
-        // Toggle Sidebar
-        document.getElementById('sidebar-toggle').addEventListener('click', function() {
-            document.getElementById('sidebar').classList.toggle('collapsed');
-            document.getElementById('main-content').classList.toggle('expanded');
-        });
+  <!-- Data Transparency Charts for Real Estate Professionals -->
+  <div class="row mb-4">
+    <div class="col-lg-6">
+      <div class="card">
+        <div class="card-header">
+          <h5 class="card-title mb-0">Data Sync Operations Timeline</h5>
+          <small class="text-muted">Real-time view of county data synchronization</small>
+        </div>
+        <div class="card-body">
+          <div class="chart-container">
+            <canvas id="syncChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="col-lg-6">
+      <div class="card">
+        <div class="card-header">
+          <h5 class="card-title mb-0">System Resource Usage</h5>
+          <small class="text-muted">Performance metrics for data processing</small>
+        </div>
+        <div class="card-body">
+          <div class="chart-container">
+            <canvas id="resourceChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
-        // Toggle User Dropdown
-        document.getElementById('user-menu').addEventListener('click', function() {
-            document.getElementById('user-dropdown').classList.toggle('hidden');
-        });
+  <!-- Professional Activity Log for Real Estate Data Transparency -->
+  <div class="row">
+    <div class="col">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <div>
+            <h5 class="card-title mb-0">Recent System Activity</h5>
+            <small class="text-muted">Complete audit trail of all data operations</small>
+          </div>
+          <a href="#" class="btn btn-outline-primary btn-sm">View All Activity</a>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>Operation Type</th>
+                  <th>Description</th>
+                  <th>Status</th>
+                  <th>User</th>
+                  <th>Timestamp</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="activity-item">
+                  <td>
+                    <div class="d-flex align-items-center">
+                      <div class="bg-primary bg-opacity-10 rounded p-2 me-2">
+                        <i class="bi bi-arrow-repeat text-primary"></i>
+                      </div>
+                      <span class="fw-medium">Data Sync</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div>
+                      <div class="fw-medium">Tax Assessment Data Sync</div>
+                      <small class="text-muted">County Assessor → TerraFusion</small>
+                    </div>
+                  </td>
+                  <td><span class="status-badge status-completed">Completed</span></td>
+                  <td>
+                    <div>
+                      <div class="fw-medium">systems@benton.wa.gov</div>
+                      <small class="text-muted">Automated Process</small>
+                    </div>
+                  </td>
+                  <td>
+                    <div>
+                      <div>10 minutes ago</div>
+                      <small class="text-muted">2025-05-27 16:50:32</small>
+                    </div>
+                  </td>
+                  <td>
+                    <button class="btn btn-outline-primary btn-sm">View Details</button>
+                  </td>
+                </tr>
+                
+                <tr class="activity-item">
+                  <td>
+                    <div class="d-flex align-items-center">
+                      <div class="bg-info bg-opacity-10 rounded p-2 me-2">
+                        <i class="bi bi-map text-info"></i>
+                      </div>
+                      <span class="fw-medium">GIS Export</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div>
+                      <div class="fw-medium">Parcel Boundaries Export</div>
+                      <small class="text-muted">Format: SHAPEFILE | Size: 2.1 MB</small>
+                    </div>
+                  </td>
+                  <td><span class="status-badge status-completed">Completed</span></td>
+                  <td>
+                    <div>
+                      <div class="fw-medium">jdoe@benton.wa.gov</div>
+                      <small class="text-muted">John Doe - GIS Analyst</small>
+                    </div>
+                  </td>
+                  <td>
+                    <div>
+                      <div>45 minutes ago</div>
+                      <small class="text-muted">2025-05-27 16:15:18</small>
+                    </div>
+                  </td>
+                  <td>
+                    <button class="btn btn-outline-success btn-sm">Download</button>
+                  </td>
+                </tr>
+                
+                <tr class="activity-item">
+                  <td>
+                    <div class="d-flex align-items-center">
+                      <div class="bg-warning bg-opacity-10 rounded p-2 me-2">
+                        <i class="bi bi-shield-check text-warning"></i>
+                      </div>
+                      <span class="fw-medium">System Check</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div>
+                      <div class="fw-medium">Automated Health Monitoring</div>
+                      <small class="text-muted">Database backup attempt (failed)</small>
+                    </div>
+                  </td>
+                  <td><span class="status-badge status-failed">Needs Attention</span></td>
+                  <td>
+                    <div>
+                      <div class="fw-medium">system</div>
+                      <small class="text-muted">Automated Monitor</small>
+                    </div>
+                  </td>
+                  <td>
+                    <div>
+                      <div>2 hours ago</div>
+                      <small class="text-muted">2025-05-27 15:00:43</small>
+                    </div>
+                  </td>
+                  <td>
+                    <button class="btn btn-outline-warning btn-sm">Investigate</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
-        // Close dropdown when clicking outside
-        document.addEventListener('click', function(event) {
-            const dropdown = document.getElementById('user-dropdown');
-            const userMenu = document.getElementById('user-menu');
-            if (!dropdown.contains(event.target) && !userMenu.contains(event.target)) {
-                dropdown.classList.add('hidden');
-            }
-        });
+<!-- Professional Chart Initialization -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Sync Operations Chart - Professional styling for real estate data
+  const syncCtx = document.getElementById('syncChart').getContext('2d');
+  new Chart(syncCtx, {
+    type: 'line',
+    data: {
+      labels: ['6 AM', '9 AM', '12 PM', '3 PM', '6 PM', '9 PM'],
+      datasets: [{
+        label: 'Successful Operations',
+        data: [12, 19, 15, 22, 18, 25],
+        borderColor: '#0d6efd',
+        backgroundColor: 'rgba(13, 110, 253, 0.1)',
+        tension: 0.4,
+        fill: true
+      }, {
+        label: 'Failed Operations',
+        data: [1, 2, 0, 1, 0, 1],
+        borderColor: '#dc3545',
+        backgroundColor: 'rgba(220, 53, 69, 0.1)',
+        tension: 0.4,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top'
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          grid: {
+            color: 'rgba(0,0,0,0.1)'
+          }
+        },
+        x: {
+          grid: {
+            color: 'rgba(0,0,0,0.1)'
+          }
+        }
+      }
+    }
+  });
 
-        // Charts
-        const syncCtx = document.getElementById('syncChart').getContext('2d');
-        const syncChart = new Chart(syncCtx, {
-            type: 'line',
-            data: {
-                labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4', 'Week 5', 'Week 6'],
-                datasets: [{
-                    label: 'Completed Syncs',
-                    data: [12, 19, 15, 25, 22, 30],
-                    borderColor: '#3B82F6',
-                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                    tension: 0.4,
-                    fill: true
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: false
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        grid: {
-                            display: true,
-                            color: 'rgba(0, 0, 0, 0.05)'
-                        }
-                    },
-                    x: {
-                        grid: {
-                            display: false
-                        }
-                    }
-                }
-            }
-        });
-
-        const resourceCtx = document.getElementById('resourceChart').getContext('2d');
-        const resourceChart = new Chart(resourceCtx, {
-            type: 'bar',
-            data: {
-                labels: ['CPU', 'Memory', 'Storage', 'Network'],
-                datasets: [{
-                    label: 'Current Usage (%)',
-                    data: [35, 45, 60, 25],
-                    backgroundColor: [
-                        'rgba(59, 130, 246, 0.7)', // Blue
-                        'rgba(124, 58, 237, 0.7)', // Purple
-                        'rgba(239, 68, 68, 0.7)',  // Red
-                        'rgba(16, 185, 129, 0.7)'  // Green
-                    ],
-                    borderWidth: 0
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: false
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        max: 100,
-                        grid: {
-                            display: true,
-                            color: 'rgba(0, 0, 0, 0.05)'
-                        },
-                        ticks: {
-                            callback: function(value) {
-                                return value + '%';
-                            }
-                        }
-                    },
-                    x: {
-                        grid: {
-                            display: false
-                        }
-                    }
-                }
-            }
-        });
-    </script>
-</body>
-</html>
+  // Resource Usage Chart
+  const resourceCtx = document.getElementById('resourceChart').getContext('2d');
+  new Chart(resourceCtx, {
+    type: 'doughnut',
+    data: {
+      labels: ['CPU Usage', 'Memory', 'Storage', 'Network'],
+      datasets: [{
+        data: [45, 32, 18, 5],
+        backgroundColor: [
+          '#0d6efd',
+          '#198754',
+          '#ffc107',
+          '#dc3545'
+        ],
+        borderWidth: 2,
+        borderColor: '#fff'
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom'
+        }
+      }
+    }
+  });
+});
+</script>
+{% endblock %}
