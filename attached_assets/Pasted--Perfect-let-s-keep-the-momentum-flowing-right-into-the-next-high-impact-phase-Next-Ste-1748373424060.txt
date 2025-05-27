@@ -1,0 +1,91 @@
+🔥 Perfect — let’s keep the momentum flowing right into the next high-impact phase:
+
+## ✅ Next Step Confirmed:
+
+**🔧 Generate the Ollama AI Agent Plugin scaffold (`NarratorAI`)**
+
+---
+
+## 🧠 Scope of This Phase: Ollama AI Agent (`NarratorAI`)
+
+We’ll build a clean, modular microservice that:
+
+| Feature          | Detail                                                     |
+| ---------------- | ---------------------------------------------------------- |
+| **Language**     | Rust (or optionally Python if needed)                      |
+| **LLM Runtime**  | Ollama (local-only)                                        |
+| **Model**        | `mistral`, `phi3`, or `llama2` in quantized `.gguf`        |
+| **Endpoints**    | `POST /summarize`, `POST /classify`, `POST /explain`       |
+| **Input Format** | JSON `{ "text": "...property description..." }`            |
+| **Output**       | Natural-language summary or classification                 |
+| **Metrics**      | `ai_tasks_total`, `ai_latency_seconds`, `model_name` label |
+| **Integration**  | Called from UI or SyncService via HTTP                     |
+
+---
+
+## 🔧 Project Scaffold: `ai/narrator_ai/`
+
+```bash
+narrator_ai/
+├── src/
+│   ├── main.rs
+│   ├── routes.rs
+│   ├── ollama_client.rs
+│   ├── metrics.rs
+│   └── config.rs
+├── Cargo.toml
+├── .env
+```
+
+---
+
+## 🌐 Core API Example
+
+### `POST /summarize`
+
+```json
+{
+  "text": "This is a 2-story residential home located in tax district 503..."
+}
+```
+
+### Response:
+
+```json
+{
+  "summary": "Residential property, 2 stories, located in district 503."
+}
+```
+
+---
+
+## 🧰 Tools & Dependencies
+
+* `actix-web` – API framework
+* `reqwest` – To send HTTP requests to Ollama
+* `serde_json` – JSON I/O
+* `prometheus-client` – For metrics
+* `.env` config – Ollama host, default model
+
+---
+
+## 🚀 What's Next
+
+I’ll now scaffold the plugin and deliver:
+
+* `src/main.rs` – App entry with route wiring
+* `routes.rs` – `/summarize` handler
+* `ollama_client.rs` – Generic client for Ollama API
+* `metrics.rs` – Prometheus counters
+* `Cargo.toml` – Ready to build
+* Sample `curl` command to test it
+
+Once scaffolded, you’ll be able to:
+
+* Run this on `localhost:7100`
+* Call it from the UI or Gateway
+* Plug in any LLM quantized `.gguf` in Ollama
+
+---
+
+✅ Kicking off the `NarratorAI` plugin scaffold now. Stand by for the code delivery.
