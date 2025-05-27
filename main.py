@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 from gis_export import gis_export_service
 from sync_service import sync_service
 
+# Import Benton District Lookup service
+from benton_district_lookup import BentonDistrictLookup
+
 # Import database models
 from models import db, init_db, County, User, GisExportJob, SyncJob, model_to_dict
 
@@ -52,6 +55,9 @@ start_backup_service()
 # Ensure directories exist
 os.makedirs("exports", exist_ok=True)
 os.makedirs("syncs", exist_ok=True)
+
+# Initialize Benton District Lookup service
+district_lookup = BentonDistrictLookup()
 
 # Route definitions
 @app.route('/')
@@ -114,6 +120,11 @@ def backup_dashboard():
     """Backup management dashboard for county administrators."""
     backups = backup_scheduler.list_backups()
     return render_template('backup_dashboard.html', backups=backups)
+
+@app.route('/district-lookup')
+def district_lookup_dashboard():
+    """District lookup dashboard view."""
+    return render_template('district_lookup_dashboard.html')
 
 @app.route('/health')
 def health_check():
@@ -411,6 +422,89 @@ def backup_status():
     except Exception as e:
         logger.error(f"Error getting backup status: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+# =============================================================================
+# BENTON DISTRICT LOOKUP API ENDPOINTS
+# =============================================================================
+
+@app.route('/api/v1/district-lookup/coordinates', methods=['GET'])
+def lookup_district_by_coordinates():
+    """Lookup districts by latitude and longitude coordinates."""
+    try:
+        lat = request.args.get('lat')
+        lon = request.args.get('lon')
+        
+        if not lat or not lon:
+            return jsonify({
+                "error": "Both 'lat' and 'lon' parameters are required",
+                "usage": "/api/v1/district-lookup/coordinates?lat=46.230&lon=-119.090"
+            }), 400
+        
+        try:
+            latitude = float(lat)
+            longitude = float(lon)
+        except ValueError:
+            return jsonify({
+                "error": "Invalid coordinates. Latitude and longitude must be valid numbers",
+                "provided": {"lat": lat, "lon": lon}
+            }), 400
+        
+        result = district_lookup.lookup_by_coordinates(latitude, longitude)
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Error in district lookup by coordinates: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/v1/district-lookup/address', methods=['GET'])
+def lookup_district_by_address():
+    """Lookup districts by street address."""
+    try:
+        address = request.args.get('address')
+        
+        if not address:
+            return jsonify({
+                "error": "Address parameter is required",
+                "usage": "/api/v1/district-lookup/address?address=123 Main St, Kennewick, WA"
+            }), 400
+        
+        result = district_lookup.lookup_by_address(address)
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Error in district lookup by address: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/v1/district-lookup/districts', methods=['GET'])
+def list_districts():
+    """List available districts."""
+    try:
+        district_type = request.args.get('type')
+        result = district_lookup.list_districts(district_type)
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Error listing districts: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/v1/district-lookup', methods=['GET'])
+def district_lookup_info():
+    """Get information about the district lookup service."""
+    return jsonify({
+        "service": "Benton County District Lookup",
+        "version": "1.0.0",
+        "county": "Benton County, WA",
+        "available_districts": list(district_lookup.districts.keys()),
+        "endpoints": {
+            "lookup_by_coordinates": "/api/v1/district-lookup/coordinates?lat={lat}&lon={lon}",
+            "lookup_by_address": "/api/v1/district-lookup/address?address={address}",
+            "list_districts": "/api/v1/district-lookup/districts"
+        },
+        "usage_examples": {
+            "coordinates": "curl 'http://localhost:5000/api/v1/district-lookup/coordinates?lat=46.230&lon=-119.090'",
+            "address": "curl 'http://localhost:5000/api/v1/district-lookup/address?address=123 Main St, Kennewick, WA'"
+        }
+    })
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=True)
