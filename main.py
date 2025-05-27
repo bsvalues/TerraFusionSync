@@ -25,6 +25,9 @@ from models import db, init_db, County, User, GisExportJob, SyncJob, model_to_di
 # Import monitoring module
 from monitoring import monitoring, track_gis_export_job, track_sync_job, track_export_file_size
 
+# Import backup scheduler
+from backup_scheduler import backup_scheduler, start_backup_service
+
 # Initialize Flask app
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "terrafusion-dev-key")
@@ -42,6 +45,9 @@ init_db(app)
 
 # Initialize monitoring
 monitoring.init_app(app)
+
+# Start backup service
+start_backup_service()
 
 # Ensure directories exist
 os.makedirs("exports", exist_ok=True)
@@ -78,6 +84,12 @@ def sync_dashboard():
 def monitoring_dashboard():
     """Monitoring dashboard view for system performance and metrics."""
     return render_template('monitoring_dashboard.html')
+
+@app.route('/backup/dashboard')
+def backup_dashboard():
+    """Backup management dashboard for county administrators."""
+    backups = backup_scheduler.list_backups()
+    return render_template('backup_dashboard.html', backups=backups)
 
 @app.route('/health')
 def health_check():
@@ -305,6 +317,75 @@ def get_sync_report(job_id):
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         logger.error(f"Error getting report for sync job {job_id}: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+# Backup Management API endpoints
+@app.route('/api/v1/backup/list', methods=['GET'])
+def list_backups():
+    """List all available backups."""
+    try:
+        backups = backup_scheduler.list_backups()
+        return jsonify(backups)
+    except Exception as e:
+        logger.error(f"Error listing backups: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/v1/backup/create', methods=['POST'])
+def create_backup():
+    """Create a manual backup."""
+    try:
+        data = request.json or {}
+        backup_type = data.get('type', 'all')
+        
+        results = {}
+        
+        if backup_type in ['all', 'database']:
+            results['database'] = backup_scheduler.backup_database()
+        
+        if backup_type in ['all', 'files']:
+            results['files'] = backup_scheduler.backup_files()
+        
+        if backup_type in ['all', 'config']:
+            results['config'] = backup_scheduler.backup_configuration()
+        
+        return jsonify({
+            "message": "Backup operation completed",
+            "results": results
+        })
+    except Exception as e:
+        logger.error(f"Error creating backup: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/v1/backup/status', methods=['GET'])
+def backup_status():
+    """Get backup system status."""
+    try:
+        backups = backup_scheduler.list_backups()
+        
+        # Calculate backup statistics
+        total_backups = len(backups)
+        total_size = sum(backup.get('file_size', 0) for backup in backups)
+        
+        backup_counts = {}
+        for backup in backups:
+            backup_type = backup.get('type', 'unknown')
+            backup_counts[backup_type] = backup_counts.get(backup_type, 0) + 1
+        
+        # Get most recent backup
+        recent_backup = None
+        if backups:
+            recent_backup = max(backups, key=lambda x: x.get('timestamp', ''))
+        
+        return jsonify({
+            "scheduler_running": backup_scheduler.running,
+            "total_backups": total_backups,
+            "total_size_bytes": total_size,
+            "backup_counts": backup_counts,
+            "most_recent_backup": recent_backup,
+            "backup_directory": str(backup_scheduler.backup_dir)
+        })
+    except Exception as e:
+        logger.error(f"Error getting backup status: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
