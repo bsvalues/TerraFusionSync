@@ -1,0 +1,74 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "parcel_id": "BENCH001",
+        "owner_name": "Benchmark County",
+        "assessed_value": 185000,
+        "tax_year": 2024,
+        "zoning": "R1",
+        "acreage": 0.25,
+        "building_sqft": 1850,
+        "created_date": "2024-01-15"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-119.1500, 46.2000],
+          [-119.1480, 46.2000],
+          [-119.1480, 46.2020],
+          [-119.1500, 46.2020],
+          [-119.1500, 46.2000]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "parcel_id": "BENCH002",
+        "owner_name": "Test Property LLC",
+        "assessed_value": 325000,
+        "tax_year": 2024,
+        "zoning": "C1",
+        "acreage": 0.75,
+        "building_sqft": 3200,
+        "created_date": "2024-02-20"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-119.1480, 46.2000],
+          [-119.1460, 46.2000],
+          [-119.1460, 46.2030],
+          [-119.1480, 46.2030],
+          [-119.1480, 46.2000]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "parcel_id": "BENCH003",
+        "owner_name": "Performance Testing Inc",
+        "assessed_value": 275000,
+        "tax_year": 2024,
+        "zoning": "R2",
+        "acreage": 0.50,
+        "building_sqft": 2400,
+        "created_date": "2024-03-10"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-119.1460, 46.2000],
+          [-119.1440, 46.2000],
+          [-119.1440, 46.2025],
+          [-119.1460, 46.2025],
+          [-119.1460, 46.2000]
+        ]]
+      }
+    }
+  ]
+}
