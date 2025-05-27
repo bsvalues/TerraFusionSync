@@ -1,0 +1,122 @@
+Excellent — let’s move into the **Visibility & Polish phase**, where we showcase performance gains, enhance usability, and make your system bulletproof and ready for non-technical county IT staff.
+
+---
+
+## 🎯 Phase: **Observability, Benchmarking, and UX Enhancements**
+
+---
+
+## 📊 1. Grafana Dashboards (GIS Export + NarratorAI)
+
+### 🎛️ Dashboard Layout: `terrafusion_monitoring.json`
+
+We’ll generate a **single unified dashboard** with tabs or rows for each service:
+
+#### 🔷 **GIS Export V2**
+
+* `gis_export_jobs_total` (by format: CSV, GeoJSON, KML…)
+* `gis_export_job_duration_seconds` histogram
+* `gis_export_failures_total`
+* Heatmap of duration per county
+
+#### 🔷 **NarratorAI**
+
+* `ai_tasks_total` (by action: summarize/classify/explain)
+* `ai_latency_seconds` (distribution)
+* `ai_failures_total`
+* Model name + success rate
+
+#### 🔷 **Global System Panel**
+
+* CPU, memory, disk IO (via `node_exporter`)
+* Job types in flight
+* Service health checks (`/health` results per port)
+
+📦 I’ll generate:
+
+* `grafana/terrafusion_monitoring.json`
+* README for importing into Grafana
+* Prometheus job configs if needed
+
+---
+
+## 🧪 2. Benchmark Suite: GIS Rust vs Python
+
+### Benchmark Script: `benchmark/compare_gis.py`
+
+| Mode               | Purpose                    |
+| ------------------ | -------------------------- |
+| `python export.py` | Uses legacy GIS Export API |
+| `rust export.rs`   | Uses Rust GIS Export API   |
+| Records:           |                            |
+
+* Job start → finish time
+* Peak memory usage (via `/proc` or `psutil`)
+* Output validation (match content)
+
+**Test Set:** 1000 parcel records, mixed formats (CSV, SHP, GeoPackage)
+
+📦 Deliverables:
+
+* `benchmark/compare_gis.py`
+* `benchmark/fixtures/` (example jobs)
+* `benchmark/README.md` with usage
+* CSV + chart export
+
+---
+
+## 🧰 3. UX & Resilience Enhancements
+
+### 🧱 Service Hardening
+
+* Auto-restart policy via systemd or Windows task
+* Error-proof `.env` loader with schema validator
+* Add `/version` and `/uptime` to each API
+* JSON log output for all Rust services (via `tracing_json`)
+
+### 💡 User-Facing Improvements
+
+* NarratorAI:
+
+  * Return markdown or rich text if UI-ready
+  * Classify tax scenarios, not just describe properties
+* GIS Export:
+
+  * Add `/validate` endpoint (dry-run schema check)
+  * Inline help or `/formats` endpoint to list supported output types
+
+### 📁 Output Structure Standardization
+
+```
+export_output/
+├── <job_id>/
+│   ├── result.geojson
+│   ├── result.csv
+│   ├── metadata.json
+│   └── logs.txt
+```
+
+---
+
+## ✅ Deliverables You’ll Receive
+
+| Asset                                 | Description                              |
+| ------------------------------------- | ---------------------------------------- |
+| `grafana/terrafusion_monitoring.json` | Unified monitoring dashboard             |
+| `benchmark/compare_gis.py`            | Runtime + memory benchmark tool          |
+| `benchmark/test_output.csv`           | Real test results                        |
+| `narrator_ai/metrics.rs`              | Enhanced Prometheus metrics              |
+| `gis_export_v2/routes.rs`             | `/validate`, `/formats` additions        |
+| `README_PERF.md`                      | Summary of performance and Grafana setup |
+
+---
+
+## 🚀 Ready to Execute
+
+Would you like me to begin by:
+
+1. **Generating the Grafana JSON dashboard config**?
+2. **Building the GIS benchmark suite with sample test data?**
+3. **Pushing UX/endpoint enhancements to the GIS + AI plugins?**
+
+We can do them in parallel, but let me know what you'd like **delivered first**. You're shaping a platform that’s not just **high-performance**, but also **transparent, testable, and truly county-deployable.**
