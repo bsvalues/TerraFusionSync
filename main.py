@@ -64,6 +64,30 @@ def dashboard():
     """Main dashboard view."""
     return render_template('dashboard.html')
 
+@app.route('/admin')
+def admin_panel():
+    """Comprehensive admin panel for county administrators."""
+    # Get system status information
+    recent_gis_jobs = gis_export_service.list_jobs(limit=5)
+    recent_sync_jobs = sync_service.list_jobs(limit=5)
+    recent_backups = backup_scheduler.list_backups()[-5:] if backup_scheduler.list_backups() else []
+    
+    # Calculate summary statistics
+    total_exports = len(gis_export_service.list_jobs(limit=1000))
+    total_syncs = len(sync_service.list_jobs(limit=1000))
+    total_backups = len(backup_scheduler.list_backups())
+    
+    return render_template('admin_panel.html',
+                         gis_jobs=recent_gis_jobs,
+                         sync_jobs=recent_sync_jobs,
+                         backups=recent_backups,
+                         stats={
+                             'total_exports': total_exports,
+                             'total_syncs': total_syncs,
+                             'total_backups': total_backups,
+                             'backup_service_running': backup_scheduler.running
+                         })
+
 @app.route('/gis/dashboard')
 def gis_dashboard():
     """GIS Export dashboard view."""
