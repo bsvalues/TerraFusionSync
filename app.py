@@ -23,6 +23,14 @@ from benton_district_lookup import BentonDistrictLookup
 # Import NarratorAI service
 from narrator_ai_plugin import analyze_gis_export_data, analyze_sync_data, get_ai_health
 
+# Import enhanced UX endpoints
+try:
+    from enhanced_api_endpoints import register_enhanced_endpoints, register_error_handlers
+    ENHANCED_ENDPOINTS_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Enhanced endpoints not available: {e}")
+    ENHANCED_ENDPOINTS_AVAILABLE = False
+
 # Initialize Flask app
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "terrafusion-dev-key")
@@ -437,6 +445,14 @@ def ai_demo():
     except Exception as e:
         logger.error(f"Error in AI demo: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+# Register enhanced UX endpoints and error handlers
+if ENHANCED_ENDPOINTS_AVAILABLE:
+    register_enhanced_endpoints(app)
+    register_error_handlers(app)
+    logger.info("✅ Enhanced UX endpoints registered")
+else:
+    logger.info("ℹ️  Running with basic endpoints only")
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
