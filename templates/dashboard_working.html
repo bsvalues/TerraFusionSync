@@ -87,6 +87,11 @@
                             <i class="bi bi-gear me-1"></i>Admin Panel
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#ai-section">
+                            <i class="bi bi-robot me-1"></i>AI Assistant
+                        </a>
+                    </li>
                 </ul>
                 
                 <ul class="navbar-nav">
@@ -222,6 +227,82 @@
                     <div class="card-body">
                         <div class="chart-container">
                             <canvas id="performanceChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI Assistant Section -->
+        <div class="row mb-4" id="ai-section">
+            <div class="col">
+                <div class="card border-info">
+                    <div class="card-header bg-info bg-opacity-10">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h5 class="card-title mb-0 text-info">
+                                    <i class="bi bi-robot me-2"></i>NarratorAI Assistant
+                                </h5>
+                                <small class="text-muted">Intelligent data analysis and insights for your operations</small>
+                            </div>
+                            <span class="badge bg-success">Active</span>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="card h-100 border-primary">
+                                    <div class="card-body text-center">
+                                        <i class="bi bi-geo-alt-fill text-primary fs-1 mb-3"></i>
+                                        <h6 class="card-title">GIS Export Analysis</h6>
+                                        <p class="card-text small text-muted">Get intelligent insights about your GIS export jobs and performance metrics.</p>
+                                        <button class="btn btn-primary btn-sm" onclick="testAIDemo()">
+                                            <i class="bi bi-play-circle me-1"></i>Try Demo
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card h-100 border-success">
+                                    <div class="card-body text-center">
+                                        <i class="bi bi-arrow-repeat text-success fs-1 mb-3"></i>
+                                        <h6 class="card-title">Sync Operation Insights</h6>
+                                        <p class="card-text small text-muted">Analyze data synchronization performance and get optimization recommendations.</p>
+                                        <button class="btn btn-success btn-sm" onclick="checkAIHealth()">
+                                            <i class="bi bi-heart-pulse me-1"></i>Check Status
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card h-100 border-warning">
+                                    <div class="card-body text-center">
+                                        <i class="bi bi-graph-up-arrow text-warning fs-1 mb-3"></i>
+                                        <h6 class="card-title">Smart Reports</h6>
+                                        <p class="card-text small text-muted">Generate executive summaries and operational insights automatically.</p>
+                                        <button class="btn btn-warning btn-sm" onclick="viewAIDocumentation()">
+                                            <i class="bi bi-book me-1"></i>Learn More
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- AI Response Area -->
+                        <div class="row mt-4">
+                            <div class="col">
+                                <div id="ai-response-area" class="p-3 bg-light rounded" style="display: none;">
+                                    <div class="d-flex justify-content-between align-items-start mb-2">
+                                        <h6 class="mb-0">
+                                            <i class="bi bi-robot me-1 text-info"></i>AI Analysis Results
+                                        </h6>
+                                        <button class="btn-close btn-close-sm" onclick="hideAIResponse()"></button>
+                                    </div>
+                                    <div id="ai-content">
+                                        <!-- AI response will be loaded here -->
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -382,6 +463,178 @@
             }
         });
     });
+    
+    // AI Assistant Functions
+    function testAIDemo() {
+        showLoadingInAI();
+        fetch('/api/v1/ai/demo')
+            .then(response => response.json())
+            .then(data => {
+                displayAIResponse(data);
+            })
+            .catch(error => {
+                displayAIError('Failed to get AI demo: ' + error.message);
+            });
+    }
+    
+    function checkAIHealth() {
+        showLoadingInAI();
+        fetch('/api/v1/ai/health')
+            .then(response => response.json())
+            .then(data => {
+                displayAIResponse(data);
+            })
+            .catch(error => {
+                displayAIError('Failed to check AI health: ' + error.message);
+            });
+    }
+    
+    function viewAIDocumentation() {
+        showAIResponse();
+        document.getElementById('ai-content').innerHTML = `
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title">NarratorAI Documentation</h6>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6 class="text-primary">Available Endpoints:</h6>
+                            <ul class="list-unstyled">
+                                <li><code>GET /api/v1/ai/demo</code> - Test AI capabilities</li>
+                                <li><code>GET /api/v1/ai/health</code> - Check AI service status</li>
+                                <li><code>POST /api/v1/ai/analyze/gis-export</code> - Analyze GIS exports</li>
+                                <li><code>POST /api/v1/ai/analyze/sync-operation</code> - Analyze sync operations</li>
+                            </ul>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="text-success">Features:</h6>
+                            <ul class="list-unstyled">
+                                <li>✅ Intelligent data analysis</li>
+                                <li>✅ Performance insights</li>
+                                <li>✅ Automated recommendations</li>
+                                <li>✅ Natural language summaries</li>
+                                <li>✅ Offline AI capabilities (Ollama)</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    function showLoadingInAI() {
+        showAIResponse();
+        document.getElementById('ai-content').innerHTML = `
+            <div class="text-center p-4">
+                <div class="spinner-border text-info" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <div class="mt-2">Analyzing data with AI...</div>
+            </div>
+        `;
+    }
+    
+    function showAIResponse() {
+        document.getElementById('ai-response-area').style.display = 'block';
+        document.getElementById('ai-response-area').scrollIntoView({ behavior: 'smooth' });
+    }
+    
+    function hideAIResponse() {
+        document.getElementById('ai-response-area').style.display = 'none';
+    }
+    
+    function displayAIResponse(data) {
+        showAIResponse();
+        
+        let html = '';
+        
+        if (data.ai_analysis) {
+            // AI Demo response
+            const analysis = data.ai_analysis;
+            html = `
+                <div class="card">
+                    <div class="card-header bg-info bg-opacity-10">
+                        <h6 class="mb-0 text-info">AI Analysis Demo Results</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <h6 class="text-primary">Analysis Summary:</h6>
+                            <p class="mb-2">${analysis.narrative}</p>
+                            <small class="text-muted">Confidence: ${(analysis.confidence_score * 100).toFixed(0)}% | Processing: ${analysis.processing_time_ms}ms</small>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6 class="text-success">Key Insights:</h6>
+                                <ul class="list-unstyled">
+                                    ${analysis.insights.map(insight => `<li><i class="bi bi-check-circle text-success me-2"></i>${insight}</li>`).join('')}
+                                </ul>
+                            </div>
+                            <div class="col-md-6">
+                                <h6 class="text-warning">Recommendations:</h6>
+                                <ul class="list-unstyled">
+                                    ${analysis.recommendations.map(rec => `<li><i class="bi bi-lightbulb text-warning me-2"></i>${rec}</li>`).join('')}
+                                </ul>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-3 p-2 bg-light rounded">
+                            <small class="text-muted">
+                                <strong>Sample Data:</strong> ${data.demo_data.county_id} | Format: ${data.demo_data.export_format} | 
+                                Layers: ${data.demo_data.layers.join(', ')} | Size: ${(data.demo_data.file_size / 1024 / 1024).toFixed(1)}MB
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            `;
+        } else if (data.service) {
+            // AI Health response
+            html = `
+                <div class="card">
+                    <div class="card-header bg-success bg-opacity-10">
+                        <h6 class="mb-0 text-success">AI Service Health Status</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <p><strong>Service:</strong> ${data.service}</p>
+                                <p><strong>Status:</strong> <span class="badge bg-${data.status === 'healthy' ? 'success' : 'warning'}">${data.status}</span></p>
+                                <p><strong>Version:</strong> ${data.version || 'N/A'}</p>
+                            </div>
+                            <div class="col-md-6">
+                                <p><strong>Ollama Status:</strong> <span class="badge bg-${data.ollama_status === 'healthy' ? 'success' : 'secondary'}">${data.ollama_status || 'unavailable'}</span></p>
+                                <p><strong>Model:</strong> ${data.model || 'N/A'}</p>
+                                <p><strong>Cloud Fallback:</strong> ${data.cloud_fallback ? 'Enabled' : 'Disabled'}</p>
+                            </div>
+                        </div>
+                        <small class="text-muted">Last checked: ${data.timestamp}</small>
+                    </div>
+                </div>
+            `;
+        } else {
+            // Generic response
+            html = `
+                <div class="card">
+                    <div class="card-body">
+                        <pre class="bg-light p-3 rounded"><code>${JSON.stringify(data, null, 2)}</code></pre>
+                    </div>
+                </div>
+            `;
+        }
+        
+        document.getElementById('ai-content').innerHTML = html;
+    }
+    
+    function displayAIError(message) {
+        showAIResponse();
+        document.getElementById('ai-content').innerHTML = `
+            <div class="alert alert-warning" role="alert">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <strong>AI Service Notice:</strong> ${message}
+                <hr>
+                <small class="mb-0">The AI assistant may need additional setup. Try the demo to see template responses, or check the service status.</small>
+            </div>
+        `;
+    }
     </script>
 </body>
 </html>
