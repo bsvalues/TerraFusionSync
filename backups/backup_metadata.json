@@ -62,5 +62,37 @@
     "file_size": 3891,
     "path": "backups/config_backup_20250527_164340.tar.gz",
     "created_at": "2025-05-27T16:43:40.698318"
+  },
+  {
+    "timestamp": "2025-05-27T17:19:17.783535",
+    "type": "files",
+    "filename": "files_backup_20250527_171917.tar.gz",
+    "file_size": 146957,
+    "path": "backups/files_backup_20250527_171917.tar.gz",
+    "created_at": "2025-05-27T17:19:17.783545"
+  },
+  {
+    "timestamp": "2025-05-27T17:19:17.786329",
+    "type": "config",
+    "filename": "config_backup_20250527_171917.tar.gz",
+    "file_size": 3891,
+    "path": "backups/config_backup_20250527_171917.tar.gz",
+    "created_at": "2025-05-27T17:19:17.786336"
+  },
+  {
+    "timestamp": "2025-05-27T17:22:29.502306",
+    "type": "files",
+    "filename": "files_backup_20250527_172229.tar.gz",
+    "file_size": 149474,
+    "path": "backups/files_backup_20250527_172229.tar.gz",
+    "created_at": "2025-05-27T17:22:29.502318"
+  },
+  {
+    "timestamp": "2025-05-27T17:22:29.505594",
+    "type": "config",
+    "filename": "config_backup_20250527_172229.tar.gz",
+    "file_size": 3891,
+    "path": "backups/config_backup_20250527_172229.tar.gz",
+    "created_at": "2025-05-27T17:22:29.505602"
   }
 ]

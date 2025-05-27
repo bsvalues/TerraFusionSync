@@ -62,7 +62,7 @@ def index():
 @app.route('/dashboard')
 def dashboard():
     """Main dashboard view."""
-    return render_template('dashboard.html')
+    return render_template('dashboard_working.html')
 
 @app.route('/admin')
 def admin_panel():
