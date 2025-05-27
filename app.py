@@ -20,6 +20,9 @@ from gis_export import gis_export_service
 # Import Benton District Lookup service
 from benton_district_lookup import BentonDistrictLookup
 
+# Import NarratorAI service
+from narrator_ai_plugin import analyze_gis_export_data, analyze_sync_data, get_ai_health
+
 # Initialize Flask app
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "terrafusion-dev-key")
@@ -301,5 +304,139 @@ def district_lookup_info():
         }
     })
 
+# =============================================================================
+# NARRATORAI (AI ASSISTANT) API ENDPOINTS
+# =============================================================================
+
+@app.route('/api/v1/ai/analyze/gis-export', methods=['POST'])
+def ai_analyze_gis_export():
+    """
+    Get AI analysis and insights for a GIS export job.
+    
+    Request Body:
+        job_id: GIS export job ID to analyze
+    
+    Example: POST /api/v1/ai/analyze/gis-export
+    Body: {"job_id": "abc123"}
+    """
+    try:
+        data = request.get_json() or {}
+        job_id = data.get('job_id')
+        
+        if not job_id:
+            return jsonify({
+                "error": "job_id is required",
+                "usage": "POST with JSON body containing job_id"
+            }), 400
+        
+        # Get the GIS export job data
+        try:
+            job_data = gis_export_service.get_job_status(job_id)
+        except FileNotFoundError:
+            return jsonify({"error": f"GIS export job {job_id} not found"}), 404
+        
+        # Get AI analysis
+        import asyncio
+        analysis = asyncio.run(analyze_gis_export_data(job_data))
+        
+        if "error" in analysis:
+            return jsonify({"error": f"AI analysis failed: {analysis['error']}"}), 500
+        
+        return jsonify(analysis)
+        
+    except Exception as e:
+        logger.error(f"Error in AI GIS export analysis: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/v1/ai/analyze/sync-operation', methods=['POST'])
+def ai_analyze_sync_operation():
+    """
+    Get AI analysis and insights for a sync operation.
+    
+    Request Body:
+        operation_data: Sync operation data to analyze
+    
+    Example: POST /api/v1/ai/analyze/sync-operation
+    """
+    try:
+        data = request.get_json() or {}
+        operation_data = data.get('operation_data')
+        
+        if not operation_data:
+            return jsonify({
+                "error": "operation_data is required",
+                "usage": "POST with JSON body containing operation_data"
+            }), 400
+        
+        # Get AI analysis
+        import asyncio
+        analysis = asyncio.run(analyze_sync_data(operation_data))
+        
+        if "error" in analysis:
+            return jsonify({"error": f"AI analysis failed: {analysis['error']}"}), 500
+        
+        return jsonify(analysis)
+        
+    except Exception as e:
+        logger.error(f"Error in AI sync analysis: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/v1/ai/health', methods=['GET'])
+def ai_health_check():
+    """
+    Check the health and status of the NarratorAI service.
+    
+    Example: GET /api/v1/ai/health
+    """
+    try:
+        health_status = get_ai_health()
+        return jsonify(health_status)
+        
+    except Exception as e:
+        logger.error(f"Error checking AI health: {str(e)}", exc_info=True)
+        return jsonify({
+            "service": "NarratorAI",
+            "status": "error", 
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }), 500
+
+@app.route('/api/v1/ai/demo', methods=['GET'])
+def ai_demo():
+    """
+    Demonstrate AI capabilities with sample data analysis.
+    
+    Example: GET /api/v1/ai/demo
+    """
+    try:
+        # Sample GIS export data for demonstration
+        sample_gis_data = {
+            "job_id": "demo-job-123",
+            "county_id": "benton-wa",
+            "username": "demo-user@county.gov",
+            "export_format": "geojson",
+            "layers": ["parcels", "zoning", "roads"],
+            "status": "COMPLETED",
+            "file_size": 2456789,
+            "created_at": "2025-05-27T10:00:00Z",
+            "started_at": "2025-05-27T10:00:05Z",
+            "completed_at": "2025-05-27T10:02:15Z",
+            "message": "Export completed successfully"
+        }
+        
+        # Get AI analysis
+        import asyncio
+        analysis = asyncio.run(analyze_gis_export_data(sample_gis_data))
+        
+        return jsonify({
+            "demo_data": sample_gis_data,
+            "ai_analysis": analysis,
+            "message": "This is a demonstration of NarratorAI capabilities using sample data"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in AI demo: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5001, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)
