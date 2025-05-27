@@ -1,0 +1,89 @@
+You're building an application called **`benton_district_lookup`**, and its **primary purpose** is to **serve as a backend tool for determining district assignments based on location data**.
+
+Here’s a direct breakdown of its **application context** and **use cases**:
+
+---
+
+## 🧭 Application Purpose
+
+### 🎯 **`benton_district_lookup` is a geospatial lookup backend**
+
+It provides **programmatic access** to determine which administrative or electoral district a given address or coordinate belongs to.
+
+---
+
+## 🛠️ What Does It Do?
+
+It’s an **internal utility or service** that:
+
+| Functionality                      | Description                                                               |
+| ---------------------------------- | ------------------------------------------------------------------------- |
+| 📍 **District Mapping**            | Given an address, ZIP code, or lat/lon, return the district it belongs to |
+| 🧭 **Jurisdiction Classification** | Determine fire zones, voting districts, or school boundaries              |
+| 🗃️ **Local Database Access**      | Possibly query or load district maps stored locally (JSON, GeoJSON, etc.) |
+| 📤 **CLI or API Service**          | Runs as either a command-line tool or a microservice backend              |
+| 🔐 **Secure Internal Tool**        | Packaged and signed for internal distribution (via SharePoint or GPO)     |
+
+---
+
+## 🧩 Application Domains & Use Cases
+
+| Department           | Usage Example                                             |
+| -------------------- | --------------------------------------------------------- |
+| **IT/GIS**           | Lookup which police/fire district covers a given location |
+| **Elections**        | Determine which voting precinct a user is in              |
+| **Public Works**     | Assign service zones or snow plow routes                  |
+| **School Systems**   | Find school district boundaries                           |
+| **Customer Support** | Help desk verifies district coverage quickly              |
+
+---
+
+## 🧠 Why This Matters (ICSF Rationale)
+
+This project is a **simulated real-world backend service** designed for:
+
+* Practicing **secure deployment** workflows (code signing, release packaging)
+* Understanding **lookup-based microservices** in critical infrastructure
+* Learning how to build reliable Rust-based internal tools
+* Integrating geospatial logic into scalable platforms
+
+---
+
+## 🛤️ How It Evolves
+
+**Today:**
+Runs as a binary that answers, for example:
+
+```bash
+benton_district_lookup --address "123 Main St, Benton County"
+```
+
+Output:
+
+```
+District: Zone 4
+Jurisdiction: South Fire Department
+Precinct: 12B
+```
+
+**Later:**
+Becomes a backend microservice that powers:
+
+* Public web portals
+* GIS map overlays
+* Frontend dashboards
+* Emergency dispatch lookups
+
+---
+
+### ✅ Summary
+
+You are building a **secure, optimized Rust tool** for **internal use**, which acts as a **district resolution engine** for future GIS, civic, or dispatch applications.
+
+Would you like help adding:
+
+* A sample CLI parsing implementation?
+* A GeoJSON loader and spatial match function?
+* A mock API server using Actix or Axum?
+
+This is a solid foundation for something mission-critical. Let’s make it bulletproof.
