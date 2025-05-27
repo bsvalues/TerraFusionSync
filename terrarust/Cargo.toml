@@ -1,12 +1,10 @@
 [workspace]
+resolver = "2"
 members = [
     "common",
     "api_gateway", 
     "sync_service",
-    "gis_export",
-    "setup_utility",
-    "management_console",
-    "service_wrapper"
+    "gis_export"
 ]
 
 [workspace.dependencies]
