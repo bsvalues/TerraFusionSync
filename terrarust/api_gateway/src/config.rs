@@ -45,7 +45,7 @@ impl AppConfig {
     pub fn from_env() -> Self {
         let host = env::var("API_GATEWAY_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
         let port = env::var("API_GATEWAY_PORT")
-            .unwrap_or_else(|_| "8000".to_string())
+            .unwrap_or_else(|_| "6000".to_string())
             .parse::<u16>()
             .expect("API_GATEWAY_PORT must be a valid port number");
         

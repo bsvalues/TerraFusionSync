@@ -90,10 +90,4 @@ strip = true
 opt-level = 0
 debug = true
 
-[workspace]
-members = [
-    ".",
-    "../sync_service",
-    "../gis_export",
-    "../common"
-]
+# Remove workspace definition - this is handled by the root Cargo.toml

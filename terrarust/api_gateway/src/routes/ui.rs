@@ -1,133 +1,89 @@
-use actix_web::{web, HttpResponse, Responder, HttpRequest, get};
-use handlebars::Handlebars;
+use actix_web::{web, HttpRequest, HttpResponse, Result};
 use serde_json::json;
-use std::sync::Arc;
-use crate::errors::{AppError, AppResult};
-use crate::handlers;
+use crate::AppState;
 
 /// Configure UI routes
-pub fn configure() -> actix_web::Resource {
-    web::resource("/")
-        .route(web::get().to(index))
+pub fn configure() -> actix_web::Scope {
+    web::scope("")
+        .route("/", web::get().to(dashboard))
+        .route("/dashboard", web::get().to(dashboard))
+        .route("/gis/dashboard", web::get().to(gis_dashboard))
+        .route("/district-lookup", web::get().to(district_lookup_dashboard))
+        .route("/sync/dashboard", web::get().to(sync_dashboard))
 }
 
-/// Index/home page handler
-#[get("/")]
-async fn index(
-    hb: web::Data<Arc<Handlebars<'_>>>,
-    req: HttpRequest,
-) -> AppResult<HttpResponse> {
-    // Render the index template
-    let data = json!({
-        "title": "TerraFusion Platform - Home",
-        "user": null,  // User will be provided by auth middleware if authenticated
+/// Main dashboard view
+async fn dashboard(data: web::Data<AppState>) -> Result<HttpResponse> {
+    let template_data = json!({
+        "title": "TerraFusion Platform",
+        "service": "Rust Gateway",
+        "version": "0.1.0",
+        "timestamp": chrono::Utc::now().to_rfc3339()
     });
-    
-    let body = hb.render("index", &data)
-        .map_err(AppError::from)?;
-    
-    Ok(HttpResponse::Ok().body(body))
+
+    let body = data.handlebars
+        .render("dashboard", &template_data)
+        .map_err(|e| {
+            log::error!("Template rendering error: {}", e);
+            actix_web::error::ErrorInternalServerError("Template rendering failed")
+        })?;
+
+    Ok(HttpResponse::Ok().content_type("text/html").body(body))
 }
 
-/// Dashboard page handler
-#[get("/dashboard")]
-async fn dashboard(
-    hb: web::Data<Arc<Handlebars<'_>>>,
-    req: HttpRequest,
-) -> AppResult<HttpResponse> {
-    // Ensure user is authenticated
-    // TODO: Get user from auth middleware extensions
-
-    // Fetch dashboard data
-    let dashboard_data = handlers::ui::get_dashboard_data().await?;
-    
-    // Render the dashboard template
-    let data = json!({
-        "title": "TerraFusion Platform - Dashboard",
-        "sync_operations_count": dashboard_data.sync_operations_count,
-        "active_sync_pairs": dashboard_data.active_sync_pairs,
-        "recent_exports": dashboard_data.recent_exports,
-        "pending_exports": dashboard_data.pending_exports,
-        "user": dashboard_data.user,
+/// GIS Export dashboard
+async fn gis_dashboard(data: web::Data<AppState>) -> Result<HttpResponse> {
+    let template_data = json!({
+        "title": "GIS Export Dashboard",
+        "service": "TerraFusion GIS Export",
+        "version": "0.1.0",
+        "timestamp": chrono::Utc::now().to_rfc3339()
     });
-    
-    let body = hb.render("dashboard", &data)
-        .map_err(AppError::from)?;
-    
-    Ok(HttpResponse::Ok().body(body))
+
+    let body = data.handlebars
+        .render("gis_export_dashboard", &template_data)
+        .map_err(|e| {
+            log::error!("Template rendering error: {}", e);
+            actix_web::error::ErrorInternalServerError("Template rendering failed")
+        })?;
+
+    Ok(HttpResponse::Ok().content_type("text/html").body(body))
 }
 
-/// Sync dashboard page handler
-#[get("/sync-dashboard")]
-async fn sync_dashboard(
-    hb: web::Data<Arc<Handlebars<'_>>>,
-    req: HttpRequest,
-) -> AppResult<HttpResponse> {
-    // Fetch sync pairs and recent operations
-    let sync_dashboard_data = handlers::ui::get_sync_dashboard_data().await?;
-    
-    // Render the sync dashboard template
-    let data = json!({
-        "title": "TerraFusion Platform - Sync Dashboard",
-        "sync_pairs": sync_dashboard_data.sync_pairs,
-        "recent_operations": sync_dashboard_data.recent_operations,
-        "county_id": sync_dashboard_data.county_id,
-        "user": sync_dashboard_data.user,
+/// District lookup dashboard
+async fn district_lookup_dashboard(data: web::Data<AppState>) -> Result<HttpResponse> {
+    let template_data = json!({
+        "title": "District Lookup",
+        "service": "Benton County District Lookup",
+        "version": "0.1.0",
+        "timestamp": chrono::Utc::now().to_rfc3339()
     });
-    
-    let body = hb.render("sync_dashboard", &data)
-        .map_err(AppError::from)?;
-    
-    Ok(HttpResponse::Ok().body(body))
+
+    let body = data.handlebars
+        .render("index", &template_data)
+        .map_err(|e| {
+            log::error!("Template rendering error: {}", e);
+            actix_web::error::ErrorInternalServerError("Template rendering failed")
+        })?;
+
+    Ok(HttpResponse::Ok().content_type("text/html").body(body))
 }
 
-/// GIS Export dashboard page handler
-#[get("/gis-export")]
-async fn gis_export_dashboard(
-    hb: web::Data<Arc<Handlebars<'_>>>,
-    req: HttpRequest,
-) -> AppResult<HttpResponse> {
-    // Fetch export jobs and available formats/layers
-    let export_dashboard_data = handlers::ui::get_gis_export_dashboard_data().await?;
-    
-    // Render the GIS export dashboard template
-    let data = json!({
-        "title": "TerraFusion Platform - GIS Export",
-        "exports": export_dashboard_data.exports,
-        "available_counties": export_dashboard_data.available_counties,
-        "available_formats": export_dashboard_data.available_formats,
-        "user": export_dashboard_data.user,
+/// Sync dashboard
+async fn sync_dashboard(data: web::Data<AppState>) -> Result<HttpResponse> {
+    let template_data = json!({
+        "title": "Data Synchronization",
+        "service": "TerraFusion SyncService",
+        "version": "0.1.0",
+        "timestamp": chrono::Utc::now().to_rfc3339()
     });
-    
-    let body = hb.render("gis_export_dashboard", &data)
-        .map_err(AppError::from)?;
-    
-    Ok(HttpResponse::Ok().body(body))
-}
 
-/// Login page handler
-#[get("/login")]
-async fn login(
-    hb: web::Data<Arc<Handlebars<'_>>>,
-    req: HttpRequest,
-) -> AppResult<HttpResponse> {
-    // Render the login template
-    let data = json!({
-        "title": "TerraFusion Platform - Login",
-        "redirect_to": req.query_string(),
-    });
-    
-    let body = hb.render("login", &data)
-        .map_err(AppError::from)?;
-    
-    Ok(HttpResponse::Ok().body(body))
-}
+    let body = data.handlebars
+        .render("sync_dashboard", &template_data)
+        .map_err(|e| {
+            log::error!("Template rendering error: {}", e);
+            actix_web::error::ErrorInternalServerError("Template rendering failed")
+        })?;
 
-/// Configure all UI routes
-pub fn configure_routes(cfg: &mut web::ServiceConfig) {
-    cfg.service(index)
-       .service(dashboard)
-       .service(sync_dashboard)
-       .service(gis_export_dashboard)
-       .service(login);
+    Ok(HttpResponse::Ok().content_type("text/html").body(body))
 }
