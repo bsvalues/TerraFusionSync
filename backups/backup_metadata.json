@@ -318,5 +318,37 @@
     "file_size": 3936,
     "path": "backups/config_backup_20250527_225003.tar.gz",
     "created_at": "2025-05-27T22:50:03.340526"
+  },
+  {
+    "timestamp": "2025-05-28T16:47:07.272357",
+    "type": "files",
+    "filename": "files_backup_20250528_164707.tar.gz",
+    "file_size": 156205,
+    "path": "backups/files_backup_20250528_164707.tar.gz",
+    "created_at": "2025-05-28T16:47:07.272373"
+  },
+  {
+    "timestamp": "2025-05-28T16:47:07.277539",
+    "type": "config",
+    "filename": "config_backup_20250528_164707.tar.gz",
+    "file_size": 3936,
+    "path": "backups/config_backup_20250528_164707.tar.gz",
+    "created_at": "2025-05-28T16:47:07.277545"
+  },
+  {
+    "timestamp": "2025-05-28T16:49:20.456335",
+    "type": "files",
+    "filename": "files_backup_20250528_164920.tar.gz",
+    "file_size": 156205,
+    "path": "backups/files_backup_20250528_164920.tar.gz",
+    "created_at": "2025-05-28T16:49:20.456349"
+  },
+  {
+    "timestamp": "2025-05-28T16:49:20.459655",
+    "type": "config",
+    "filename": "config_backup_20250528_164920.tar.gz",
+    "file_size": 3936,
+    "path": "backups/config_backup_20250528_164920.tar.gz",
+    "created_at": "2025-05-28T16:49:20.459662"
   }
 ]
