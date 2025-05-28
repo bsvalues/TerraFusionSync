@@ -39,6 +39,14 @@ except ImportError as e:
     logger.warning(f"Public API extensions not available: {e}")
     PUBLIC_API_AVAILABLE = False
 
+# Import RBAC Manager
+try:
+    from rbac_manager import rbac_manager, require_role
+    RBAC_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"RBAC Manager not available: {e}")
+    RBAC_AVAILABLE = False
+
 # Initialize Flask app
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "terrafusion-dev-key")
@@ -474,6 +482,119 @@ if PUBLIC_API_AVAILABLE:
         logger.warning(f"Failed to register public API endpoints: {e}")
 else:
     logger.info("ℹ️  Running without public API extensions")
+
+# RBAC Admin Dashboard Route
+@app.route('/admin/rbac')
+def rbac_admin_dashboard():
+    """RBAC administration dashboard."""
+    return render_template('rbac_admin.html')
+
+# RBAC API Endpoints
+if RBAC_AVAILABLE:
+    @app.route('/api/rbac/users', methods=['GET'])
+    def rbac_list_users():
+        """List all users with optional filtering."""
+        county_id = request.args.get('county_id')
+        include_inactive = request.args.get('include_inactive', 'false').lower() == 'true'
+        
+        users = rbac_manager.list_users(county_id=county_id, include_inactive=include_inactive)
+        return jsonify({'success': True, 'users': users})
+
+    @app.route('/api/rbac/users', methods=['POST'])
+    def rbac_create_user():
+        """Create a new user."""
+        data = request.get_json()
+        result = rbac_manager.create_user(
+            username=data.get('username'),
+            email=data.get('email'),
+            password=data.get('password'),
+            role=data.get('role'),
+            county_id=data.get('county_id'),
+            admin_user_id=getattr(request, 'current_user', {}).get('id')
+        )
+        return jsonify(result)
+
+    @app.route('/api/rbac/users/<int:user_id>', methods=['PUT'])
+    def rbac_update_user(user_id):
+        """Update user details."""
+        data = request.get_json()
+        result = rbac_manager.update_user(
+            user_id=user_id,
+            updates=data,
+            admin_user_id=getattr(request, 'current_user', {}).get('id')
+        )
+        return jsonify(result)
+
+    @app.route('/api/rbac/users/<int:user_id>', methods=['DELETE'])
+    def rbac_delete_user(user_id):
+        """Delete (deactivate) a user."""
+        result = rbac_manager.delete_user(
+            user_id=user_id,
+            admin_user_id=getattr(request, 'current_user', {}).get('id')
+        )
+        return jsonify(result)
+
+    @app.route('/api/rbac/counties', methods=['GET'])
+    def rbac_list_counties():
+        """List available counties."""
+        try:
+            # Get counties from your existing county configuration
+            counties_data = [
+                {'id': 'benton_wa', 'name': 'Benton County, WA'},
+                {'id': 'franklin_wa', 'name': 'Franklin County, WA'},
+                {'id': 'yakima_wa', 'name': 'Yakima County, WA'}
+            ]
+            return jsonify({'success': True, 'counties': counties_data})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/rbac/audit-log', methods=['GET'])
+    def rbac_audit_log():
+        """Get audit log entries."""
+        try:
+            with rbac_manager.get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT action_type, target_user_id, target_username, 
+                               admin_user_id, admin_username, details, timestamp, ip_address
+                        FROM rbac_audit_log
+                        ORDER BY timestamp DESC
+                        LIMIT 50
+                    """)
+                    entries = [dict(row) for row in cur.fetchall()]
+                    return jsonify({'success': True, 'entries': entries})
+        except Exception as e:
+            logger.error(f"Failed to fetch audit log: {e}")
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/api/rbac/auth/login', methods=['POST'])
+    def rbac_login():
+        """Authenticate user and return JWT token."""
+        data = request.get_json()
+        result = rbac_manager.authenticate_user(
+            username=data.get('username'),
+            password=data.get('password')
+        )
+        return jsonify(result)
+
+    @app.route('/api/rbac/auth/verify', methods=['POST'])
+    def rbac_verify_token():
+        """Verify JWT token."""
+        data = request.get_json()
+        user = rbac_manager.verify_token(data.get('token'))
+        if user:
+            return jsonify({'success': True, 'user': user})
+        else:
+            return jsonify({'success': False, 'error': 'Invalid token'}), 401
+
+    # Initialize RBAC tables on startup
+    try:
+        rbac_manager.initialize_rbac_tables()
+        logger.info("✅ RBAC system initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize RBAC system: {e}")
+else:
+    logger.info("ℹ️  Running without RBAC management system")
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
