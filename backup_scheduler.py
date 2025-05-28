@@ -160,22 +160,21 @@ class BackupScheduler:
             env = os.environ.copy()
             env['PGPASSWORD'] = db_password
             
-            # Try to use PostgreSQL 16 pg_dump if available, fall back to default
-            pg_dump_cmd = 'pg_dump'
-            possible_paths = [
-                '/usr/lib/postgresql/16/bin/pg_dump',
-                '/usr/pgsql-16/bin/pg_dump', 
-                '/opt/postgresql/16/bin/pg_dump',
-                'pg_dump'
-            ]
+            # Use the correct PostgreSQL 16 pg_dump to match server version
+            pg_dump_cmd = '/nix/store/yz718sizpgsnq2y8gfv8bba8l8r4494l-postgresql-16.3/bin/pg_dump'
             
-            for path in possible_paths:
-                try:
-                    if subprocess.run(['which', path], capture_output=True, text=True).returncode == 0:
-                        pg_dump_cmd = path
-                        break
-                except:
-                    continue
+            # Verify the pg_dump version matches the server
+            try:
+                version_check = subprocess.run([pg_dump_cmd, '--version'], 
+                                             capture_output=True, text=True)
+                if version_check.returncode == 0:
+                    logger.info(f"Using pg_dump: {version_check.stdout.strip()}")
+                else:
+                    logger.warning("Could not verify pg_dump version, using default")
+                    pg_dump_cmd = 'pg_dump'
+            except Exception as e:
+                logger.warning(f"Error checking pg_dump version: {e}, using default")
+                pg_dump_cmd = 'pg_dump'
             
             cmd = [
                 pg_dump_cmd,
