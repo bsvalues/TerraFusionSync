@@ -1,0 +1,27 @@
+{
+  "package_name": "terrafusion_production_20250529_194040",
+  "version": "1.0.0",
+  "created_at": "2025-05-29T19:40:40.581272",
+  "description": "TerraFusion Platform Production Deployment Package",
+  "components": {
+    "api_gateway": "Flask-based API Gateway with RBAC and security",
+    "sync_service": "FastAPI-based PACS integration service",
+    "gis_export": "District-aware GIS export functionality",
+    "ai_engines": "NarratorAI and ExemptionSeer AI analysis",
+    "authentication": "Duo MFA and RBAC security system",
+    "monitoring": "Prometheus and Grafana monitoring",
+    "backup": "Automated backup and recovery system"
+  },
+  "requirements": {
+    "database": "PostgreSQL 12+ with county data",
+    "security": "Duo Security account for MFA",
+    "pacs": "County PACS API credentials",
+    "infrastructure": "Docker and Docker Compose"
+  },
+  "deployment_steps": [
+    "Configure .env file with county credentials",
+    "Run deployment script (deploy_windows.bat or deploy_linux.sh)",
+    "Validate deployment with terrafusion_deployment_validator.py",
+    "Access platform at http://localhost:5000"
+  ]
+}
