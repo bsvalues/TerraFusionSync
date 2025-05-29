@@ -355,7 +355,7 @@
                     window.location.href = '/district-lookup';
                     break;
                 case 'sync-pacs':
-                    showFeedback('⚠️ PACS sync requires configuration. Please contact your IT administrator to set up legacy system connections.', 'warning');
+                    window.location.href = '/pacs-sync';
                     break;
                 case 'system-health':
                     showFeedback('✅ System Status: All services operational. Database connected. AI services ready. Last backup: 1 hour ago.', 'success');
