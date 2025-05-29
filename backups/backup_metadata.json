@@ -582,5 +582,117 @@
     "file_size": 4076,
     "path": "backups/config_backup_20250529_025616.tar.gz",
     "created_at": "2025-05-29T02:56:16.388759"
+  },
+  {
+    "timestamp": "2025-05-29T03:56:20.229662",
+    "type": "database",
+    "filename": "database_backup_20250529_035616.sql.gz",
+    "file_size": 60476,
+    "path": "backups/database_backup_20250529_035616.sql.gz",
+    "created_at": "2025-05-29T03:56:20.229676"
+  },
+  {
+    "timestamp": "2025-05-29T04:56:23.934054",
+    "type": "database",
+    "filename": "database_backup_20250529_045620.sql.gz",
+    "file_size": 60476,
+    "path": "backups/database_backup_20250529_045620.sql.gz",
+    "created_at": "2025-05-29T04:56:23.934070"
+  },
+  {
+    "timestamp": "2025-05-29T05:56:27.431825",
+    "type": "database",
+    "filename": "database_backup_20250529_055624.sql.gz",
+    "file_size": 60477,
+    "path": "backups/database_backup_20250529_055624.sql.gz",
+    "created_at": "2025-05-29T05:56:27.431836"
+  },
+  {
+    "timestamp": "2025-05-29T06:56:31.149838",
+    "type": "database",
+    "filename": "database_backup_20250529_065627.sql.gz",
+    "file_size": 60476,
+    "path": "backups/database_backup_20250529_065627.sql.gz",
+    "created_at": "2025-05-29T06:56:31.149849"
+  },
+  {
+    "timestamp": "2025-05-29T07:56:34.384266",
+    "type": "database",
+    "filename": "database_backup_20250529_075631.sql.gz",
+    "file_size": 60476,
+    "path": "backups/database_backup_20250529_075631.sql.gz",
+    "created_at": "2025-05-29T07:56:34.384284"
+  },
+  {
+    "timestamp": "2025-05-29T08:56:37.867760",
+    "type": "database",
+    "filename": "database_backup_20250529_085634.sql.gz",
+    "file_size": 60476,
+    "path": "backups/database_backup_20250529_085634.sql.gz",
+    "created_at": "2025-05-29T08:56:37.867774"
+  },
+  {
+    "timestamp": "2025-05-29T08:56:38.313866",
+    "type": "files",
+    "filename": "files_backup_20250529_085637.tar.gz",
+    "file_size": 172029,
+    "path": "backups/files_backup_20250529_085637.tar.gz",
+    "created_at": "2025-05-29T08:56:38.313878"
+  },
+  {
+    "timestamp": "2025-05-29T09:56:42.549493",
+    "type": "database",
+    "filename": "database_backup_20250529_095638.sql.gz",
+    "file_size": 60476,
+    "path": "backups/database_backup_20250529_095638.sql.gz",
+    "created_at": "2025-05-29T09:56:42.549506"
+  },
+  {
+    "timestamp": "2025-05-29T10:56:46.279346",
+    "type": "database",
+    "filename": "database_backup_20250529_105642.sql.gz",
+    "file_size": 60477,
+    "path": "backups/database_backup_20250529_105642.sql.gz",
+    "created_at": "2025-05-29T10:56:46.279358"
+  },
+  {
+    "timestamp": "2025-05-29T11:56:50.189048",
+    "type": "database",
+    "filename": "database_backup_20250529_115646.sql.gz",
+    "file_size": 60476,
+    "path": "backups/database_backup_20250529_115646.sql.gz",
+    "created_at": "2025-05-29T11:56:50.189062"
+  },
+  {
+    "timestamp": "2025-05-29T12:57:01.852845",
+    "type": "database",
+    "filename": "database_backup_20250529_125650.sql.gz",
+    "file_size": 60477,
+    "path": "backups/database_backup_20250529_125650.sql.gz",
+    "created_at": "2025-05-29T12:57:01.852857"
+  },
+  {
+    "timestamp": "2025-05-29T13:57:09.117615",
+    "type": "database",
+    "filename": "database_backup_20250529_135701.sql.gz",
+    "file_size": 60475,
+    "path": "backups/database_backup_20250529_135701.sql.gz",
+    "created_at": "2025-05-29T13:57:09.117626"
+  },
+  {
+    "timestamp": "2025-05-29T14:57:12.909752",
+    "type": "database",
+    "filename": "database_backup_20250529_145709.sql.gz",
+    "file_size": 60476,
+    "path": "backups/database_backup_20250529_145709.sql.gz",
+    "created_at": "2025-05-29T14:57:12.909764"
+  },
+  {
+    "timestamp": "2025-05-29T14:57:13.035589",
+    "type": "files",
+    "filename": "files_backup_20250529_145712.tar.gz",
+    "file_size": 172029,
+    "path": "backups/files_backup_20250529_145712.tar.gz",
+    "created_at": "2025-05-29T14:57:13.035602"
   }
 ]
