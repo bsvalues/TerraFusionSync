@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PACS Integration Dashboard - TerraFusion</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    
+    <style>
+        .sync-status-card {
+            transition: all 0.3s ease;
+        }
+        
+        .sync-status-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        .connection-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        
+        .connection-active { background-color: #28a745; }
+        .connection-error { background-color: #dc3545; }
+        .connection-warning { background-color: #ffc107; }
+        
+        .data-flow-diagram {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        
+        .entity-box {
+            background: white;
+            border: 2px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            margin: 10px;
+            min-height: 100px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        
+        .sync-arrow {
+            font-size: 2rem;
+            color: #6f42c1;
+            align-self: center;
+        }
+        
+        .progress-ring {
+            width: 60px;
+            height: 60px;
+            margin: 10px auto;
+        }
+        
+        .progress-ring-circle {
+            stroke: #e9ecef;
+            stroke-width: 4;
+            fill: transparent;
+        }
+        
+        .progress-ring-progress {
+            stroke: #28a745;
+            stroke-width: 4;
+            fill: transparent;
+            stroke-linecap: round;
+            transition: stroke-dasharray 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+        <div class="container-fluid">
+            <a class="navbar-brand fw-bold" href="/">
+                <i class="bi bi-arrow-repeat me-2"></i>PACS Integration
+            </a>
+            <div class="navbar-text text-white">
+                <small>Benton County, WA • Legacy System Sync</small>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Breadcrumb -->
+    <div class="container-fluid mt-3">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/">Dashboard</a></li>
+                <li class="breadcrumb-item"><span class="text-warning">🟡</span> System Tools</li>
+                <li class="breadcrumb-item active">PACS Integration</li>
+            </ol>
+        </nav>
+    </div>
+
+    <!-- Main Content -->
+    <div class="container-fluid py-4">
+        <!-- Header -->
+        <div class="row mb-4">
+            <div class="col-lg-8">
+                <h1 class="display-6 mb-2">
+                    <i class="bi bi-database me-3 text-primary"></i>PACS System Integration
+                </h1>
+                <p class="lead text-muted">Property Assessment & Collection System synchronization for Benton County</p>
+            </div>
+            <div class="col-lg-4 text-end">
+                <button class="btn btn-primary btn-lg" onclick="testConnection()">
+                    <i class="bi bi-wifi me-2"></i>Test Connection
+                </button>
+            </div>
+        </div>
+
+        <!-- Connection Status Cards -->
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="card sync-status-card border-0 shadow-sm">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <h6 class="card-subtitle mb-2 text-muted">
+                                    <span class="connection-indicator connection-error"></span>
+                                    PACS Database
+                                </h6>
+                                <h4 class="card-title text-danger mb-0">Not Connected</h4>
+                                <small class="text-muted">Requires credentials</small>
+                            </div>
+                            <div class="text-danger">
+                                <i class="bi bi-database-x fs-2"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="card sync-status-card border-0 shadow-sm">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <h6 class="card-subtitle mb-2 text-muted">
+                                    <span class="connection-indicator connection-active"></span>
+                                    TerraFusion DB
+                                </h6>
+                                <h4 class="card-title text-success mb-0">Connected</h4>
+                                <small class="text-muted">Ready to receive data</small>
+                            </div>
+                            <div class="text-success">
+                                <i class="bi bi-database-check fs-2"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="card sync-status-card border-0 shadow-sm">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <h6 class="card-subtitle mb-2 text-muted">Last Sync</h6>
+                                <h4 class="card-title mb-0">Never</h4>
+                                <small class="text-muted">No sync jobs completed</small>
+                            </div>
+                            <div class="text-secondary">
+                                <i class="bi bi-clock-history fs-2"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Flow Diagram -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">
+                            <i class="bi bi-diagram-3 me-2"></i>PACS Data Flow Architecture
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="data-flow-diagram">
+                            <div class="row align-items-center">
+                                <div class="col-md-3">
+                                    <div class="entity-box border-primary">
+                                        <i class="bi bi-server text-primary fs-1 mb-2"></i>
+                                        <h6>PACS Database</h6>
+                                        <small class="text-muted">SQL Server</small>
+                                        <div class="mt-2">
+                                            <span class="badge bg-danger">Disconnected</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-1 text-center">
+                                    <i class="bi bi-arrow-right sync-arrow"></i>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="entity-box border-info">
+                                        <i class="bi bi-cpu text-info fs-1 mb-2"></i>
+                                        <h6>TerraFusion Sync</h6>
+                                        <small class="text-muted">Processing Engine</small>
+                                        <div class="mt-2">
+                                            <span class="badge bg-success">Ready</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-1 text-center">
+                                    <i class="bi bi-arrow-right sync-arrow"></i>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="entity-box border-success">
+                                        <i class="bi bi-cloud-check text-success fs-1 mb-2"></i>
+                                        <h6>TerraFusion DB</h6>
+                                        <small class="text-muted">PostgreSQL</small>
+                                        <div class="mt-2">
+                                            <span class="badge bg-success">Connected</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Entity Sync Status -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">
+                            <i class="bi bi-table me-2"></i>Entity Synchronization Status
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6 col-lg-3 mb-3">
+                                <div class="card h-100 border-primary">
+                                    <div class="card-body text-center">
+                                        <div class="progress-ring">
+                                            <svg class="progress-ring" width="60" height="60">
+                                                <circle class="progress-ring-circle" cx="30" cy="30" r="26"></circle>
+                                                <circle class="progress-ring-progress" cx="30" cy="30" r="26" 
+                                                        stroke-dasharray="0 163.4" transform="rotate(-90 30 30)"></circle>
+                                            </svg>
+                                        </div>
+                                        <h6 class="card-title text-primary">Properties</h6>
+                                        <p class="card-text mb-0">0 / ~12,400</p>
+                                        <small class="text-muted">Parcels synced</small>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-6 col-lg-3 mb-3">
+                                <div class="card h-100 border-success">
+                                    <div class="card-body text-center">
+                                        <div class="progress-ring">
+                                            <svg class="progress-ring" width="60" height="60">
+                                                <circle class="progress-ring-circle" cx="30" cy="30" r="26"></circle>
+                                                <circle class="progress-ring-progress" cx="30" cy="30" r="26" 
+                                                        stroke-dasharray="0 163.4" transform="rotate(-90 30 30)"></circle>
+                                            </svg>
+                                        </div>
+                                        <h6 class="card-title text-success">Owners</h6>
+                                        <p class="card-text mb-0">0 / ~18,600</p>
+                                        <small class="text-muted">Owner records</small>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-6 col-lg-3 mb-3">
+                                <div class="card h-100 border-warning">
+                                    <div class="card-body text-center">
+                                        <div class="progress-ring">
+                                            <svg class="progress-ring" width="60" height="60">
+                                                <circle class="progress-ring-circle" cx="30" cy="30" r="26"></circle>
+                                                <circle class="progress-ring-progress" cx="30" cy="30" r="26" 
+                                                        stroke-dasharray="0 163.4" transform="rotate(-90 30 30)"></circle>
+                                            </svg>
+                                        </div>
+                                        <h6 class="card-title text-warning">Valuations</h6>
+                                        <p class="card-text mb-0">0 / ~62,000</p>
+                                        <small class="text-muted">Value records</small>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-6 col-lg-3 mb-3">
+                                <div class="card h-100 border-info">
+                                    <div class="card-body text-center">
+                                        <div class="progress-ring">
+                                            <svg class="progress-ring" width="60" height="60">
+                                                <circle class="progress-ring-circle" cx="30" cy="30" r="26"></circle>
+                                                <circle class="progress-ring-progress" cx="30" cy="30" r="26" 
+                                                        stroke-dasharray="0 163.4" transform="rotate(-90 30 30)"></circle>
+                                            </svg>
+                                        </div>
+                                        <h6 class="card-title text-info">Structures</h6>
+                                        <p class="card-text mb-0">0 / ~14,800</p>
+                                        <small class="text-muted">Building records</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Configuration Setup -->
+        <div class="row mb-4">
+            <div class="col-lg-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">
+                            <i class="bi bi-gear me-2"></i>PACS Connection Configuration
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="pacsConfigForm">
+                            <div class="mb-3">
+                                <label for="pacsHost" class="form-label">PACS Server Host</label>
+                                <input type="text" class="form-control" id="pacsHost" 
+                                       placeholder="pacs-server.benton.co.wa.us">
+                            </div>
+                            <div class="mb-3">
+                                <label for="pacsDatabase" class="form-label">Database Name</label>
+                                <input type="text" class="form-control" id="pacsDatabase" 
+                                       placeholder="PACS_Production">
+                            </div>
+                            <div class="mb-3">
+                                <label for="pacsUser" class="form-label">Database User</label>
+                                <input type="text" class="form-control" id="pacsUser" 
+                                       placeholder="terrafusion_sync_user">
+                            </div>
+                            <div class="mb-3">
+                                <label for="pacsPassword" class="form-label">Password</label>
+                                <input type="password" class="form-control" id="pacsPassword" 
+                                       placeholder="Enter database password">
+                            </div>
+                            <div class="d-grid gap-2">
+                                <button type="button" class="btn btn-primary" onclick="testPACSConnection()">
+                                    <i class="bi bi-wifi me-2"></i>Test Connection
+                                </button>
+                                <button type="button" class="btn btn-success" onclick="savePACSConfig()" disabled>
+                                    <i class="bi bi-check2 me-2"></i>Save Configuration
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">
+                            <i class="bi bi-clock me-2"></i>Sync Schedule Configuration
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">Sync Frequency</label>
+                            <select class="form-select">
+                                <option value="daily" selected>Daily at 2:00 AM</option>
+                                <option value="hourly">Every Hour</option>
+                                <option value="manual">Manual Only</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Batch Size</label>
+                            <select class="form-select">
+                                <option value="50">50 records (Conservative)</option>
+                                <option value="100" selected>100 records (Recommended)</option>
+                                <option value="500">500 records (Aggressive)</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="enableCDC" checked>
+                                <label class="form-check-label" for="enableCDC">
+                                    Enable Change Data Capture (CDC)
+                                </label>
+                            </div>
+                        </div>
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <small>CDC only syncs changed records, improving performance and reducing network usage.</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Manual Sync Controls -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">
+                            <i class="bi bi-play-circle me-2"></i>Manual Sync Operations
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-3 mb-3">
+                                <div class="d-grid">
+                                    <button class="btn btn-primary" onclick="startFullSync()" disabled>
+                                        <i class="bi bi-download me-2"></i>Full Sync
+                                    </button>
+                                    <small class="text-muted mt-1">Sync all PACS data</small>
+                                </div>
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <div class="d-grid">
+                                    <button class="btn btn-success" onclick="startIncrementalSync()" disabled>
+                                        <i class="bi bi-arrow-clockwise me-2"></i>Incremental Sync
+                                    </button>
+                                    <small class="text-muted mt-1">Sync recent changes only</small>
+                                </div>
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <div class="d-grid">
+                                    <button class="btn btn-info" onclick="validateData()" disabled>
+                                        <i class="bi bi-check-circle me-2"></i>Validate Data
+                                    </button>
+                                    <small class="text-muted mt-1">Check data integrity</small>
+                                </div>
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <div class="d-grid">
+                                    <button class="btn btn-warning" onclick="viewSyncLogs()">
+                                        <i class="bi bi-journal-text me-2"></i>View Logs
+                                    </button>
+                                    <small class="text-muted mt-1">Review sync history</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-warning mt-3" style="display: none;" id="syncAlert">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            PACS connection must be configured before running sync operations.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        function testConnection() {
+            // Show the sync alert
+            document.getElementById('syncAlert').style.display = 'block';
+            document.getElementById('syncAlert').innerHTML = 
+                '<i class="bi bi-info-circle me-2"></i>Please configure PACS database credentials to test connection.';
+        }
+        
+        function testPACSConnection() {
+            const form = document.getElementById('pacsConfigForm');
+            const inputs = form.querySelectorAll('input');
+            let allFilled = true;
+            
+            inputs.forEach(input => {
+                if (!input.value.trim()) {
+                    allFilled = false;
+                    input.classList.add('is-invalid');
+                } else {
+                    input.classList.remove('is-invalid');
+                }
+            });
+            
+            if (!allFilled) {
+                alert('Please fill in all database connection fields.');
+                return;
+            }
+            
+            // Simulate connection test
+            alert('Connection test would be performed here with actual PACS credentials.');
+        }
+        
+        function savePACSConfig() {
+            alert('PACS configuration would be saved here.');
+        }
+        
+        function startFullSync() {
+            alert('Full PACS sync would be initiated here.');
+        }
+        
+        function startIncrementalSync() {
+            alert('Incremental PACS sync would be initiated here.');
+        }
+        
+        function validateData() {
+            alert('Data validation would be performed here.');
+        }
+        
+        function viewSyncLogs() {
+            window.open('/admin/sync-logs', '_blank');
+        }
+        
+        // Show alert on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('syncAlert').style.display = 'block';
+        });
+    </script>
+</body>
+</html>

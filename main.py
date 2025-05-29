@@ -129,6 +129,11 @@ def district_lookup_dashboard():
     """District lookup dashboard view."""
     return render_template('district_lookup_dashboard.html')
 
+@app.route('/pacs-sync')
+def pacs_sync_dashboard():
+    """PACS integration dashboard view."""
+    return render_template('pacs_sync_dashboard.html')
+
 @app.route('/health')
 def health_check():
     """Health check endpoint."""
