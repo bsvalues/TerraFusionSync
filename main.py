@@ -71,7 +71,7 @@ def index():
 @app.route('/dashboard')
 def dashboard():
     """Main dashboard view."""
-    return render_template('dashboard_working.html')
+    return render_template('unified_dashboard.html')
 
 @app.route('/admin')
 def admin_panel():
