@@ -1,0 +1,52 @@
+{
+  "report_id": "benton_001_2025_20250529",
+  "district_id": "benton_001",
+  "district_name": "Benton County District 1",
+  "report_period": "Calendar Year 2025",
+  "generation_date": "2025-05-29T19:19:54.249998",
+  "executive_summary": "Insufficient data for executive summary generation.",
+  "key_metrics": {
+    "total_assessed_value": 0,
+    "property_count": 0,
+    "exemption_total": 0,
+    "pilt_total": 2450000.0,
+    "yoy_change": 0
+  },
+  "valuation_trends": [],
+  "exemption_analysis": [],
+  "pilt_analysis": [
+    {
+      "year": 2025,
+      "district_id": "benton_001",
+      "total_pilt_payments": 2450000.0,
+      "pilt_property_count": 45,
+      "pilt_percentage_of_total": 12.5,
+      "major_pilt_categories": {
+        "Federal": 1800000.0,
+        "State": 450000.0,
+        "Non-profit": 200000.0
+      },
+      "trend_analysis": "PILT payments increased 8.2% from previous year, primarily due to federal land valuation adjustments"
+    }
+  ],
+  "recommendations": [
+    "Engage with PILT property managers to ensure optimal revenue collection"
+  ],
+  "supporting_data": {
+    "valuation_statistics": {
+      "five_year_avg_change": 0,
+      "total_properties": 0,
+      "exemption_ratio": 0
+    },
+    "exemption_statistics": {
+      "total_exemption_value": 0,
+      "avg_processing_time": 0,
+      "exemption_categories": 0
+    },
+    "data_quality_metrics": {
+      "completeness": 98.5,
+      "accuracy": 99.2,
+      "timeliness": 95.8
+    }
+  }
+}
