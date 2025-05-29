@@ -1,0 +1,206 @@
+{
+  "county_info": {
+    "id": "benton-wa",
+    "name": "Benton County",
+    "state": "Washington",
+    "website": "https://www.co.benton.wa.us/",
+    "assessor_office": {
+      "name": "Benton County Assessor",
+      "phone": "(509) 736-3085",
+      "email": "assessor@co.benton.wa.us",
+      "address": "620 Market Street, Prosser, WA 99350"
+    }
+  },
+  "deployment_config": {
+    "environment": "production",
+    "deployment_date": "2025-05-29",
+    "version": "1.0.0",
+    "deployment_id": "benton-wa-prod-001"
+  },
+  "services": {
+    "api_gateway": {
+      "enabled": true,
+      "port": 5000,
+      "host": "0.0.0.0",
+      "debug": false
+    },
+    "gis_export": {
+      "enabled": true,
+      "storage_path": "exports/benton_wa",
+      "supported_formats": ["shapefile", "geojson", "kml", "csv", "geopackage"],
+      "max_export_size_mb": 500
+    },
+    "district_lookup": {
+      "enabled": true,
+      "data_source": "benton_wa_districts.json",
+      "voting_precincts": 12,
+      "fire_districts": 2,
+      "school_districts": 2
+    },
+    "narrator_ai": {
+      "enabled": true,
+      "model": "llama3.2:3b",
+      "ollama_url": "http://localhost:11434",
+      "fallback_mode": "template"
+    },
+    "exemption_seer": {
+      "enabled": true,
+      "confidence_threshold": 0.8,
+      "audit_high_value_threshold": 50000,
+      "auto_flag_unusual_codes": true
+    },
+    "backup_system": {
+      "enabled": true,
+      "schedule": "hourly",
+      "retention_days": 30,
+      "compression": true,
+      "backup_types": ["database", "files", "configuration"]
+    }
+  },
+  "rbac_configuration": {
+    "roles": {
+      "assessor_admin": {
+        "name": "Assessor Administrator",
+        "permissions": ["read", "write", "admin", "audit"],
+        "description": "Full access to all assessment functions"
+      },
+      "assessor_staff": {
+        "name": "Assessor Staff",
+        "permissions": ["read", "write"],
+        "description": "Standard assessor operations"
+      },
+      "it_admin": {
+        "name": "IT Administrator", 
+        "permissions": ["read", "write", "admin", "system"],
+        "description": "System administration and maintenance"
+      },
+      "auditor": {
+        "name": "County Auditor",
+        "permissions": ["read", "audit"],
+        "description": "Read-only access with audit capabilities"
+      },
+      "public_read": {
+        "name": "Public Access",
+        "permissions": ["read"],
+        "description": "Public transparency portal access"
+      }
+    },
+    "default_users": [
+      {
+        "username": "benton_assessor",
+        "role": "assessor_admin",
+        "email": "assessor@co.benton.wa.us",
+        "active": true
+      },
+      {
+        "username": "benton_it",
+        "role": "it_admin", 
+        "email": "it@co.benton.wa.us",
+        "active": true
+      },
+      {
+        "username": "public_portal",
+        "role": "public_read",
+        "email": "portal@co.benton.wa.us",
+        "active": true
+      }
+    ]
+  },
+  "public_transparency": {
+    "enabled": true,
+    "public_endpoints": [
+      "/api/v1/district-lookup/districts",
+      "/api/v1/district-lookup/coordinates",
+      "/api/v1/district-lookup/address",
+      "/health"
+    ],
+    "dashboard_access": {
+      "main_dashboard": true,
+      "district_lookup": true,
+      "gis_export_status": true,
+      "ai_analysis_demo": false
+    },
+    "data_masking": {
+      "hide_personal_info": true,
+      "mask_exemption_details": true,
+      "show_aggregate_stats": true
+    }
+  },
+  "monitoring": {
+    "prometheus": {
+      "enabled": true,
+      "port": 9090,
+      "scrape_interval": "15s"
+    },
+    "grafana": {
+      "enabled": true,
+      "port": 3000,
+      "default_dashboards": ["system_overview", "service_health", "transparency_metrics"]
+    },
+    "alerts": {
+      "email_notifications": true,
+      "alert_recipients": ["it@co.benton.wa.us"],
+      "critical_service_down": true,
+      "high_resource_usage": true,
+      "backup_failures": true
+    }
+  },
+  "integration": {
+    "legacy_systems": {
+      "pacs_connection": {
+        "enabled": false,
+        "connection_string": "placeholder",
+        "sync_schedule": "daily"
+      },
+      "gis_system": {
+        "enabled": false,
+        "data_source": "placeholder",
+        "import_schedule": "weekly"
+      }
+    },
+    "external_apis": {
+      "washington_state_data": {
+        "enabled": false,
+        "api_key": "placeholder",
+        "sync_frequency": "monthly"
+      }
+    }
+  },
+  "security": {
+    "session_timeout_minutes": 120,
+    "password_policy": {
+      "min_length": 12,
+      "require_uppercase": true,
+      "require_lowercase": true,
+      "require_numbers": true,
+      "require_symbols": true
+    },
+    "audit_logging": {
+      "enabled": true,
+      "log_all_access": true,
+      "log_data_changes": true,
+      "retention_days": 365
+    },
+    "encryption": {
+      "data_at_rest": true,
+      "data_in_transit": true,
+      "key_rotation_days": 90
+    }
+  },
+  "performance": {
+    "database": {
+      "connection_pool_size": 20,
+      "query_timeout_seconds": 30,
+      "backup_window": "02:00-04:00"
+    },
+    "caching": {
+      "enabled": true,
+      "district_lookup_cache_hours": 24,
+      "gis_export_cache_hours": 2
+    },
+    "rate_limiting": {
+      "api_requests_per_minute": 100,
+      "public_requests_per_minute": 50
+    }
+  }
+}
