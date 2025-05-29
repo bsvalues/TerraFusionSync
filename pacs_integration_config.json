@@ -1,0 +1,496 @@
+{
+  "pacs_integration": {
+    "version": "1.0.0",
+    "release_date": "2025-05-29",
+    "description": "TerraFusion PACS Integration Configuration",
+    "supported_pacs_versions": [
+      "PACS 2012+",
+      "Tyler PACS",
+      "Patriot Assessment System",
+      "CAMA Systems with SQL Server"
+    ]
+  },
+  "database_configuration": {
+    "connection_parameters": {
+      "driver": "ODBC Driver 17 for SQL Server",
+      "host": {
+        "environment_variable": "PACS_DB_HOST",
+        "description": "PACS SQL Server hostname or IP address",
+        "example": "pacs-server.county.gov",
+        "required": true
+      },
+      "port": {
+        "environment_variable": "PACS_DB_PORT",
+        "description": "SQL Server port number",
+        "default": 1433,
+        "required": false
+      },
+      "database": {
+        "environment_variable": "PACS_DB_NAME",
+        "description": "PACS database name",
+        "example": "PACS_Production",
+        "required": true
+      },
+      "username": {
+        "environment_variable": "PACS_DB_USER",
+        "description": "Database username with read access",
+        "example": "terrafusion_sync_user",
+        "required": true
+      },
+      "password": {
+        "environment_variable": "PACS_DB_PASSWORD",
+        "description": "Database password (encrypted)",
+        "required": true,
+        "security_note": "Store securely, never log in plaintext"
+      }
+    },
+    "connection_pooling": {
+      "pool_size": 10,
+      "max_connections": 20,
+      "connection_timeout_seconds": 30,
+      "idle_timeout_seconds": 300,
+      "retry_attempts": 3,
+      "retry_delay_seconds": 5
+    },
+    "security": {
+      "encryption": true,
+      "tls_version": "1.2",
+      "certificate_validation": true,
+      "trust_server_certificate": false
+    }
+  },
+  "entity_configuration": {
+    "properties": {
+      "table_name": "Property",
+      "primary_key": "PropertyID",
+      "business_key": "ParcelNumber",
+      "change_tracking_field": "LastModified",
+      "active_flag_field": "IsActive",
+      "estimated_record_count": 12400,
+      "fields": {
+        "PropertyID": {
+          "data_type": "UNIQUEIDENTIFIER",
+          "nullable": false,
+          "description": "Unique property identifier"
+        },
+        "ParcelNumber": {
+          "data_type": "VARCHAR(50)",
+          "nullable": false,
+          "indexed": true,
+          "description": "County parcel number"
+        },
+        "Address": {
+          "data_type": "VARCHAR(255)",
+          "nullable": true,
+          "description": "Property street address"
+        },
+        "City": {
+          "data_type": "VARCHAR(100)",
+          "nullable": true,
+          "description": "Property city"
+        },
+        "State": {
+          "data_type": "VARCHAR(2)",
+          "nullable": true,
+          "description": "Property state abbreviation"
+        },
+        "ZipCode": {
+          "data_type": "VARCHAR(10)",
+          "nullable": true,
+          "description": "Property ZIP code"
+        },
+        "LegalDescription": {
+          "data_type": "TEXT",
+          "nullable": true,
+          "description": "Legal property description"
+        },
+        "Acreage": {
+          "data_type": "FLOAT",
+          "nullable": true,
+          "description": "Property acreage"
+        },
+        "YearBuilt": {
+          "data_type": "INTEGER",
+          "nullable": true,
+          "description": "Year property was built"
+        },
+        "LastModified": {
+          "data_type": "DATETIME",
+          "nullable": false,
+          "indexed": true,
+          "description": "Last modification timestamp"
+        },
+        "IsActive": {
+          "data_type": "BIT",
+          "nullable": false,
+          "default": true,
+          "description": "Active record flag"
+        }
+      }
+    },
+    "owners": {
+      "table_name": "PropertyOwner",
+      "primary_key": "OwnerID",
+      "foreign_key": "PropertyID",
+      "change_tracking_field": "LastModified",
+      "estimated_record_count": 18600,
+      "fields": {
+        "OwnerID": {
+          "data_type": "UNIQUEIDENTIFIER",
+          "nullable": false,
+          "description": "Unique owner record identifier"
+        },
+        "PropertyID": {
+          "data_type": "UNIQUEIDENTIFIER",
+          "nullable": false,
+          "foreign_key": "Property.PropertyID",
+          "description": "Reference to property"
+        },
+        "OwnerName": {
+          "data_type": "VARCHAR(255)",
+          "nullable": false,
+          "description": "Owner full name"
+        },
+        "OwnerType": {
+          "data_type": "VARCHAR(50)",
+          "nullable": true,
+          "description": "Owner type (Individual, Corporation, etc.)"
+        },
+        "OwnershipPercentage": {
+          "data_type": "FLOAT",
+          "nullable": true,
+          "description": "Percentage of ownership"
+        },
+        "StartDate": {
+          "data_type": "DATETIME",
+          "nullable": true,
+          "description": "Ownership start date"
+        },
+        "EndDate": {
+          "data_type": "DATETIME",
+          "nullable": true,
+          "description": "Ownership end date"
+        },
+        "LastModified": {
+          "data_type": "DATETIME",
+          "nullable": false,
+          "indexed": true,
+          "description": "Last modification timestamp"
+        }
+      }
+    },
+    "valuations": {
+      "table_name": "PropertyValue",
+      "primary_key": "ValueID",
+      "foreign_key": "PropertyID",
+      "change_tracking_field": "LastModified",
+      "estimated_record_count": 62000,
+      "fields": {
+        "ValueID": {
+          "data_type": "UNIQUEIDENTIFIER",
+          "nullable": false,
+          "description": "Unique valuation record identifier"
+        },
+        "PropertyID": {
+          "data_type": "UNIQUEIDENTIFIER",
+          "nullable": false,
+          "foreign_key": "Property.PropertyID",
+          "description": "Reference to property"
+        },
+        "TaxYear": {
+          "data_type": "INTEGER",
+          "nullable": false,
+          "description": "Tax assessment year"
+        },
+        "AssessedValue": {
+          "data_type": "FLOAT",
+          "nullable": true,
+          "description": "Total assessed value"
+        },
+        "MarketValue": {
+          "data_type": "FLOAT",
+          "nullable": true,
+          "description": "Estimated market value"
+        },
+        "LandValue": {
+          "data_type": "FLOAT",
+          "nullable": true,
+          "description": "Land portion value"
+        },
+        "ImprovementValue": {
+          "data_type": "FLOAT",
+          "nullable": true,
+          "description": "Improvement portion value"
+        },
+        "LastModified": {
+          "data_type": "DATETIME",
+          "nullable": false,
+          "indexed": true,
+          "description": "Last modification timestamp"
+        }
+      }
+    },
+    "structures": {
+      "table_name": "Structure",
+      "primary_key": "StructureID",
+      "foreign_key": "PropertyID",
+      "change_tracking_field": "LastModified",
+      "estimated_record_count": 14800,
+      "fields": {
+        "StructureID": {
+          "data_type": "UNIQUEIDENTIFIER",
+          "nullable": false,
+          "description": "Unique structure record identifier"
+        },
+        "PropertyID": {
+          "data_type": "UNIQUEIDENTIFIER",
+          "nullable": false,
+          "foreign_key": "Property.PropertyID",
+          "description": "Reference to property"
+        },
+        "StructureType": {
+          "data_type": "VARCHAR(100)",
+          "nullable": false,
+          "description": "Type of structure (Residential, Commercial, etc.)"
+        },
+        "SquareFootage": {
+          "data_type": "FLOAT",
+          "nullable": true,
+          "description": "Building square footage"
+        },
+        "Condition": {
+          "data_type": "VARCHAR(50)",
+          "nullable": true,
+          "description": "Structure condition rating"
+        },
+        "YearBuilt": {
+          "data_type": "INTEGER",
+          "nullable": true,
+          "description": "Year structure was built"
+        },
+        "Bedrooms": {
+          "data_type": "INTEGER",
+          "nullable": true,
+          "description": "Number of bedrooms"
+        },
+        "Bathrooms": {
+          "data_type": "FLOAT",
+          "nullable": true,
+          "description": "Number of bathrooms"
+        },
+        "LastModified": {
+          "data_type": "DATETIME",
+          "nullable": false,
+          "indexed": true,
+          "description": "Last modification timestamp"
+        }
+      }
+    }
+  },
+  "sync_configuration": {
+    "schedules": {
+      "full_sync": {
+        "cron_expression": "0 2 * * SUN",
+        "description": "Weekly full sync on Sunday at 2 AM",
+        "enabled": true,
+        "timeout_minutes": 240
+      },
+      "incremental_sync": {
+        "cron_expression": "0 2 * * MON-SAT",
+        "description": "Daily incremental sync at 2 AM",
+        "enabled": true,
+        "timeout_minutes": 60
+      },
+      "manual_sync": {
+        "enabled": true,
+        "max_concurrent_jobs": 1,
+        "timeout_minutes": 120
+      }
+    },
+    "batch_processing": {
+      "default_batch_size": 100,
+      "max_batch_size": 1000,
+      "min_batch_size": 10,
+      "parallel_workers": 3,
+      "memory_limit_mb": 512
+    },
+    "error_handling": {
+      "max_retry_attempts": 3,
+      "retry_delay_seconds": [30, 60, 120],
+      "failure_notification_threshold": 5,
+      "skip_corrupted_records": false,
+      "log_level": "INFO"
+    },
+    "data_validation": {
+      "enable_field_validation": true,
+      "enable_business_rules": true,
+      "enable_referential_integrity": true,
+      "max_validation_errors": 100,
+      "validation_timeout_seconds": 300
+    }
+  },
+  "monitoring_configuration": {
+    "metrics": {
+      "collection_interval_seconds": 60,
+      "retention_days": 30,
+      "aggregation_intervals": ["1m", "5m", "1h", "1d"],
+      "enabled_metrics": [
+        "sync_job_duration",
+        "records_processed_per_second",
+        "error_rate",
+        "database_connection_count",
+        "memory_usage",
+        "cpu_usage"
+      ]
+    },
+    "alerts": {
+      "sync_failure": {
+        "enabled": true,
+        "threshold": 1,
+        "notification_channels": ["email", "dashboard"]
+      },
+      "high_error_rate": {
+        "enabled": true,
+        "threshold_percentage": 5,
+        "time_window_minutes": 15,
+        "notification_channels": ["email"]
+      },
+      "performance_degradation": {
+        "enabled": true,
+        "threshold_factor": 2,
+        "baseline_window_hours": 24,
+        "notification_channels": ["dashboard"]
+      }
+    },
+    "logging": {
+      "log_level": "INFO",
+      "log_rotation_size_mb": 100,
+      "log_retention_days": 30,
+      "include_sql_queries": false,
+      "mask_sensitive_data": true
+    }
+  },
+  "security_configuration": {
+    "authentication": {
+      "method": "database",
+      "require_encrypted_connection": true,
+      "connection_timeout_seconds": 30,
+      "idle_timeout_minutes": 15
+    },
+    "authorization": {
+      "required_permissions": ["SELECT"],
+      "restricted_tables": [],
+      "audit_access": true
+    },
+    "encryption": {
+      "credentials_encryption": "AES-256",
+      "data_in_transit": "TLS 1.2+",
+      "certificate_validation": true
+    },
+    "compliance": {
+      "audit_trail": true,
+      "data_retention_policy": "7_years",
+      "pii_protection": true,
+      "gdpr_compliance": false
+    }
+  },
+  "deployment_configuration": {
+    "environments": {
+      "development": {
+        "database_suffix": "_DEV",
+        "batch_size": 10,
+        "log_level": "DEBUG",
+        "enable_test_data": true
+      },
+      "staging": {
+        "database_suffix": "_STAGE",
+        "batch_size": 50,
+        "log_level": "INFO",
+        "enable_test_data": false
+      },
+      "production": {
+        "database_suffix": "",
+        "batch_size": 100,
+        "log_level": "WARN",
+        "enable_test_data": false
+      }
+    },
+    "requirements": {
+      "minimum_python_version": "3.8",
+      "required_packages": [
+        "sqlalchemy>=1.4.0",
+        "pyodbc>=4.0.30",
+        "asyncio",
+        "pydantic>=1.8.0",
+        "fastapi>=0.68.0",
+        "prometheus-client>=0.12.0"
+      ],
+      "minimum_memory_mb": 1024,
+      "minimum_cpu_cores": 2,
+      "disk_space_gb": 10
+    },
+    "installation": {
+      "auto_create_tables": false,
+      "verify_schema": true,
+      "run_initial_validation": true,
+      "backup_before_deployment": true
+    }
+  },
+  "county_specific": {
+    "benton_wa": {
+      "county_name": "Benton County, WA",
+      "timezone": "America/Los_Angeles",
+      "estimated_properties": 12400,
+      "estimated_owners": 18600,
+      "estimated_valuations": 62000,
+      "estimated_structures": 14800,
+      "custom_fields": {
+        "Property": {
+          "TaxDistrictCode": "VARCHAR(20)",
+          "ZoneCode": "VARCHAR(10)"
+        }
+      },
+      "business_rules": {
+        "validate_parcel_format": true,
+        "require_current_year_values": true,
+        "enforce_owner_relationships": true
+      }
+    }
+  },
+  "api_endpoints": {
+    "base_url": "/api/v1/pacs-sync",
+    "authentication": "bearer_token",
+    "endpoints": {
+      "connection_test": {
+        "method": "POST",
+        "path": "/test-connection",
+        "description": "Test PACS database connection"
+      },
+      "sync_status": {
+        "method": "GET",
+        "path": "/sync/status",
+        "description": "Get current sync job status"
+      },
+      "start_sync": {
+        "method": "POST",
+        "path": "/sync/start",
+        "description": "Start manual sync operation"
+      },
+      "sync_history": {
+        "method": "GET",
+        "path": "/sync/history",
+        "description": "Get sync job history"
+      },
+      "metrics": {
+        "method": "GET",
+        "path": "/metrics",
+        "description": "Get sync performance metrics"
+      },
+      "configuration": {
+        "method": "GET",
+        "path": "/config",
+        "description": "Get current configuration"
+      }
+    }
+  }
+}
