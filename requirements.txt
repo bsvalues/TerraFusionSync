@@ -61,3 +61,6 @@ graphene
 pyjwt
 pyjwt
 duo_client
+numpy
+pandas
+pyodbc
