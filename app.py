@@ -23,6 +23,9 @@ from benton_district_lookup import BentonDistrictLookup
 # Import NarratorAI service
 from narrator_ai_plugin import analyze_gis_export_data, analyze_sync_data, get_ai_health
 
+# Import ExemptionSeer AI service
+from exemption_seer_ai import analyze_exemption_data, get_exemption_seer_health
+
 # Import enhanced UX endpoints
 try:
     from enhanced_api_endpoints import register_enhanced_endpoints, register_error_handlers
@@ -421,6 +424,112 @@ def ai_health_check():
         return jsonify({
             "service": "NarratorAI",
             "status": "error", 
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }), 500
+
+# =============================================================================
+# EXEMPTIONSEER AI API ENDPOINTS
+# =============================================================================
+
+@app.route('/api/v1/ai/analyze/exemption', methods=['POST'])
+def ai_analyze_exemption():
+    """
+    Analyze property exemption applications using ExemptionSeer AI.
+    
+    Request Body:
+        parcel_id: Property parcel identifier
+        exemption_type: Type of exemption requested
+        exemption_code: County exemption code
+        exemption_amount: Dollar amount of exemption
+        property_description: Description of the property
+        owner_name: Property owner name
+        assessment_year: Tax assessment year
+        exemption_reason: Reason for exemption request
+    
+    Example: POST /api/v1/ai/analyze/exemption
+    """
+    try:
+        data = request.get_json() or {}
+        
+        # Validate required fields
+        required_fields = ['parcel_id', 'exemption_type', 'exemption_amount', 'property_description', 'owner_name']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    "error": f"Missing required field: {field}",
+                    "required_fields": required_fields
+                }), 400
+        
+        # Get AI analysis
+        import asyncio
+        analysis = asyncio.run(analyze_exemption_data(data))
+        
+        if "error" in analysis:
+            return jsonify({"error": f"ExemptionSeer analysis failed: {analysis['error']}"}), 500
+        
+        return jsonify(analysis)
+        
+    except Exception as e:
+        logger.error(f"Error in ExemptionSeer analysis: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/v1/ai/exemption-seer/health', methods=['GET'])
+def exemption_seer_health():
+    """
+    Check the health and status of the ExemptionSeer AI service.
+    
+    Example: GET /api/v1/ai/exemption-seer/health
+    """
+    try:
+        health_status = get_exemption_seer_health()
+        return jsonify(health_status)
+        
+    except Exception as e:
+        logger.error(f"Error checking ExemptionSeer health: {str(e)}", exc_info=True)
+        return jsonify({
+            "service": "ExemptionSeer AI",
+            "status": "error", 
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }), 500
+
+@app.route('/api/v1/ai/exemption-seer/demo', methods=['GET'])
+def exemption_seer_demo():
+    """
+    Demonstrate ExemptionSeer AI with sample exemption data.
+    
+    Example: GET /api/v1/ai/exemption-seer/demo
+    """
+    try:
+        # Sample exemption data for demonstration
+        sample_exemption = {
+            "parcel_id": "530509123456",
+            "exemption_type": "Religious",
+            "exemption_code": "501",
+            "exemption_amount": 85000.00,
+            "property_description": "First Methodist Church main sanctuary, fellowship hall, and administrative offices",
+            "owner_name": "First United Methodist Church of Richland",
+            "assessment_year": 2025,
+            "exemption_reason": "Religious organization providing worship services, community outreach programs, and charitable activities to Benton County residents",
+            "county_id": "benton-wa"
+        }
+        
+        # Get AI analysis
+        import asyncio
+        analysis = asyncio.run(analyze_exemption_data(sample_exemption))
+        
+        # Add demo context
+        analysis["demo_note"] = "This is a demonstration using sample data to showcase ExemptionSeer AI capabilities"
+        analysis["sample_data"] = sample_exemption
+        
+        return jsonify(analysis)
+        
+    except Exception as e:
+        logger.error(f"Error in ExemptionSeer demo: {str(e)}", exc_info=True)
+        return jsonify({
+            "service": "ExemptionSeer AI Demo",
+            "status": "error",
             "error": str(e),
             "timestamp": datetime.utcnow().isoformat()
         }), 500

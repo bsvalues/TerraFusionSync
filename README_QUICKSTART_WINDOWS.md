@@ -1,136 +1,203 @@
 # TerraFusion Platform - Windows Quick Start Guide
 
-## 🚀 3-Click Setup for County IT Staff
+## 🎯 Get TerraFusion Running in 5 Minutes
 
-This guide gets TerraFusion running on Windows in 3 simple steps. No technical expertise required!
+This guide is designed for county IT staff to get TerraFusion operational quickly on Windows systems, regardless of technical background.
 
 ---
 
-## Step 1: Download & Extract
-1. Download the TerraFusion package to your computer
-2. Extract all files to `C:\TerraFusion` (or your preferred location)
-3. Open the extracted folder
+## ⚡ Express Setup (Recommended)
 
-## Step 2: Install Prerequisites
+### Step 1: Run Prerequisites Setup
 1. **Right-click** on `setup_rust_prereqs.ps1`
 2. Select **"Run with PowerShell"**
-3. If prompted, click **"Yes"** to allow the script to run
+3. If prompted, click **"Yes"** to run as administrator
 4. Wait for installation to complete (10-15 minutes)
 
-## Step 3: Start TerraFusion
+### Step 2: Start TerraFusion
 1. **Double-click** `run_all_rust.bat`
-2. Wait for services to start (30-60 seconds)
-3. Your browser will open automatically to the dashboard
+2. Wait 30 seconds for services to start
+3. Open your web browser
+4. Go to: **http://localhost:5000**
+
+### Step 3: Verify Everything Works
+- You should see the TerraFusion dashboard
+- Check that all status indicators are green
+- Test a sample GIS export or district lookup
+
+**✅ That's it! TerraFusion is now running.**
 
 ---
 
-## 🎯 That's It! You're Ready
+## 🛠️ Manual Setup (If Express Setup Fails)
 
-### Access Your Platform:
-- **Main Dashboard**: http://localhost:5000/dashboard
-- **GIS Export Tool**: http://localhost:5000/gis-dashboard
-- **District Lookup**: http://localhost:5000/district-lookup-dashboard
-- **System Health**: http://localhost:5000/health
-
-### Verify Everything Works:
-✅ Dashboard loads and shows county data  
-✅ GIS Export creates sample exports  
-✅ District lookup finds locations  
-✅ Health check shows all green  
-
----
-
-## 🔧 Quick Configuration
-
-### Database Setup (Optional)
-If you have an existing PostgreSQL database:
-1. Open `.env` file in Notepad
-2. Update `DATABASE_URL` with your database connection
-3. Restart by running `run_all_rust.bat` again
-
-### County Configuration
-1. Navigate to `county_configs` folder
-2. Copy your county's configuration files here
-3. Restart the platform
-
----
-
-## 📞 Getting Help
-
-### Common Issues:
-
-**Port Already in Use Error**
-- Close any existing TerraFusion windows
-- Wait 30 seconds, then run `run_all_rust.bat` again
-
-**Python Not Found Error**
-- Re-run `setup_rust_prereqs.ps1` as Administrator
-- Restart your computer after installation
-
-**Dashboard Won't Load**
-- Wait 2-3 minutes after starting services
-- Check Windows Firewall isn't blocking ports 5000-8081
-
-### Support Contacts:
-- Technical Support: [Your support email]
-- Documentation: Check the `docs` folder
-- Emergency: [Emergency contact]
-
----
-
-## 🛠️ Advanced Operations
-
-### Stop All Services:
-Close all TerraFusion command windows that opened
-
-### Restart Services:
-Double-click `run_all_rust.bat` again
-
-### Clean Uninstall:
-1. Close all TerraFusion windows
-2. Delete the TerraFusion folder
-3. Optionally remove Python/Rust if not needed elsewhere
-
-### Update TerraFusion:
-1. Stop all services
-2. Extract new version over existing files
-3. Run `run_all_rust.bat`
-
----
-
-## 📊 System Requirements
-
-### Minimum:
-- Windows 10 or Server 2016+
-- 4GB RAM
-- 2GB disk space
+### Prerequisites
+- Windows 10 or Windows Server 2019+
+- Administrator access
 - Internet connection (for initial setup)
 
-### Recommended:
-- Windows 11 or Server 2022
-- 8GB RAM
-- 10GB disk space
-- SSD storage
+### Step 1: Install Python (if not already installed)
+1. Download Python 3.11 from [python.org](https://www.python.org/downloads/)
+2. **Important**: Check "Add Python to PATH" during installation
+3. Restart your computer after installation
+
+### Step 2: Install PostgreSQL Database
+1. Download PostgreSQL from [postgresql.org](https://www.postgresql.org/download/windows/)
+2. Install with default settings
+3. Remember the password you set for the 'postgres' user
+
+### Step 3: Setup Environment
+1. Open **Command Prompt as Administrator**
+2. Navigate to the TerraFusion folder:
+   ```cmd
+   cd C:\path\to\terrafusion
+   ```
+3. Install Python dependencies:
+   ```cmd
+   pip install -r requirements.txt
+   ```
+
+### Step 4: Configure Database
+1. Create a `.env` file in the TerraFusion folder
+2. Add your database connection:
+   ```
+   DATABASE_URL=postgresql://postgres:your_password@localhost:5432/terrafusion
+   SESSION_SECRET=your-secret-key-here
+   ```
+
+### Step 5: Start Services
+```cmd
+python app.py
+```
 
 ---
 
-## 🔒 Security Notes
+## 🔍 Troubleshooting
 
-- TerraFusion runs on localhost by default (secure)
-- No external network access required after setup
-- All data stays on your local system
-- Regular backups are automatically created
+### "Rust not found" Error
+**Solution**: Run `setup_rust_prereqs.ps1` as administrator
+
+### "Database connection failed"
+**Solutions**:
+1. Ensure PostgreSQL service is running:
+   ```cmd
+   net start postgresql
+   ```
+2. Check your DATABASE_URL in the `.env` file
+3. Verify postgres user password
+
+### "Port already in use"
+**Solution**: Stop existing services:
+```cmd
+taskkill /f /im python.exe
+taskkill /f /im cargo.exe
+```
+
+### Services won't start
+**Solutions**:
+1. Run Command Prompt as Administrator
+2. Check Windows Defender/Antivirus isn't blocking
+3. Ensure all prerequisites are installed
+
+### Web interface won't load
+**Solutions**:
+1. Wait 60 seconds after starting services
+2. Try: http://127.0.0.1:5000 instead
+3. Check Windows Firewall settings
 
 ---
 
-## 🎉 Success Checklist
+## 📊 Accessing TerraFusion Features
 
-After setup, verify these work:
+### Main Dashboard
+- **URL**: http://localhost:5000
+- **Features**: System overview, recent activity, quick actions
 
-□ Dashboard loads at http://localhost:5000/dashboard  
-□ Can create a test GIS export  
-□ District lookup returns results  
-□ Health check shows all systems green  
-□ County-specific data displays correctly  
+### GIS Export
+- **URL**: http://localhost:5000/gis/dashboard
+- **Use**: Export parcel data, maps, and spatial information
 
-**Congratulations! TerraFusion is ready for county operations.**
+### District Lookup
+- **URL**: http://localhost:5000/district-lookup
+- **Use**: Find voting precincts, fire districts, school districts
+
+### API Documentation
+- **URL**: http://localhost:5000/api/v1/district-lookup
+- **Use**: Integration with other county systems
+
+### Monitoring (Advanced)
+- **Grafana**: http://localhost:3000 (admin/admin)
+- **Prometheus**: http://localhost:9090
+
+---
+
+## 🔐 Security Notes for IT Administrators
+
+### Default Credentials
+- **Application**: No default login required
+- **Grafana**: admin/admin (change on first login)
+- **Database**: Uses environment variables
+
+### Network Access
+- TerraFusion runs locally by default
+- To allow network access, edit configuration files
+- Ensure proper firewall rules for production use
+
+### Data Protection
+- All data stored locally in PostgreSQL
+- Regular backups created automatically
+- No data sent to external services
+
+---
+
+## 📞 Support
+
+### Getting Help
+1. **Check Logs**: Look in the Command Prompt window for error messages
+2. **Run Verification**: Execute `verify_terrafusion_env.ps1`
+3. **Documentation**: Read specific guides in the `/docs` folder
+
+### Common File Locations
+- **Application Files**: Current folder
+- **Database**: PostgreSQL data directory
+- **Logs**: Check Command Prompt output
+- **Backups**: `/backups` folder
+
+### Performance Tips
+- **Minimum RAM**: 8 GB recommended
+- **Storage**: Ensure 10+ GB free space
+- **Network**: Local operation doesn't require internet after setup
+
+---
+
+## 🚀 Next Steps
+
+### After Initial Setup
+1. **Configure Users**: Set up access controls for your staff
+2. **Import Data**: Connect to your existing county systems
+3. **Train Staff**: Show team members the dashboard and features
+4. **Schedule Backups**: Verify automatic backup system is working
+
+### Advanced Configuration
+- **Custom County Data**: Load your specific parcel boundaries
+- **Integration**: Connect to existing assessment systems
+- **Monitoring**: Set up alerts and notifications
+- **Public Access**: Configure read-only external access
+
+---
+
+## ✅ Success Checklist
+
+- [ ] Prerequisites installed successfully
+- [ ] All services start without errors
+- [ ] Dashboard loads at http://localhost:5000
+- [ ] Can create a test GIS export
+- [ ] District lookup returns results
+- [ ] System status shows all green indicators
+- [ ] Automatic backups are functioning
+
+**🎉 Congratulations! TerraFusion is operational and ready for county use.**
+
+---
+
+*For technical support or advanced configuration, refer to the detailed documentation in the `/docs` folder or contact your TerraFusion administrator.*

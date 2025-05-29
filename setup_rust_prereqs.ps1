@@ -1,141 +1,223 @@
-# TerraFusion Platform - Prerequisites Setup Script
-# Installs Rust, Visual C++ Build Tools, and Python dependencies
-# For first-time Windows deployment to county IT staff
+# TerraFusion Platform - Rust Prerequisites Setup
+# This script automatically installs everything needed for TerraFusion Rust services
+# Designed for county IT departments with minimal Rust experience
 
-Write-Host ""
-Write-Host "========================================================"
-Write-Host "  TerraFusion Platform - Prerequisites Setup"
-Write-Host "========================================================"
+Write-Host "========================================" -ForegroundColor Green
+Write-Host "TerraFusion Platform - Rust Setup" -ForegroundColor Green
+Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
 
 # Check if running as administrator
-$currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
-$isAdmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-
-if (-not $isAdmin) {
-    Write-Host "WARNING: Not running as administrator. Some installations may fail." -ForegroundColor Yellow
-    Write-Host "For best results, right-click PowerShell and 'Run as Administrator'" -ForegroundColor Yellow
-    Write-Host ""
+if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Host "[!] This script requires administrator privileges." -ForegroundColor Red
+    Write-Host "    Please right-click and 'Run as Administrator'" -ForegroundColor Yellow
+    Read-Host "Press Enter to exit"
+    exit 1
 }
+
+Write-Host "[✓] Running with administrator privileges" -ForegroundColor Green
+Write-Host ""
 
 # Function to check if a command exists
-function Test-Command($cmdname) {
-    return [bool](Get-Command -Name $cmdname -ErrorAction SilentlyContinue)
+function Test-CommandExists {
+    param($command)
+    try {
+        Get-Command $command -ErrorAction Stop
+        return $true
+    } catch {
+        return $false
+    }
 }
 
-# Check Python installation
-Write-Host "Checking Python installation..."
-if (Test-Command python) {
-    $pythonVersion = python --version 2>&1
-    Write-Host "✓ Found: $pythonVersion" -ForegroundColor Green
-} else {
-    Write-Host "✗ Python not found. Installing Python 3.11..." -ForegroundColor Red
-    
-    # Download and install Python
-    $pythonUrl = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe"
-    $pythonInstaller = "$env:TEMP\python-installer.exe"
-    
-    Write-Host "Downloading Python installer..."
-    Invoke-WebRequest -Uri $pythonUrl -OutFile $pythonInstaller
-    
-    Write-Host "Installing Python (this may take a few minutes)..."
-    Start-Process -FilePath $pythonInstaller -ArgumentList "/quiet", "InstallAllUsers=1", "PrependPath=1" -Wait
-    
-    # Refresh environment variables
-    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-    
-    Remove-Item $pythonInstaller -Force
-    Write-Host "✓ Python installed successfully" -ForegroundColor Green
-}
+# Step 1: Install Visual Studio Build Tools (required for Rust)
+Write-Host "[1/5] Checking Visual Studio Build Tools..." -ForegroundColor Yellow
 
-# Check Rust installation
-Write-Host ""
-Write-Host "Checking Rust installation..."
-if (Test-Command rustc) {
-    $rustVersion = rustc --version 2>&1
-    Write-Host "✓ Found: $rustVersion" -ForegroundColor Green
+if (Test-CommandExists "cl") {
+    Write-Host "[✓] Visual Studio Build Tools already installed" -ForegroundColor Green
 } else {
-    Write-Host "✗ Rust not found. Installing Rust..." -ForegroundColor Red
+    Write-Host "[!] Installing Visual Studio Build Tools..." -ForegroundColor Yellow
+    Write-Host "    This may take 10-15 minutes..." -ForegroundColor Cyan
     
-    # Download and install Rust
-    $rustUrl = "https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe"
-    $rustInstaller = "$env:TEMP\rustup-init.exe"
-    
-    Write-Host "Downloading Rust installer..."
-    Invoke-WebRequest -Uri $rustUrl -OutFile $rustInstaller
-    
-    Write-Host "Installing Rust (this may take several minutes)..."
-    Start-Process -FilePath $rustInstaller -ArgumentList "-y" -Wait
-    
-    # Refresh environment variables
-    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-    
-    Remove-Item $rustInstaller -Force
-    Write-Host "✓ Rust installed successfully" -ForegroundColor Green
-}
-
-# Check Visual Studio Build Tools
-Write-Host ""
-Write-Host "Checking Visual Studio Build Tools..."
-$vsBuildTools = Get-ChildItem "C:\Program Files*\Microsoft Visual Studio\*\BuildTools\MSBuild\Current\Bin\MSBuild.exe" -ErrorAction SilentlyContinue
-if ($vsBuildTools) {
-    Write-Host "✓ Visual Studio Build Tools found" -ForegroundColor Green
-} else {
-    Write-Host "✗ Visual Studio Build Tools not found. Installing..." -ForegroundColor Red
-    
-    # Download and install VS Build Tools
+    # Download VS Build Tools installer
     $vsUrl = "https://aka.ms/vs/17/release/vs_buildtools.exe"
     $vsInstaller = "$env:TEMP\vs_buildtools.exe"
     
-    Write-Host "Downloading Visual Studio Build Tools..."
-    Invoke-WebRequest -Uri $vsUrl -OutFile $vsInstaller
-    
-    Write-Host "Installing Visual Studio Build Tools (this will take 10-15 minutes)..."
-    Write-Host "The installer will open - please select 'C++ build tools' workload"
-    Start-Process -FilePath $vsInstaller -ArgumentList "--quiet", "--wait", "--add", "Microsoft.VisualStudio.Workload.VCTools" -Wait
-    
-    Remove-Item $vsInstaller -Force
-    Write-Host "✓ Visual Studio Build Tools installed" -ForegroundColor Green
-}
-
-# Install Python dependencies
-Write-Host ""
-Write-Host "Installing Python dependencies..."
-try {
-    python -m pip install --upgrade pip
-    python -m pip install -r requirements.txt 2>$null
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "✓ Python dependencies installed" -ForegroundColor Green
-    } else {
-        Write-Host "⚠ Some Python dependencies may have failed (this is normal if requirements.txt doesn't exist)" -ForegroundColor Yellow
+    try {
+        Invoke-WebRequest -Uri $vsUrl -OutFile $vsInstaller
+        
+        # Install with required components for Rust
+        Start-Process -FilePath $vsInstaller -ArgumentList "--quiet", "--wait", "--add", "Microsoft.VisualStudio.Workload.VCTools", "--add", "Microsoft.VisualStudio.Component.Windows10SDK.19041" -Wait
+        
+        Write-Host "[✓] Visual Studio Build Tools installed" -ForegroundColor Green
+        
+        # Clean up
+        Remove-Item $vsInstaller -Force
+    } catch {
+        Write-Host "[✗] Failed to install Visual Studio Build Tools" -ForegroundColor Red
+        Write-Host "    Please install manually from: https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022" -ForegroundColor Yellow
+        Read-Host "Press Enter to continue anyway"
     }
-} catch {
-    Write-Host "⚠ Could not install Python dependencies (requirements.txt may not exist)" -ForegroundColor Yellow
-}
-
-# Create basic environment file if it doesn't exist
-if (-not (Test-Path ".env")) {
-    Write-Host ""
-    Write-Host "Creating basic environment configuration..."
-    @"
-# TerraFusion Platform Environment Variables
-DATABASE_URL=postgresql://postgres:password@localhost:5432/terrafusion
-SESSION_SECRET=your-session-secret-key-here
-FLASK_ENV=development
-FLASK_DEBUG=true
-"@ | Out-File -FilePath ".env" -Encoding UTF8
-    Write-Host "✓ Basic .env file created" -ForegroundColor Green
 }
 
 Write-Host ""
-Write-Host "========================================================"
-Write-Host "  Prerequisites Setup Complete!"
-Write-Host "========================================================"
+
+# Step 2: Install Rust
+Write-Host "[2/5] Checking Rust installation..." -ForegroundColor Yellow
+
+if (Test-CommandExists "rustc") {
+    $rustVersion = rustc --version
+    Write-Host "[✓] Rust already installed: $rustVersion" -ForegroundColor Green
+} else {
+    Write-Host "[!] Installing Rust..." -ForegroundColor Yellow
+    
+    # Download and install rustup
+    $rustupUrl = "https://win.rustup.rs/x86_64"
+    $rustupInstaller = "$env:TEMP\rustup-init.exe"
+    
+    try {
+        Invoke-WebRequest -Uri $rustupUrl -OutFile $rustupInstaller
+        
+        # Install Rust with default settings
+        Start-Process -FilePath $rustupInstaller -ArgumentList "-y" -Wait
+        
+        # Add Rust to PATH for current session
+        $env:PATH += ";$env:USERPROFILE\.cargo\bin"
+        
+        Write-Host "[✓] Rust installed successfully" -ForegroundColor Green
+        
+        # Clean up
+        Remove-Item $rustupInstaller -Force
+    } catch {
+        Write-Host "[✗] Failed to install Rust" -ForegroundColor Red
+        Write-Host "    Please install manually from: https://rustup.rs/" -ForegroundColor Yellow
+        Read-Host "Press Enter to continue anyway"
+    }
+}
+
 Write-Host ""
-Write-Host "Next steps:"
-Write-Host "1. Configure your database connection in .env file"
-Write-Host "2. Run: run_all_rust.bat to start all services"
-Write-Host "3. Open: http://localhost:5000/dashboard"
+
+# Step 3: Install Git (if not present)
+Write-Host "[3/5] Checking Git installation..." -ForegroundColor Yellow
+
+if (Test-CommandExists "git") {
+    $gitVersion = git --version
+    Write-Host "[✓] Git already installed: $gitVersion" -ForegroundColor Green
+} else {
+    Write-Host "[!] Installing Git..." -ForegroundColor Yellow
+    
+    # Install Git using winget if available
+    if (Test-CommandExists "winget") {
+        try {
+            winget install --id Git.Git -e --source winget --silent
+            Write-Host "[✓] Git installed via winget" -ForegroundColor Green
+        } catch {
+            Write-Host "[!] Please install Git manually from: https://git-scm.com/download/win" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "[!] Please install Git manually from: https://git-scm.com/download/win" -ForegroundColor Yellow
+    }
+}
+
 Write-Host ""
-Write-Host "Press any key to continue..."
-Read-Host
+
+# Step 4: Install additional Rust components for TerraFusion
+Write-Host "[4/5] Installing TerraFusion Rust components..." -ForegroundColor Yellow
+
+if (Test-CommandExists "rustc") {
+    try {
+        # Update Rust to latest stable
+        rustup update stable
+        
+        # Install additional targets and components
+        rustup target add x86_64-pc-windows-msvc
+        rustup component add rustfmt clippy
+        
+        # Install cargo-watch for development (optional)
+        cargo install cargo-watch --quiet
+        
+        Write-Host "[✓] Rust components configured for TerraFusion" -ForegroundColor Green
+    } catch {
+        Write-Host "[!] Some Rust components may not have installed correctly" -ForegroundColor Yellow
+        Write-Host "    TerraFusion should still work with basic Rust installation" -ForegroundColor Cyan
+    }
+} else {
+    Write-Host "[!] Skipping Rust components (Rust not found)" -ForegroundColor Yellow
+}
+
+Write-Host ""
+
+# Step 5: Verify installation
+Write-Host "[5/5] Verifying installation..." -ForegroundColor Yellow
+
+$allGood = $true
+
+# Check Rust
+if (Test-CommandExists "rustc") {
+    $rustVersion = rustc --version
+    Write-Host "[✓] Rust: $rustVersion" -ForegroundColor Green
+} else {
+    Write-Host "[✗] Rust not found" -ForegroundColor Red
+    $allGood = $false
+}
+
+# Check Cargo
+if (Test-CommandExists "cargo") {
+    $cargoVersion = cargo --version
+    Write-Host "[✓] Cargo: $cargoVersion" -ForegroundColor Green
+} else {
+    Write-Host "[✗] Cargo not found" -ForegroundColor Red
+    $allGood = $false
+}
+
+# Check Git
+if (Test-CommandExists "git") {
+    $gitVersion = git --version
+    Write-Host "[✓] Git: $gitVersion" -ForegroundColor Green
+} else {
+    Write-Host "[!] Git not found (optional but recommended)" -ForegroundColor Yellow
+}
+
+Write-Host ""
+Write-Host "========================================" -ForegroundColor Green
+
+if ($allGood) {
+    Write-Host "✅ TerraFusion Rust Prerequisites Setup Complete!" -ForegroundColor Green
+    Write-Host "" 
+    Write-Host "Next steps:" -ForegroundColor Cyan
+    Write-Host "1. Close this PowerShell window" -ForegroundColor White
+    Write-Host "2. Run 'run_all_rust.bat' to start TerraFusion services" -ForegroundColor White
+    Write-Host "3. Access the platform at http://localhost:5000" -ForegroundColor White
+} else {
+    Write-Host "⚠️  Setup completed with warnings" -ForegroundColor Yellow
+    Write-Host "   Some components may need manual installation" -ForegroundColor Yellow
+    Write-Host "   TerraFusion may fall back to Python services" -ForegroundColor Cyan
+}
+
+Write-Host "========================================" -ForegroundColor Green
+Write-Host ""
+
+# Create a verification script for later use
+$verificationScript = @"
+# TerraFusion Environment Verification
+Write-Host "TerraFusion Environment Check:" -ForegroundColor Green
+if (Get-Command rustc -ErrorAction SilentlyContinue) { 
+    Write-Host "✓ Rust: $(rustc --version)" -ForegroundColor Green 
+} else { 
+    Write-Host "✗ Rust not found" -ForegroundColor Red 
+}
+if (Get-Command cargo -ErrorAction SilentlyContinue) { 
+    Write-Host "✓ Cargo: $(cargo --version)" -ForegroundColor Green 
+} else { 
+    Write-Host "✗ Cargo not found" -ForegroundColor Red 
+}
+if (Get-Command git -ErrorAction SilentlyContinue) { 
+    Write-Host "✓ Git: $(git --version)" -ForegroundColor Green 
+} else { 
+    Write-Host "! Git not found" -ForegroundColor Yellow 
+}
+"@
+
+$verificationScript | Out-File -FilePath "verify_terrafusion_env.ps1" -Encoding UTF8
+Write-Host "Created verify_terrafusion_env.ps1 for future environment checks" -ForegroundColor Cyan
+
+Read-Host "Press Enter to complete setup"
