@@ -71,7 +71,7 @@ class CommissionerReport:
     executive_summary: str
     key_metrics: Dict[str, Any]
     valuation_trends: List[ValuationTrend]
-    exemption_analysis: List[ExemptionSummary]
+    exemption_summaries: List[ExemptionSummary]
     exemption_analysis: List[ExemptionAnalysis]
     recommendations: List[str]
     supporting_data: Dict[str, Any]
@@ -427,7 +427,7 @@ class NarrativeIntelligenceEngine:
             executive_summary=executive_summary,
             key_metrics=key_metrics,
             valuation_trends=valuation_trends,
-            exemption_analysis=exemption_analysis,
+            exemption_summaries=exemption_summaries,
             exemption_analysis=[exemption_analysis],
             recommendations=recommendations,
             supporting_data=self._compile_supporting_data(valuation_trends, exemption_analysis)
