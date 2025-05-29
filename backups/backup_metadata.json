@@ -374,5 +374,61 @@
     "file_size": 3951,
     "path": "backups/config_backup_20250528_165809.tar.gz",
     "created_at": "2025-05-28T16:58:09.858030"
+  },
+  {
+    "timestamp": "2025-05-28T17:58:12.875878",
+    "type": "database",
+    "filename": "database_backup_20250528_175809.sql.gz",
+    "file_size": 60474,
+    "path": "backups/database_backup_20250528_175809.sql.gz",
+    "created_at": "2025-05-28T17:58:12.875890"
+  },
+  {
+    "timestamp": "2025-05-28T18:58:16.675543",
+    "type": "database",
+    "filename": "database_backup_20250528_185812.sql.gz",
+    "file_size": 60476,
+    "path": "backups/database_backup_20250528_185812.sql.gz",
+    "created_at": "2025-05-28T18:58:16.675556"
+  },
+  {
+    "timestamp": "2025-05-28T19:58:20.592489",
+    "type": "database",
+    "filename": "database_backup_20250528_195816.sql.gz",
+    "file_size": 60475,
+    "path": "backups/database_backup_20250528_195816.sql.gz",
+    "created_at": "2025-05-28T19:58:20.592500"
+  },
+  {
+    "timestamp": "2025-05-28T20:58:24.112708",
+    "type": "database",
+    "filename": "database_backup_20250528_205820.sql.gz",
+    "file_size": 60475,
+    "path": "backups/database_backup_20250528_205820.sql.gz",
+    "created_at": "2025-05-28T20:58:24.112722"
+  },
+  {
+    "timestamp": "2025-05-29T00:30:24.288689",
+    "type": "database",
+    "filename": "database_backup_20250529_003021.sql.gz",
+    "file_size": 60476,
+    "path": "backups/database_backup_20250529_003021.sql.gz",
+    "created_at": "2025-05-29T00:30:24.288748"
+  },
+  {
+    "timestamp": "2025-05-29T00:30:24.910703",
+    "type": "files",
+    "filename": "files_backup_20250529_003024.tar.gz",
+    "file_size": 160600,
+    "path": "backups/files_backup_20250529_003024.tar.gz",
+    "created_at": "2025-05-29T00:30:24.910713"
+  },
+  {
+    "timestamp": "2025-05-29T00:30:24.916670",
+    "type": "config",
+    "filename": "config_backup_20250529_003024.tar.gz",
+    "file_size": 3941,
+    "path": "backups/config_backup_20250529_003024.tar.gz",
+    "created_at": "2025-05-29T00:30:24.916677"
   }
 ]
