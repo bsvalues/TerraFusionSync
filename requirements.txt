@@ -60,3 +60,4 @@ flask-limiter
 graphene
 pyjwt
 pyjwt
+duo_client

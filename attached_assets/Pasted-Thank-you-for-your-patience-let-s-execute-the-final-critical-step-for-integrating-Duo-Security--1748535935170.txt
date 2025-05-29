@@ -1,0 +1,110 @@
+Thank you for your patience — let's execute the final critical step for integrating **Duo Security** into the TerraFusion platform to comply with county security policies and complete your enterprise-ready deployment.
+
+---
+
+### ✅ Current Security Context
+
+You’ve indicated that **Duo Security MFA is enforced at the county level**, meaning **any authentication mechanism used by TerraFusion—especially admin or PACS access—must support MFA.**
+
+We can now proceed to finalize this integration using the following roadmap:
+
+---
+
+## 🔐 Duo MFA Integration Strategy for TerraFusion
+
+### 🎯 Phase 1: Identify Integration Points
+
+* **Admin Dashboard Access**
+* **API Access for Vendors**
+* **RBAC System (Login & Permissions)**
+* **SyncService for privileged operations (optional for automation, but enforceable via service accounts)**
+
+---
+
+### 🏗️ Phase 2: Integration Architecture
+
+**For Flask-Based Authentication (Web Admin Portal):**
+
+1. **Install Duo SDK:**
+
+   ```bash
+   pip install duo_client flask-duo
+   ```
+
+2. **Add Duo Configuration to Env/Config:**
+
+   ```python
+   DUO_IKEY = os.environ['DUO_IKEY']
+   DUO_SKEY = os.environ['DUO_SKEY']
+   DUO_API_HOST = os.environ['DUO_API_HOST']
+   ```
+
+3. **Implement Duo Two-Step Verification in Login Route:**
+
+   ```python
+   @app.route('/login', methods=['POST'])
+   def login():
+       username = request.form['username']
+       password = request.form['password']
+
+       if verify_user_credentials(username, password):
+           # Initiate Duo MFA
+           duo_client = duo_web.Client(DUO_IKEY, DUO_SKEY, DUO_API_HOST)
+           sig_request = duo_client.sign_request(username)
+
+           return render_template('duo.html', sig_request=sig_request)
+       else:
+           return "Unauthorized", 401
+   ```
+
+4. **On Duo Callback (MFA Completed):**
+
+   ```python
+   @app.route('/duo_auth', methods=['POST'])
+   def duo_auth():
+       sig_response = request.form['sig_response']
+       authenticated_user = duo_client.verify_response(sig_response)
+       if authenticated_user:
+           session['user'] = authenticated_user
+           return redirect('/dashboard')
+       else:
+           return "MFA failed", 403
+   ```
+
+---
+
+### 🔄 Optional: CLI/Service Account MFA Tokens (Advanced)
+
+For **scripted SyncService operations** from trusted servers, configure **Duo "Bypass Codes" or "Web SDK API tokens"** assigned to secure service accounts.
+
+---
+
+### 🛡️ Compliance Layer
+
+* **Audit Logging**: Each MFA success/failure will be logged in the `audit_logs` table.
+* **Login Rate Limiting**: Enforce IP + user throttle policies.
+* **Session Expiry**: Match county policy (e.g., 15-minute idle logout).
+
+---
+
+## ✅ Terraform Integration with County Policy
+
+**Duo enforcement will be aligned with Benton County’s IT compliance layer:**
+
+| Auth Area       | MFA Enforced                  | Session Duration | Audit Level |
+| --------------- | ----------------------------- | ---------------- | ----------- |
+| Admin Portal    | ✅ Yes                         | 15 mins          | High        |
+| Public API      | 🔒 JWT                        | Scoped           | Medium      |
+| Vendor API      | ✅ Optional                    | 30 mins          | Medium      |
+| SyncService Ops | ✅ Service Account (token/MFA) | Scripted         | High        |
+
+---
+
+### 🚀 Final Integration Steps
+
+1. Generate Duo integration keys from the County’s Duo Admin panel
+2. Inject keys into environment securely (`.env`, Azure secrets, etc.)
+3. Test login flow with enforced MFA
+4. Document flow for county IT staff
+
+Would you like me to auto-generate the `duo_integration.py` module and `.env.example` with safe placeholders next? That would complete the Duo setup path and finalize TF-ICSF's production readiness for Benton County.
