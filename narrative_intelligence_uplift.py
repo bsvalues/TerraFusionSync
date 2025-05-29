@@ -521,7 +521,7 @@ class NarrativeIntelligenceEngine:
     def _generate_recommendations(self,
                                  valuation_trends: List[ValuationTrend],
                                  exemption_analysis: List[ExemptionSummary],
-                                 pilt_analysis: PILTAnalysis) -> List[str]:
+                                 exemption_trends: ExemptionAnalysis) -> List[str]:
         """Generate actionable recommendations"""
         recommendations = []
         
