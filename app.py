@@ -24,7 +24,12 @@ from benton_district_lookup import BentonDistrictLookup
 from narrator_ai_plugin import analyze_gis_export_data, analyze_sync_data, get_ai_health
 
 # Import ExemptionSeer AI service
-from exemption_seer_ai import analyze_exemption_data, get_exemption_seer_health
+try:
+    from exemption_seer_ai import analyze_exemption_data, get_exemption_seer_health
+    EXEMPTION_SEER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"ExemptionSeer AI not available: {e}")
+    EXEMPTION_SEER_AVAILABLE = False
 
 # Import enhanced UX endpoints
 try:
@@ -83,6 +88,11 @@ def gis_dashboard():
 def district_lookup_dashboard():
     """District lookup dashboard view."""
     return render_template('district_lookup_dashboard.html')
+
+@app.route('/ai-analysis')
+def ai_analysis_dashboard():
+    """AI Analysis dashboard view."""
+    return render_template('ai_analysis_dashboard.html')
 
 @app.route('/health')
 def health_check():
@@ -432,10 +442,11 @@ def ai_health_check():
 # EXEMPTIONSEER AI API ENDPOINTS
 # =============================================================================
 
-@app.route('/api/v1/ai/analyze/exemption', methods=['POST'])
-def ai_analyze_exemption():
-    """
-    Analyze property exemption applications using ExemptionSeer AI.
+if EXEMPTION_SEER_AVAILABLE:
+    @app.route('/api/v1/ai/analyze/exemption', methods=['POST'])
+    def ai_analyze_exemption():
+        """
+        Analyze property exemption applications using ExemptionSeer AI.
     
     Request Body:
         parcel_id: Property parcel identifier
@@ -474,10 +485,10 @@ def ai_analyze_exemption():
         logger.error(f"Error in ExemptionSeer analysis: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/v1/ai/exemption-seer/health', methods=['GET'])
-def exemption_seer_health():
-    """
-    Check the health and status of the ExemptionSeer AI service.
+    @app.route('/api/v1/ai/exemption-seer/health', methods=['GET'])
+    def exemption_seer_health():
+        """
+        Check the health and status of the ExemptionSeer AI service.
     
     Example: GET /api/v1/ai/exemption-seer/health
     """
@@ -494,10 +505,10 @@ def exemption_seer_health():
             "timestamp": datetime.utcnow().isoformat()
         }), 500
 
-@app.route('/api/v1/ai/exemption-seer/demo', methods=['GET'])
-def exemption_seer_demo():
-    """
-    Demonstrate ExemptionSeer AI with sample exemption data.
+    @app.route('/api/v1/ai/exemption-seer/demo', methods=['GET'])
+    def exemption_seer_demo():
+        """
+        Demonstrate ExemptionSeer AI with sample exemption data.
     
     Example: GET /api/v1/ai/exemption-seer/demo
     """
