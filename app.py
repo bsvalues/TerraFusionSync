@@ -55,9 +55,26 @@ except ImportError as e:
     logger.warning(f"RBAC Manager not available: {e}")
     RBAC_AVAILABLE = False
 
+# Import Duo Security MFA Integration
+try:
+    from mfa_demo import init_mfa_demo
+    MFA_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"MFA integration not available: {e}")
+    MFA_AVAILABLE = False
+
 # Initialize Flask app
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "terrafusion-dev-key")
+
+# Initialize MFA integration
+if MFA_AVAILABLE:
+    try:
+        init_mfa_demo(app)
+        logger.info("✅ Duo Security MFA integration initialized")
+    except Exception as e:
+        logger.warning(f"Failed to initialize MFA: {e}")
+        MFA_AVAILABLE = False
 
 # Ensure exports directory exists
 os.makedirs("exports", exist_ok=True)
