@@ -933,7 +933,7 @@ This package contains everything needed to deploy the TerraFusion Platform for {
 
 3. **Run Installation**
    ```bash
-   {"./start.sh" if deployment_type == "docker" else ".\\install.ps1"}
+   {("./start.sh" if deployment_type == "docker" else ".\\install.ps1")}
    ```
 
 4. **Complete Setup**
@@ -946,7 +946,7 @@ This package contains everything needed to deploy the TerraFusion Platform for {
 
 1. **Verify Services**
    ```bash
-   {"./health_check.sh" if deployment_type == "docker" else ".\\health_check.bat"}
+   {("./health_check.sh" if deployment_type == "docker" else ".\\health_check.bat")}
    ```
 
 2. **Import County Data**

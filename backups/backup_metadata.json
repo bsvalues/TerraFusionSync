@@ -878,5 +878,77 @@
     "file_size": 4079,
     "path": "backups/config_backup_20250529_185626.tar.gz",
     "created_at": "2025-05-29T18:56:26.030725"
+  },
+  {
+    "timestamp": "2025-05-29T18:59:19.103883",
+    "type": "database",
+    "filename": "database_backup_20250529_185914.sql.gz",
+    "file_size": 60476,
+    "path": "backups/database_backup_20250529_185914.sql.gz",
+    "created_at": "2025-05-29T18:59:19.103898"
+  },
+  {
+    "timestamp": "2025-05-29T18:59:19.197968",
+    "type": "files",
+    "filename": "files_backup_20250529_185919.tar.gz",
+    "file_size": 175690,
+    "path": "backups/files_backup_20250529_185919.tar.gz",
+    "created_at": "2025-05-29T18:59:19.197980"
+  },
+  {
+    "timestamp": "2025-05-29T18:59:19.201649",
+    "type": "config",
+    "filename": "config_backup_20250529_185919.tar.gz",
+    "file_size": 4079,
+    "path": "backups/config_backup_20250529_185919.tar.gz",
+    "created_at": "2025-05-29T18:59:19.201658"
+  },
+  {
+    "timestamp": "2025-05-29T18:59:23.669170",
+    "type": "database",
+    "filename": "database_backup_20250529_185921.sql.gz",
+    "file_size": 60476,
+    "path": "backups/database_backup_20250529_185921.sql.gz",
+    "created_at": "2025-05-29T18:59:23.669184"
+  },
+  {
+    "timestamp": "2025-05-29T18:59:23.764747",
+    "type": "files",
+    "filename": "files_backup_20250529_185923.tar.gz",
+    "file_size": 175690,
+    "path": "backups/files_backup_20250529_185923.tar.gz",
+    "created_at": "2025-05-29T18:59:23.764759"
+  },
+  {
+    "timestamp": "2025-05-29T18:59:23.768556",
+    "type": "config",
+    "filename": "config_backup_20250529_185923.tar.gz",
+    "file_size": 4079,
+    "path": "backups/config_backup_20250529_185923.tar.gz",
+    "created_at": "2025-05-29T18:59:23.768562"
+  },
+  {
+    "timestamp": "2025-05-29T19:00:24.770703",
+    "type": "database",
+    "filename": "database_backup_20250529_190022.sql.gz",
+    "file_size": 60476,
+    "path": "backups/database_backup_20250529_190022.sql.gz",
+    "created_at": "2025-05-29T19:00:24.770717"
+  },
+  {
+    "timestamp": "2025-05-29T19:00:24.863547",
+    "type": "files",
+    "filename": "files_backup_20250529_190024.tar.gz",
+    "file_size": 175690,
+    "path": "backups/files_backup_20250529_190024.tar.gz",
+    "created_at": "2025-05-29T19:00:24.863554"
+  },
+  {
+    "timestamp": "2025-05-29T19:00:24.867969",
+    "type": "config",
+    "filename": "config_backup_20250529_190024.tar.gz",
+    "file_size": 4079,
+    "path": "backups/config_backup_20250529_190024.tar.gz",
+    "created_at": "2025-05-29T19:00:24.867978"
   }
 ]
