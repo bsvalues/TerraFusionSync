@@ -113,14 +113,131 @@
 
     <!-- Main Content -->
     <div class="container-fluid py-4">
+        <!-- Live Status Bar -->
+        <div class="alert alert-primary border-0 mb-4" style="background: linear-gradient(90deg, #0d6efd 0%, #0dcaf0 100%);">
+            <div class="row align-items-center text-white">
+                <div class="col-auto">
+                    <h4 class="mb-0"><i class="bi bi-shield-check me-2"></i>TerraFusion Platform</h4>
+                </div>
+                <div class="col">
+                    <div class="row text-center">
+                        <div class="col">
+                            <div class="fw-bold">Services</div>
+                            <div class="small">✅ All Online</div>
+                        </div>
+                        <div class="col">
+                            <div class="fw-bold">Database</div>
+                            <div class="small">✅ Connected</div>
+                        </div>
+                        <div class="col">
+                            <div class="fw-bold">AI Services</div>
+                            <div class="small">✅ Ready</div>
+                        </div>
+                        <div class="col">
+                            <div class="fw-bold">Last Backup</div>
+                            <div class="small">⏰ 1 hour ago</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-auto">
+                    <span class="badge bg-success fs-6">Benton County Ready</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Action Cards -->
         <div class="row mb-4">
             <div class="col">
-                <h1 class="display-6 mb-2">County Assessor Data Platform</h1>
-                <p class="lead text-muted">Professional-grade property assessment data synchronization for county operations</p>
+                <h1 class="display-6 mb-1">Choose Your Task</h1>
+                <p class="lead text-muted">Select what you want to do with TerraFusion today</p>
+            </div>
+        </div>
+
+        <!-- Large Action Buttons -->
+        <div class="row g-4 mb-5">
+            <div class="col-md-6">
+                <div class="card h-100 shadow-sm border-0" style="border-left: 6px solid #dc3545 !important;">
+                    <div class="card-body p-4">
+                        <div class="d-flex align-items-start">
+                            <div class="bg-danger bg-opacity-10 rounded-circle p-3 me-3">
+                                <i class="bi bi-eye-fill fs-1 text-danger"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h3 class="card-title text-danger">🔴 Analyze Property Exemption</h3>
+                                <p class="card-text mb-3">Use AI to classify property exemptions, detect fraud, and generate audit recommendations.</p>
+                                <p class="small text-muted mb-3"><strong>Perfect for:</strong> Assessor staff reviewing exemption applications</p>
+                                <a href="/ai-analysis" class="btn btn-danger btn-lg">
+                                    <i class="bi bi-play-circle me-2"></i>Start AI Analysis
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card h-100 shadow-sm border-0" style="border-left: 6px solid #0d6efd !important;">
+                    <div class="card-body p-4">
+                        <div class="d-flex align-items-start">
+                            <div class="bg-primary bg-opacity-10 rounded-circle p-3 me-3">
+                                <i class="bi bi-map-fill fs-1 text-primary"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h3 class="card-title text-primary">🔵 Export GIS Data</h3>
+                                <p class="card-text mb-3">Create maps and export property data in multiple formats (Shapefile, GeoJSON, CSV).</p>
+                                <p class="small text-muted mb-3"><strong>Perfect for:</strong> GIS analysts and mapping requests</p>
+                                <a href="/gis/dashboard" class="btn btn-primary btn-lg">
+                                    <i class="bi bi-download me-2"></i>Create Export
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card h-100 shadow-sm border-0" style="border-left: 6px solid #198754 !important;">
+                    <div class="card-body p-4">
+                        <div class="d-flex align-items-start">
+                            <div class="bg-success bg-opacity-10 rounded-circle p-3 me-3">
+                                <i class="bi bi-geo-alt-fill fs-1 text-success"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h3 class="card-title text-success">🟢 Find Districts by Address</h3>
+                                <p class="card-text mb-3">Look up voting precincts, fire districts, and school boundaries by address or coordinates.</p>
+                                <p class="small text-muted mb-3"><strong>Perfect for:</strong> Citizens and staff checking district assignments</p>
+                                <a href="/district-lookup" class="btn btn-success btn-lg">
+                                    <i class="bi bi-search me-2"></i>Search Districts
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card h-100 shadow-sm border-0" style="border-left: 6px solid #ffc107 !important;">
+                    <div class="card-body p-4">
+                        <div class="d-flex align-items-start">
+                            <div class="bg-warning bg-opacity-10 rounded-circle p-3 me-3">
+                                <i class="bi bi-arrow-repeat fs-1 text-warning"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h3 class="card-title text-warning">🟡 Sync County Records</h3>
+                                <p class="card-text mb-3">Connect and synchronize data from legacy assessment systems (PACS, Patriot, Tyler).</p>
+                                <p class="small text-muted mb-3"><strong>Perfect for:</strong> IT staff managing data integration</p>
+                                <button class="btn btn-warning btn-lg" disabled>
+                                    <i class="bi bi-gear me-2"></i>Configure Sync
+                                </button>
+                                <div class="small text-muted mt-2">Coming Soon - Contact IT for setup</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         
-        <!-- System Status Alert -->
+        <!-- Original System Status moved down -->
         <div class="row mb-4">
             <div class="col">
                 <div class="alert alert-info alert-dismissible fade show" role="alert">
