@@ -62,8 +62,8 @@ class HistoricalDataProcessor:
         self.historical_data_path = Path("data/historical_exemptions")
         self.historical_data_path.mkdir(parents=True, exist_ok=True)
         
-        # PILT normalization mappings
-        self.pilt_mappings = {
+        # Exemption normalization mappings
+        self.exemption_mappings = {
             "senior": ["senior_citizen", "senior_exemption", "elderly"],
             "veteran": ["veteran", "military", "disabled_veteran"],
             "disability": ["disabled", "disability", "handicapped"],
@@ -216,15 +216,15 @@ class HistoricalDataProcessor:
         """Normalize exemption type to standard categories"""
         exemption_type = exemption_type.lower().strip()
         
-        for standard_type, variations in self.pilt_mappings.items():
+        for standard_type, variations in self.exemption_mappings.items():
             if any(variation in exemption_type for variation in variations):
                 return standard_type
                 
         return exemption_type
 
-    def _normalize_pilt_category(self, pilt_category: str) -> str:
-        """Normalize PILT category codes"""
-        return self._normalize_exemption_type(pilt_category)
+    def _normalize_exemption_category(self, exemption_category: str) -> str:
+        """Normalize exemption category codes"""
+        return self._normalize_exemption_type(exemption_category)
 
     def _normalize_subcategory(self, subcategory_code: str) -> str:
         """Normalize subcategory codes to standard format"""

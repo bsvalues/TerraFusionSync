@@ -50,14 +50,14 @@ class ExemptionSummary:
     notable_changes: List[str]
 
 @dataclass
-class PILTAnalysis:
-    """Payment in Lieu of Taxes analysis"""
+class ExemptionAnalysis:
+    """Property exemption analysis"""
     year: int
     district_id: str
-    total_pilt_payments: float
-    pilt_property_count: int
-    pilt_percentage_of_total: float
-    major_pilt_categories: Dict[str, float]
+    total_exemption_value: float
+    exemption_property_count: int
+    exemption_percentage_of_total: float
+    major_exemption_categories: Dict[str, float]
     trend_analysis: str
 
 @dataclass
@@ -72,7 +72,7 @@ class CommissionerReport:
     key_metrics: Dict[str, Any]
     valuation_trends: List[ValuationTrend]
     exemption_analysis: List[ExemptionSummary]
-    pilt_analysis: List[PILTAnalysis]
+    exemption_analysis: List[ExemptionAnalysis]
     recommendations: List[str]
     supporting_data: Dict[str, Any]
 
@@ -301,37 +301,84 @@ class NarrativeIntelligenceEngine:
         
         return summaries
     
-    def analyze_pilt_trends(self, district_id: str, year: int) -> PILTAnalysis:
+    def analyze_exemption_trends(self, district_id: str, year: int) -> ExemptionAnalysis:
         """
-        Analyze Payment in Lieu of Taxes trends for a district.
+        Analyze property exemption trends for a district.
         
         Args:
             district_id: District identifier
             year: Analysis year
             
         Returns:
-            PILT analysis summary
+            Exemption analysis summary
         """
-        logger.info(f"Analyzing PILT trends for {district_id} in {year}")
+        logger.info(f"Analyzing exemption trends for {district_id} in {year}")
         
-        # This would query actual PILT data from the database
-        # For now, creating a representative structure
-        
-        pilt_analysis = PILTAnalysis(
-            year=year,
-            district_id=district_id,
-            total_pilt_payments=2450000.0,
-            pilt_property_count=45,
-            pilt_percentage_of_total=12.5,
-            major_pilt_categories={
-                "Federal": 1800000.0,
-                "State": 450000.0,
-                "Non-profit": 200000.0
-            },
-            trend_analysis="PILT payments increased 8.2% from previous year, primarily due to federal land valuation adjustments"
-        )
-        
-        return pilt_analysis
+        # Query actual exemption data from authenticated county database
+        session = self.Session()
+        try:
+            # This requires actual county database connection
+            # Will return empty analysis if no authentic data available
+            query = text("""
+                SELECT 
+                    exemption_type,
+                    SUM(exemption_amount) as total_value,
+                    COUNT(*) as property_count
+                FROM exemptions 
+                WHERE district_id = :district_id 
+                AND exemption_year = :year
+                GROUP BY exemption_type
+            """)
+            
+            result = session.execute(query, {
+                'district_id': district_id,
+                'year': year
+            })
+            
+            exemption_data = result.fetchall()
+            
+            if not exemption_data:
+                logger.warning(f"No authentic exemption data found for {district_id} in {year}")
+                return ExemptionAnalysis(
+                    year=year,
+                    district_id=district_id,
+                    total_exemption_value=0.0,
+                    exemption_property_count=0,
+                    exemption_percentage_of_total=0.0,
+                    major_exemption_categories={},
+                    trend_analysis="No authentic exemption data available - requires county database connection"
+                )
+            
+            # Process authentic data
+            total_value = sum(row.total_value for row in exemption_data)
+            total_count = sum(row.property_count for row in exemption_data)
+            categories = {row.exemption_type: float(row.total_value) for row in exemption_data}
+            
+            exemption_analysis = ExemptionAnalysis(
+                year=year,
+                district_id=district_id,
+                total_exemption_value=total_value,
+                exemption_property_count=total_count,
+                exemption_percentage_of_total=0.0,  # Calculate from total assessed value
+                major_exemption_categories=categories,
+                trend_analysis=f"Analysis based on {total_count} authentic exemption records"
+            )
+            
+            return exemption_analysis
+            
+        except Exception as e:
+            logger.error(f"Error querying exemption data: {e}")
+            return ExemptionAnalysis(
+                year=year,
+                district_id=district_id,
+                total_exemption_value=0.0,
+                exemption_property_count=0,
+                exemption_percentage_of_total=0.0,
+                major_exemption_categories={},
+                trend_analysis=f"Error accessing county database: {str(e)}"
+            )
+        finally:
+            session.close()
     
     def generate_commissioner_report(self, district_id: str, year: int) -> CommissionerReport:
         """
@@ -381,7 +428,7 @@ class NarrativeIntelligenceEngine:
             key_metrics=key_metrics,
             valuation_trends=valuation_trends,
             exemption_analysis=exemption_analysis,
-            pilt_analysis=[pilt_analysis],
+            exemption_analysis=[exemption_analysis],
             recommendations=recommendations,
             supporting_data=self._compile_supporting_data(valuation_trends, exemption_analysis)
         )
