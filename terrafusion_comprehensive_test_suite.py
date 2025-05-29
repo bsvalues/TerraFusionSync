@@ -44,10 +44,14 @@ class TerraFusionTestSuite:
         self.test_results = {}
         self.required_secrets = [
             "DATABASE_URL",
-            "SESSION_SECRET",
+            "SESSION_SECRET"
+        ]
+        self.optional_secrets = [
             "DUO_INTEGRATION_KEY",
             "DUO_SECRET_KEY", 
-            "DUO_API_HOSTNAME"
+            "DUO_API_HOSTNAME",
+            "PACS_API_URL",
+            "PACS_API_KEY"
         ]
         
     def check_environment(self) -> bool:
@@ -68,6 +72,16 @@ class TerraFusionTestSuite:
             logger.error(f"Missing required environment variables: {missing_secrets}")
             logger.error("Please provide your actual county credentials to proceed with testing")
             return False
+        
+        # Check optional secrets
+        missing_optional = []
+        for secret in self.optional_secrets:
+            if not os.environ.get(secret):
+                missing_optional.append(secret)
+        
+        if missing_optional:
+            logger.warning(f"Optional county credentials not configured: {missing_optional}")
+            logger.warning("Some advanced features will require county API access")
             
         logger.info("✅ Environment configuration complete")
         return True

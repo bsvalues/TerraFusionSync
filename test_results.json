@@ -1,0 +1,16 @@
+{
+  "timestamp": "2025-05-29T19:44:03.328870",
+  "passed_tests": 5,
+  "total_tests": 8,
+  "success_rate": 0.625,
+  "results": {
+    "database_connectivity": true,
+    "api_gateway_health": true,
+    "syncservice_health": true,
+    "gis_export_functionality": false,
+    "ai_engines": true,
+    "authentication_security": false,
+    "backup_system": true,
+    "district_lookup": null
+  }
+}
