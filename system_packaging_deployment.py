@@ -884,6 +884,10 @@ Write-Host "Complete the setup by configuring MFA and importing county data." -F
     def _generate_deployment_guide(self, config: DeploymentConfig, output_dir: Path, deployment_type: str):
         """Generate deployment guide documentation"""
         
+        # Build installation command based on deployment type
+        install_cmd = "./start.sh" if deployment_type == "docker" else ".\\install.ps1"
+        health_cmd = "./health_check.sh" if deployment_type == "docker" else ".\\health_check.bat"
+        
         guide_content = f"""# TerraFusion Platform Deployment Guide
 ## {config.county_name} - {deployment_type.title()} Deployment
 
@@ -933,7 +937,7 @@ This package contains everything needed to deploy the TerraFusion Platform for {
 
 3. **Run Installation**
    ```bash
-   {("./start.sh" if deployment_type == "docker" else ".\\install.ps1")}
+   {install_cmd}
    ```
 
 4. **Complete Setup**
@@ -946,7 +950,7 @@ This package contains everything needed to deploy the TerraFusion Platform for {
 
 1. **Verify Services**
    ```bash
-   {("./health_check.sh" if deployment_type == "docker" else ".\\health_check.bat")}
+   {health_cmd}
    ```
 
 2. **Import County Data**

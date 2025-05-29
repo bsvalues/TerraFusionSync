@@ -8,7 +8,7 @@ including the dashboard and API endpoints for GIS Export functionality.
 import os
 import logging
 from datetime import datetime
-from flask import Flask, render_template, redirect, url_for, request, jsonify, send_file, abort
+from flask import Flask, render_template, render_template_string, redirect, url_for, request, jsonify, send_file, abort
 from flask_sqlalchemy import SQLAlchemy
 
 # Configure logging

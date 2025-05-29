@@ -950,5 +950,125 @@
     "file_size": 4079,
     "path": "backups/config_backup_20250529_190024.tar.gz",
     "created_at": "2025-05-29T19:00:24.867978"
+  },
+  {
+    "timestamp": "2025-05-29T19:00:31.928291",
+    "type": "database",
+    "filename": "database_backup_20250529_190029.sql.gz",
+    "file_size": 60476,
+    "path": "backups/database_backup_20250529_190029.sql.gz",
+    "created_at": "2025-05-29T19:00:31.928334"
+  },
+  {
+    "timestamp": "2025-05-29T19:00:32.024238",
+    "type": "files",
+    "filename": "files_backup_20250529_190031.tar.gz",
+    "file_size": 175690,
+    "path": "backups/files_backup_20250529_190031.tar.gz",
+    "created_at": "2025-05-29T19:00:32.024253"
+  },
+  {
+    "timestamp": "2025-05-29T19:00:32.028218",
+    "type": "config",
+    "filename": "config_backup_20250529_190032.tar.gz",
+    "file_size": 4079,
+    "path": "backups/config_backup_20250529_190032.tar.gz",
+    "created_at": "2025-05-29T19:00:32.028226"
+  },
+  {
+    "timestamp": "2025-05-29T19:01:11.896781",
+    "type": "database",
+    "filename": "database_backup_20250529_190108.sql.gz",
+    "file_size": 60476,
+    "path": "backups/database_backup_20250529_190108.sql.gz",
+    "created_at": "2025-05-29T19:01:11.896798"
+  },
+  {
+    "timestamp": "2025-05-29T19:01:11.994330",
+    "type": "files",
+    "filename": "files_backup_20250529_190111.tar.gz",
+    "file_size": 175690,
+    "path": "backups/files_backup_20250529_190111.tar.gz",
+    "created_at": "2025-05-29T19:01:11.994340"
+  },
+  {
+    "timestamp": "2025-05-29T19:01:11.998654",
+    "type": "config",
+    "filename": "config_backup_20250529_190111.tar.gz",
+    "file_size": 4079,
+    "path": "backups/config_backup_20250529_190111.tar.gz",
+    "created_at": "2025-05-29T19:01:11.998663"
+  },
+  {
+    "timestamp": "2025-05-29T19:01:21.636862",
+    "type": "database",
+    "filename": "database_backup_20250529_190118.sql.gz",
+    "file_size": 60476,
+    "path": "backups/database_backup_20250529_190118.sql.gz",
+    "created_at": "2025-05-29T19:01:21.636877"
+  },
+  {
+    "timestamp": "2025-05-29T19:01:21.734517",
+    "type": "files",
+    "filename": "files_backup_20250529_190121.tar.gz",
+    "file_size": 175690,
+    "path": "backups/files_backup_20250529_190121.tar.gz",
+    "created_at": "2025-05-29T19:01:21.734532"
+  },
+  {
+    "timestamp": "2025-05-29T19:01:21.739447",
+    "type": "config",
+    "filename": "config_backup_20250529_190121.tar.gz",
+    "file_size": 4079,
+    "path": "backups/config_backup_20250529_190121.tar.gz",
+    "created_at": "2025-05-29T19:01:21.739455"
+  },
+  {
+    "timestamp": "2025-05-29T19:01:38.382268",
+    "type": "database",
+    "filename": "database_backup_20250529_190135.sql.gz",
+    "file_size": 60476,
+    "path": "backups/database_backup_20250529_190135.sql.gz",
+    "created_at": "2025-05-29T19:01:38.382280"
+  },
+  {
+    "timestamp": "2025-05-29T19:01:38.487018",
+    "type": "files",
+    "filename": "files_backup_20250529_190138.tar.gz",
+    "file_size": 175690,
+    "path": "backups/files_backup_20250529_190138.tar.gz",
+    "created_at": "2025-05-29T19:01:38.487033"
+  },
+  {
+    "timestamp": "2025-05-29T19:01:38.491749",
+    "type": "config",
+    "filename": "config_backup_20250529_190138.tar.gz",
+    "file_size": 4079,
+    "path": "backups/config_backup_20250529_190138.tar.gz",
+    "created_at": "2025-05-29T19:01:38.491758"
+  },
+  {
+    "timestamp": "2025-05-29T19:01:48.591010",
+    "type": "database",
+    "filename": "database_backup_20250529_190145.sql.gz",
+    "file_size": 60476,
+    "path": "backups/database_backup_20250529_190145.sql.gz",
+    "created_at": "2025-05-29T19:01:48.591021"
+  },
+  {
+    "timestamp": "2025-05-29T19:01:48.686548",
+    "type": "files",
+    "filename": "files_backup_20250529_190148.tar.gz",
+    "file_size": 175690,
+    "path": "backups/files_backup_20250529_190148.tar.gz",
+    "created_at": "2025-05-29T19:01:48.686562"
+  },
+  {
+    "timestamp": "2025-05-29T19:01:48.690950",
+    "type": "config",
+    "filename": "config_backup_20250529_190148.tar.gz",
+    "file_size": 4079,
+    "path": "backups/config_backup_20250529_190148.tar.gz",
+    "created_at": "2025-05-29T19:01:48.690958"
   }
 ]
