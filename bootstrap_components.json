@@ -1,0 +1,299 @@
+{
+  "name": "TerraFusion Bootstrap Component Library",
+  "version": "2.0.0",
+  "description": "Custom Bootstrap 5 components optimized for county government operations",
+  "framework": "Bootstrap 5.3.0",
+  "components": {
+    "navigation": {
+      "primary_navbar": {
+        "classes": "navbar navbar-expand-lg navbar-dark bg-primary shadow-sm",
+        "brand": {
+          "text": "TerraFusion Platform",
+          "icon": "bi bi-shield-check",
+          "href": "/dashboard"
+        },
+        "menu_items": [
+          {
+            "text": "Dashboard",
+            "href": "/dashboard",
+            "icon": "bi bi-speedometer2",
+            "active": true
+          },
+          {
+            "text": "GIS Export",
+            "href": "/gis/dashboard",
+            "icon": "bi bi-map",
+            "badge": "New"
+          },
+          {
+            "text": "District Lookup",
+            "href": "/district-lookup",
+            "icon": "bi bi-geo-alt"
+          },
+          {
+            "text": "AI Analysis",
+            "href": "/ai-analysis",
+            "icon": "bi bi-robot"
+          }
+        ],
+        "user_dropdown": {
+          "avatar": "bi bi-person-circle",
+          "items": [
+            {"text": "Profile", "href": "/profile"},
+            {"text": "Settings", "href": "/settings"},
+            {"divider": true},
+            {"text": "Logout", "href": "/logout", "class": "text-danger"}
+          ]
+        }
+      },
+      "breadcrumb": {
+        "classes": "breadcrumb bg-light p-3 rounded",
+        "separator": "bi bi-chevron-right",
+        "home_icon": "bi bi-house-door"
+      }
+    },
+    "cards": {
+      "kpi_card": {
+        "base_classes": "card kpi-card shadow-sm border-0 h-100",
+        "header_classes": "card-header bg-transparent border-0 pb-0",
+        "body_classes": "card-body",
+        "variants": {
+          "success": {
+            "border_color": "#198754",
+            "icon_bg": "bg-success bg-opacity-10",
+            "icon_color": "text-success"
+          },
+          "primary": {
+            "border_color": "#0d6efd",
+            "icon_bg": "bg-primary bg-opacity-10",
+            "icon_color": "text-primary"
+          },
+          "warning": {
+            "border_color": "#ffc107",
+            "icon_bg": "bg-warning bg-opacity-10",
+            "icon_color": "text-warning"
+          },
+          "danger": {
+            "border_color": "#dc3545",
+            "icon_bg": "bg-danger bg-opacity-10",
+            "icon_color": "text-danger"
+          }
+        }
+      },
+      "action_card": {
+        "classes": "card h-100 shadow-sm border-0 action-card",
+        "hover_effect": "transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0,0,0,0.1);",
+        "icon_container": "rounded-circle p-3 me-3",
+        "title_classes": "card-title h3",
+        "description_classes": "card-text mb-3",
+        "button_classes": "btn btn-lg"
+      }
+    },
+    "tables": {
+      "data_table": {
+        "wrapper_classes": "table-responsive",
+        "table_classes": "table table-hover mb-0",
+        "header_classes": "table-light",
+        "row_hover": "activity-item",
+        "status_badges": {
+          "completed": "status-badge status-completed",
+          "running": "status-badge status-running",
+          "pending": "status-badge status-pending",
+          "failed": "status-badge status-failed"
+        }
+      }
+    },
+    "forms": {
+      "search_form": {
+        "container_classes": "input-group input-group-lg",
+        "input_classes": "form-control",
+        "button_classes": "btn btn-primary",
+        "icon": "bi bi-search"
+      },
+      "filter_form": {
+        "container_classes": "row g-3 align-items-end",
+        "select_classes": "form-select",
+        "input_classes": "form-control",
+        "button_classes": "btn btn-outline-secondary"
+      }
+    },
+    "alerts": {
+      "status_alert": {
+        "base_classes": "alert alert-dismissible fade show",
+        "variants": {
+          "system_online": "alert-success",
+          "maintenance": "alert-warning",
+          "system_error": "alert-danger",
+          "information": "alert-info"
+        },
+        "icons": {
+          "success": "bi bi-check-circle",
+          "warning": "bi bi-exclamation-triangle",
+          "danger": "bi bi-x-circle",
+          "info": "bi bi-info-circle"
+        }
+      }
+    },
+    "buttons": {
+      "primary_action": {
+        "classes": "btn btn-primary btn-lg",
+        "icon_position": "left",
+        "loading_state": "disabled spinner-border spinner-border-sm"
+      },
+      "secondary_action": {
+        "classes": "btn btn-outline-primary",
+        "hover_effect": "btn-primary"
+      },
+      "danger_action": {
+        "classes": "btn btn-danger",
+        "confirmation_required": true
+      }
+    },
+    "modals": {
+      "confirmation_modal": {
+        "classes": "modal fade",
+        "dialog_classes": "modal-dialog modal-dialog-centered",
+        "content_classes": "modal-content",
+        "header_classes": "modal-header border-0",
+        "body_classes": "modal-body text-center",
+        "footer_classes": "modal-footer border-0 justify-content-center"
+      },
+      "data_modal": {
+        "classes": "modal fade",
+        "dialog_classes": "modal-dialog modal-lg modal-dialog-scrollable",
+        "content_classes": "modal-content",
+        "header_classes": "modal-header bg-light",
+        "body_classes": "modal-body",
+        "footer_classes": "modal-footer bg-light"
+      }
+    },
+    "progress": {
+      "job_progress": {
+        "container_classes": "progress mb-3",
+        "bar_classes": "progress-bar progress-bar-striped progress-bar-animated",
+        "variants": {
+          "processing": "bg-primary",
+          "success": "bg-success",
+          "error": "bg-danger",
+          "warning": "bg-warning"
+        }
+      }
+    },
+    "charts": {
+      "chart_container": {
+        "classes": "chart-container position-relative",
+        "canvas_classes": "w-100",
+        "height": "300px"
+      }
+    }
+  },
+  "color_palette": {
+    "primary": "#0d6efd",
+    "secondary": "#6c757d",
+    "success": "#198754",
+    "danger": "#dc3545",
+    "warning": "#ffc107",
+    "info": "#0dcaf0",
+    "light": "#f8f9fa",
+    "dark": "#212529",
+    "county_blue": "#1e3a8a",
+    "county_green": "#059669",
+    "county_red": "#dc2626",
+    "county_gray": "#64748b"
+  },
+  "typography": {
+    "headings": {
+      "h1": "h1 fw-bold text-dark",
+      "h2": "h2 fw-semibold text-dark",
+      "h3": "h3 fw-medium text-dark",
+      "h4": "h4 fw-medium text-dark"
+    },
+    "body": {
+      "lead": "lead text-muted",
+      "small": "small text-muted",
+      "caption": "text-muted fs-6"
+    }
+  },
+  "spacing": {
+    "section_margin": "mb-4",
+    "card_padding": "p-4",
+    "button_spacing": "me-2 mb-2",
+    "icon_margin": "me-2"
+  },
+  "animations": {
+    "card_hover": {
+      "transition": "all 0.3s ease",
+      "transform": "translateY(-5px)",
+      "shadow": "0 10px 20px rgba(0,0,0,0.1)"
+    },
+    "button_hover": {
+      "transition": "all 0.2s ease"
+    },
+    "fade_in": {
+      "animation": "fadeIn 0.5s ease-in"
+    }
+  },
+  "responsive": {
+    "breakpoints": {
+      "sm": "576px",
+      "md": "768px",
+      "lg": "992px",
+      "xl": "1200px",
+      "xxl": "1400px"
+    },
+    "grid": {
+      "container": "container-fluid",
+      "row": "row g-4",
+      "col_auto": "col-auto",
+      "col_responsive": "col-md-6 col-lg-4 col-xl-3"
+    }
+  },
+  "icons": {
+    "system": {
+      "dashboard": "bi bi-speedometer2",
+      "export": "bi bi-download",
+      "upload": "bi bi-upload",
+      "search": "bi bi-search",
+      "settings": "bi bi-gear",
+      "user": "bi bi-person",
+      "logout": "bi bi-box-arrow-right"
+    },
+    "status": {
+      "success": "bi bi-check-circle-fill",
+      "error": "bi bi-x-circle-fill",
+      "warning": "bi bi-exclamation-triangle-fill",
+      "info": "bi bi-info-circle-fill",
+      "pending": "bi bi-clock-fill"
+    },
+    "actions": {
+      "edit": "bi bi-pencil",
+      "delete": "bi bi-trash",
+      "view": "bi bi-eye",
+      "copy": "bi bi-copy",
+      "share": "bi bi-share"
+    },
+    "navigation": {
+      "home": "bi bi-house-door",
+      "back": "bi bi-arrow-left",
+      "forward": "bi bi-arrow-right",
+      "up": "bi bi-arrow-up",
+      "down": "bi bi-arrow-down"
+    }
+  },
+  "accessibility": {
+    "focus_visible": "focus-visible",
+    "screen_reader_only": "visually-hidden",
+    "skip_link": "skip-link",
+    "aria_labels": {
+      "close": "Close",
+      "menu": "Navigation menu",
+      "search": "Search",
+      "loading": "Loading..."
+    }
+  },
+  "print_styles": {
+    "hide_on_print": "d-print-none",
+    "show_on_print": "d-print-block",
+    "print_only": "d-none d-print-block"
+  }
+}

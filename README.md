@@ -1,524 +1,375 @@
-# TerraFusion Platform
+# TerraFusion Platform v2.0
 
-**Enterprise Geospatial Data Synchronization Platform**
+Enterprise-grade geospatial data synchronization platform designed for county government operations. TerraFusion provides seamless integration of legacy assessment systems with modern AI-powered analytics and citizen-facing services.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Flask](https://img.shields.io/badge/Flask-2.3+-green.svg)](https://flask.palletsprojects.com/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-red.svg)](https://fastapi.tiangolo.com/)
+## 🏛️ Built for County Government
 
-TerraFusion is a production-ready geospatial data synchronization platform designed for county-level property assessment and collection systems (PACS). It provides seamless integration with legacy systems while offering advanced AI-powered analytics, real-time data synchronization, and comprehensive district lookup capabilities.
+TerraFusion addresses the unique challenges of county-level operations:
+- **Property Assessment Integration**: Connect PACS, CAMA, and Tyler Technologies systems
+- **GIS Data Management**: Multi-format export and spatial analysis capabilities
+- **AI-Powered Insights**: Fraud detection and exemption analysis
+- **Citizen Services**: Self-service district lookup and property information
+- **Regulatory Compliance**: Built-in audit trails and security controls
 
-## 🏗️ Architecture Overview
-
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   API Gateway   │    │   SyncService   │    │   PostgreSQL    │
-│   (Flask:5000)  │◄──►│ (FastAPI:8080)  │◄──►│   Database      │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│  District APIs  │    │ WebSocket APIs  │    │ Backup Service  │
-│  AI Analytics   │    │ Real-time Sync  │    │ (Hourly Auto)   │
-│  Vendor Access  │    │ Data Validation │    │                 │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-```
-
-## 🚀 Quick Start
+## ⚡ Quick Start
 
 ### Prerequisites
+- Python 3.11+
+- PostgreSQL 14+
+- 4GB RAM (8GB recommended)
+- Modern web browser
 
-- Python 3.11 or higher
-- PostgreSQL 16+ with PostGIS extension
-- Node.js 20+ (for frontend development)
-- Docker (optional, for containerized deployment)
+### Installation
 
-### Environment Setup
-
-1. **Clone and Navigate**
-   ```bash
-   git clone <repository-url>
-   cd terrafusion-platform
-   ```
-
-2. **Install Dependencies**
-   ```bash
-   # Python dependencies
-   pip install -r requirements.txt
-   
-   # Node.js dependencies (if using frontend)
-   npm install
-   ```
-
-3. **Database Configuration**
-   
-   Set these environment variables:
-   ```bash
-   export DATABASE_URL="postgresql://user:password@localhost:5432/terrafusion"
-   export PGHOST="localhost"
-   export PGPORT="5432"
-   export PGUSER="your_username"
-   export PGPASSWORD="your_password"
-   export PGDATABASE="terrafusion"
-   export SESSION_SECRET="your-secret-key-here"
-   ```
-
-4. **Initialize Database**
-   ```bash
-   python -c "from app import db; db.create_all()"
-   ```
-
-### Running the Platform
-
-#### Option 1: Using Replit (Recommended)
+1. **Clone and Setup**
 ```bash
-# Start API Gateway
-python main.py
+git clone https://github.com/your-org/terrafusion-platform.git
+cd terrafusion-platform
+```
 
-# In a separate terminal, start SyncService
+2. **Environment Configuration**
+```bash
+# Create environment file
+cp .env.example .env
+
+# Required environment variables:
+DATABASE_URL=postgresql://user:password@localhost/terrafusion
+SESSION_SECRET=your-secure-session-key
+```
+
+3. **Database Setup**
+```bash
+# Initialize database tables
+python -c "from app import app, db; app.app_context().push(); db.create_all()"
+```
+
+4. **Start Services**
+```bash
+# Main application (Port 5000)
+gunicorn --bind 0.0.0.0:5000 --reuse-port --reload main:app
+
+# Sync service (Port 8080)
 python run_syncservice_workflow_8080.py
 ```
 
-#### Option 2: Manual Startup
-```bash
-# Start API Gateway
-gunicorn --bind 0.0.0.0:5000 --reuse-port --reload main:app
+5. **Access Dashboard**
+Open http://localhost:5000/dashboard in your web browser
 
-# Start SyncService
-cd syncservice && uvicorn main:app --host 0.0.0.0 --port 8080 --reload
-```
+## 🎯 Core Features
 
-#### Option 3: Docker Deployment
-```bash
-docker-compose up -d
-```
-
-### Verification
-
-After startup, verify the services:
-
-- **API Gateway**: http://localhost:5000/health
-- **SyncService**: http://localhost:8080/health
-- **Dashboard**: http://localhost:5000/dashboard
-
-## 📡 API Reference
-
-### Core Endpoints
-
-#### Health and Status
-```bash
-GET /health                    # System health check
-GET /api/status               # Detailed system status
-GET /api/version              # Version information
-```
-
-#### District Lookup Service
-```bash
-# Lookup by coordinates
-GET /api/v1/district-lookup/coordinates?lat=46.230&lon=-119.090
-
-# Lookup by address
-GET /api/v1/district-lookup/address?address=123 Main St, Kennewick, WA
-
-# List all districts
-GET /api/v1/district-lookup/districts
-
-# Get specific district info
-GET /api/v1/district-lookup/districts/{type}/{id}
-```
-
-#### GIS Export Management
-```bash
-# List export jobs
-GET /api/v1/gis-export/jobs
-
-# Create new export job
-POST /api/v1/gis-export/jobs
-Content-Type: application/json
-{
-  "county_id": "benton_wa",
-  "format": "shapefile",
-  "filters": {...}
-}
-
-# Get job status
-GET /api/v1/gis-export/jobs/{job_id}
-
-# Download completed export
-GET /api/v1/gis-export/jobs/{job_id}/download
-```
-
-#### AI Analytics
-```bash
-# Analyze GIS export
-POST /api/v1/ai/analyze/gis-export
-{
-  "job_id": "export_123"
-}
-
-# Analyze property exemption
-POST /api/v1/ai/analyze/exemption
-{
-  "parcel_id": "12345",
-  "exemption_type": "homestead",
-  "property_description": "Single family residence"
-}
-
-# AI service health
-GET /api/v1/ai/health
-```
-
-### Public Vendor API
-
-Secure API endpoints for authorized third-party vendors:
+### GIS Data Export
+Export property and boundary data in multiple formats:
+- **Shapefile**: Industry-standard GIS format
+- **GeoJSON**: Web-friendly JSON format
+- **KML**: Google Earth compatible
+- **GeoPackage**: Modern SQLite-based format
+- **CSV**: Tabular data with coordinates
 
 ```bash
-# Generate vendor access token
-POST /api/public/v1/token
-{
-  "vendor_id": "certified_vendor_123",
-  "county_id": "benton_wa"
-}
-
-# Access county data (requires token)
-GET /api/public/v1/counties/{county_id}/parcels
-Authorization: Bearer <jwt_token>
-
-# Get district information
-GET /api/public/v1/counties/{county_id}/districts
+# API Example
+curl -X POST http://localhost:5000/api/v1/gis-export/jobs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "county_id": "benton_wa",
+    "username": "analyst@county.gov",
+    "export_format": "shapefile",
+    "area_of_interest": {"type": "Polygon", "coordinates": [...]},
+    "layers": ["parcels", "zoning", "roads"]
+  }'
 ```
 
-## 🗄️ Database Schema
+### District Lookup Service
+Find administrative boundaries by address or coordinates:
+
+```bash
+# Address lookup
+curl "http://localhost:5000/api/v1/district-lookup/address?address=123 Main St, Kennewick, WA"
+
+# Coordinate lookup
+curl "http://localhost:5000/api/v1/district-lookup/coordinates?lat=46.230&lon=-119.090"
+```
+
+### AI-Powered Analysis
+Leverage artificial intelligence for data insights:
+- **Exemption Analysis**: Fraud detection and compliance checking
+- **Data Quality Assessment**: Automated validation and recommendations
+- **Narrative Generation**: Human-readable summaries of complex data
+
+## 🏗️ Architecture
+
+### Backend Services
+- **Flask API Gateway** (Port 5000): Main application and web interface
+- **FastAPI Sync Service** (Port 8080): Legacy system integration and data processing
+- **PostgreSQL Database**: Spatial data storage with PostGIS extension
+- **Ollama AI Engine**: Local AI processing for secure government environments
+
+### Frontend Components
+- **Bootstrap 5**: Responsive, accessible government UI
+- **Leaflet Maps**: Interactive mapping with county data
+- **Chart.js**: Data visualization and analytics
+- **Progressive Enhancement**: Works without JavaScript for core functions
+
+### Security Features
+- **Role-Based Access Control**: County-level data isolation
+- **JWT Authentication**: Secure API access with token rotation
+- **Audit Logging**: Complete activity tracking for compliance
+- **TLS Encryption**: All data encrypted in transit
+
+## 📊 Database Schema
 
 ### Core Tables
-
-#### Users and Authentication
 ```sql
 -- User management
-users (id, username, email, password_hash, created_at, is_active)
-roles (id, name, description, permissions)
-user_roles (user_id, role_id, county_id)
+users: id, username, email, password_hash, created_at, active
 
--- Session management
-user_sessions (id, user_id, token, expires_at, created_at)
-```
+-- County configuration
+counties: id, county_code, county_name, state_code, created_at
 
-#### Geographic Data
-```sql
--- District boundaries
-districts (id, type, name, boundary_geom, county_id, metadata)
-
--- Property records
-parcels (id, parcel_number, owner_name, property_address, 
-         assessment_value, coordinates, district_assignments)
-```
-
-#### Export and Processing
-```sql
 -- Export job tracking
-export_jobs (id, user_id, status, parameters, created_at, 
-             completed_at, file_path, error_message)
+export_jobs: id, job_id, county_id, username, export_format, status, 
+            created_at, completed_at, file_path, error_message
 
--- Sync operations
-sync_operations (id, source_system, operation_type, status,
-                record_count, started_at, completed_at)
+-- Sync operation audit
+sync_operations: id, operation_id, county_id, operation_type, status,
+                records_processed, created_at, completed_at, error_message
 ```
+
+### Indexes and Performance
+- Foreign key indexes on all relationship columns
+- Spatial indexes on geographic data (PostGIS)
+- Composite indexes on frequently queried combinations
+- Connection pooling with automatic health checks
 
 ## 🔧 Configuration
 
-### County Configuration
-
-Each county requires a configuration file in `county_configs/{county_name}/`:
-
-```yaml
-# benton_wa_config.yaml
-county_id: benton_wa
-county_name: "Benton County, WA"
-legacy_system_type: "PACS_CAMA"
-data_sources:
-  - type: "property_records"
-    connection: "postgresql://..."
-    table_mapping: {...}
-  - type: "district_boundaries"
-    source: "geojson_files"
-    path: "data/districts/"
-```
-
-### Environment Variables
-
-#### Required Variables
-```bash
-# Database
-DATABASE_URL=postgresql://user:pass@host:port/db
-PGHOST=localhost
-PGPORT=5432
-PGUSER=username
-PGPASSWORD=password
-PGDATABASE=terrafusion
-
-# Security
-SESSION_SECRET=your-secret-key
-JWT_SECRET=your-jwt-secret
-
-# Services
-API_PORT=5000
-SYNC_PORT=8080
-WEBSOCKET_PORT=8081
-```
-
-#### Optional Variables
-```bash
-# AI Services
-OPENAI_API_KEY=your-openai-key
-NARRATOR_AI_ENDPOINT=http://localhost:8082
-EXEMPTION_SEER_ENDPOINT=http://localhost:8083
-
-# Monitoring
-PROMETHEUS_PORT=9090
-GRAFANA_PORT=3000
-
-# Backup
-BACKUP_SCHEDULE=hourly
-BACKUP_RETENTION_DAYS=30
-```
-
-## 🛡️ Security
-
-### Authentication Methods
-
-1. **JWT Tokens**: For API access and vendor authentication
-2. **Session Cookies**: For web dashboard access
-3. **API Keys**: For service-to-service communication
-
-### Role-Based Access Control (RBAC)
-
+### Application Settings
 ```python
-# User roles and permissions
-ROLES = {
-    'system_admin': ['*'],  # Full access
-    'county_admin': ['county:*'],  # County-specific admin
-    'assessor': ['property:read', 'property:write', 'export:create'],
-    'analyst': ['property:read', 'export:read', 'report:create'],
-    'vendor': ['api:public', 'data:read']  # Limited API access
+# app.py configuration
+SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL")
+SQLALCHEMY_ENGINE_OPTIONS = {
+    "pool_recycle": 300,        # Connection recycling
+    "pool_pre_ping": True,      # Health check queries
 }
 ```
 
-### Data Protection
-
-- **Encryption**: All data encrypted at rest and in transit
-- **Access Logging**: Comprehensive audit trails
-- **Input Validation**: Sanitization of all user inputs
-- **Rate Limiting**: API throttling and abuse prevention
-
-## 📊 Monitoring and Observability
-
-### Health Checks
-
-The platform provides comprehensive health monitoring:
-
-```bash
-# Basic health check
-curl http://localhost:5000/health
-
-# Detailed system status
-curl http://localhost:5000/api/status
-
-# Service-specific health
-curl http://localhost:8080/health  # SyncService
-curl http://localhost:5000/api/v1/ai/health  # AI Services
+### County-Specific Configuration
+Each county requires a configuration file in `county_configs/`:
+```json
+{
+  "county_code": "benton_wa",
+  "county_name": "Benton County",
+  "state_code": "WA",
+  "districts": {
+    "voting_precincts": {...},
+    "fire_districts": {...},
+    "school_districts": {...}
+  }
+}
 ```
 
-### Metrics and Logging
+## 🔌 API Integration
 
-- **Application Logs**: Structured JSON logging with correlation IDs
-- **Performance Metrics**: Response times, throughput, error rates
-- **Business Metrics**: Export volumes, user activity, data sync status
-- **Infrastructure Metrics**: CPU, memory, disk usage, database performance
-
-### Backup System
-
-Automated backup system with the following features:
-
-- **Schedule**: Hourly automated backups
-- **Compression**: Gzip compression for storage efficiency
-- **Retention**: Configurable retention policies
-- **Monitoring**: Backup success/failure tracking
-- **Recovery**: Point-in-time recovery capabilities
-
+### Authentication
+All API requests require JWT authentication:
 ```bash
-# Manual backup operations
-python backup_utilities.py backup
-python backup_utilities.py restore <backup_file>
-python backup_utilities.py list
+# Login to get token
+curl -X POST http://localhost:5000/api/v1/rbac/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "user@county.gov", "password": "secure_password"}'
+
+# Use token in requests
+curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  http://localhost:5000/api/v1/gis-export/jobs
+```
+
+### Rate Limiting
+- **Public endpoints**: 100 requests/minute
+- **Authenticated endpoints**: 1000 requests/minute
+- **Export operations**: 10 concurrent jobs per user
+
+### Error Handling
+Standard HTTP status codes with JSON error responses:
+```json
+{
+  "error": "Validation failed",
+  "message": "Missing required field: county_id",
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+## 🚀 Deployment
+
+### Production Environment
+```dockerfile
+# Dockerfile
+FROM python:3.11-alpine
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+EXPOSE 5000
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "main:app"]
+```
+
+### Environment Variables
+```bash
+# Required
+DATABASE_URL=postgresql://user:pass@host:5432/terrafusion
+SESSION_SECRET=cryptographically-secure-key
+
+# Optional
+OLLAMA_BASE_URL=http://localhost:11434
+REDIS_URL=redis://localhost:6379
+LOG_LEVEL=INFO
+```
+
+### Health Checks
+```bash
+# Application health
+curl http://localhost:5000/health
+
+# Sync service health
+curl http://localhost:8080/health
+
+# Database connectivity
+curl http://localhost:5000/api/v1/gis-export/jobs?limit=1
 ```
 
 ## 🧪 Testing
 
-### Running Tests
-
+### Unit Tests
 ```bash
-# Unit tests
-python -m pytest tests/unit/
+# Run all tests
+python -m pytest tests/ -v
 
-# Integration tests
-python -m pytest tests/integration/
+# Test specific module
+python -m pytest tests/test_gis_export.py -v
 
-# API tests
-python -m pytest tests/api/
-
-# Performance tests
-python -m pytest tests/performance/
+# Coverage report
+python -m pytest --cov=app tests/
 ```
 
-### Test Coverage
-
-The platform maintains comprehensive test coverage:
-
-- **Unit Tests**: Core business logic and utilities
-- **Integration Tests**: Database operations and external services
-- **API Tests**: All endpoint functionality and security
-- **Performance Tests**: Load testing and benchmarking
-
-## 🚀 Deployment
-
-### Production Deployment
-
-#### Azure App Service (Recommended)
+### API Testing
 ```bash
-# Deploy using Azure CLI
-az webapp up --name terrafusion-prod --resource-group terrafusion-rg
+# Test GIS export functionality
+curl -X POST http://localhost:5000/api/v1/gis-export/jobs \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d @tests/fixtures/sample_export_request.json
 
-# Configure environment variables
-az webapp config appsettings set --name terrafusion-prod \
-  --settings DATABASE_URL="..." SESSION_SECRET="..."
+# Test district lookup
+curl "http://localhost:5000/api/v1/district-lookup/coordinates?lat=46.230&lon=-119.090"
 ```
 
-#### Docker Deployment
+### Load Testing
 ```bash
-# Build and deploy with Docker Compose
-docker-compose -f docker-compose.prod.yml up -d
+# Install load testing tools
+pip install locust
 
-# Scale services
-docker-compose scale syncservice=3
+# Run load tests
+locust -f tests/load_test.py --host=http://localhost:5000
 ```
 
-#### Manual Deployment
+## 📝 Development
+
+### Code Style
+- **Python**: PEP 8 with Black formatter
+- **HTML/CSS**: Bootstrap conventions
+- **JavaScript**: ES6+ with Prettier
+- **SQL**: Consistent naming and formatting
+
+### Git Workflow
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Feature development
+git checkout -b feature/new-export-format
+git commit -m "feat: add GeoPackage export support"
+git push origin feature/new-export-format
 
-# Set up system service
-sudo systemctl enable terrafusion-api
-sudo systemctl enable terrafusion-sync
-
-# Start services
-sudo systemctl start terrafusion-api
-sudo systemctl start terrafusion-sync
+# Create pull request for review
 ```
 
-### Environment-Specific Configuration
+### Database Migrations
+```bash
+# Create migration
+python manage.py db init
+python manage.py db migrate -m "Add new table"
+python manage.py db upgrade
+```
 
-#### Development
-- Debug mode enabled
-- Hot reloading
-- Verbose logging
-- Local database
+## 🛡️ Security
 
-#### Staging
-- Production-like configuration
-- Limited data sets
-- Integration testing
-- SSL certificates
+### Data Protection
+- **Encryption**: TLS 1.3 for data in transit, AES-256 for data at rest
+- **Access Control**: Role-based permissions with county isolation
+- **Audit Trail**: Complete logging of all data access and modifications
+- **Session Security**: Secure cookies with CSRF protection
 
-#### Production
-- Optimized performance
-- High availability setup
-- Comprehensive monitoring
-- Automated backups
+### Compliance Features
+- **FISMA**: Federal Information Security Management Act
+- **SOC 2**: Service Organization Control 2 compliance
+- **WCAG 2.1**: Web Content Accessibility Guidelines
+- **Open Records**: Public information access capabilities
 
-## 🔧 Troubleshooting
+## 📞 Support
 
-### Common Issues
+### Documentation
+- **API Reference**: See `api_documentation.json` for complete OpenAPI spec
+- **Component Library**: See `bootstrap_components.json` for UI components
+- **Architecture Guide**: See `terrafusion_architecture_analysis.md`
 
-#### Database Connection Issues
+### Troubleshooting
+
+**Database Connection Issues**
 ```bash
 # Check database connectivity
-python -c "from app import db; print(db.engine.execute('SELECT 1').scalar())"
+psql $DATABASE_URL -c "SELECT version();"
 
-# Verify environment variables
-echo $DATABASE_URL
+# Verify PostGIS extension
+psql $DATABASE_URL -c "SELECT PostGIS_version();"
 ```
 
-#### Service Startup Problems
+**Performance Issues**
 ```bash
-# Check port availability
-netstat -tulpn | grep :5000
-netstat -tulpn | grep :8080
+# Check database query performance
+psql $DATABASE_URL -c "SELECT query, mean_time FROM pg_stat_statements ORDER BY mean_time DESC LIMIT 10;"
 
-# Review logs
-tail -f logs/api-gateway.log
-tail -f logs/syncservice.log
+# Monitor application metrics
+curl http://localhost:5000/health
 ```
 
-#### Performance Issues
+**Export Failures**
 ```bash
-# Monitor resource usage
-htop
-iostat -x 1
+# Check export job status
+curl http://localhost:5000/api/v1/gis-export/jobs/JOB_ID
 
-# Check database performance
-psql -c "SELECT * FROM pg_stat_activity;"
+# Review application logs
+tail -f logs/terrafusion.log
 ```
 
-### Debug Mode
+### Getting Help
+- **Technical Issues**: Check application logs and database connectivity
+- **Feature Requests**: Submit detailed requirements with use cases
+- **Security Concerns**: Follow responsible disclosure procedures
+- **Integration Support**: Provide system specifications and connection details
 
-Enable debug mode for detailed error information:
+## 📄 License
 
-```bash
-export FLASK_DEBUG=1
-export FLASK_ENV=development
-python main.py
-```
+Government Open Source License - designed for public sector use with transparency requirements and citizen access provisions.
 
-## 📚 Documentation
+## 🚀 What's Next
 
-### Additional Resources
+### Planned Features
+- **Mobile Applications**: Native iOS/Android apps for field operations
+- **Real-time Notifications**: WebSocket-based live updates
+- **Advanced Analytics**: Machine learning for predictive insights
+- **Multi-language Support**: Spanish and other local languages
 
-- **API Documentation**: Available at `/api/docs` when running
-- **Architecture Guide**: See `docs/architecture.md`
-- **Deployment Guide**: See `docs/deployment.md`
-- **Security Guide**: See `docs/security.md`
-- **County Integration Guide**: See `docs/county_integration.md`
-
-### Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Ensure all tests pass
-6. Submit a pull request
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🤝 Support
-
-For support and questions:
-
-- **Documentation**: Check the `docs/` directory
-- **Issues**: Create an issue in the repository
-- **Discussions**: Use the repository discussions
-- **Email**: Contact the development team
-
-## 🏆 Acknowledgments
-
-- **Benton County, WA**: Primary pilot implementation
-- **Open Source Community**: Flask, FastAPI, and PostgreSQL communities
-- **Contributors**: All developers who have contributed to this project
+### Integration Roadmap
+- **Cloud Deployment**: AWS/Azure/GCP deployment guides
+- **Enterprise SSO**: SAML/OAuth integration with government identity providers
+- **API Ecosystem**: Third-party developer platform and SDK
+- **Monitoring Suite**: Comprehensive observability and alerting
 
 ---
 
-**Made with ❤️ for county governments worldwide**
+**TerraFusion Platform v2.0** - Empowering counties with modern geospatial technology while maintaining the security and reliability required for government operations.

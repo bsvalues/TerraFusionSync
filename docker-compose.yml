@@ -1,104 +1,125 @@
 version: '3.8'
 
 services:
-  api-gateway:
-    build:
-      context: .
-      dockerfile: Dockerfile.api-gateway
+  app:
+    build: .
     ports:
       - "5000:5000"
     environment:
-      - FLASK_APP=main.py
-      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-a_secure_key_for_development}
-      - SYNCSERVICE_BASE_URL=http://sync-service:8080
-      - DATABASE_URL=${DATABASE_URL}
-    volumes:
-      - ./:/app
+      - DATABASE_URL=postgresql://terrafusion:secure_password@postgres:5432/terrafusion_db
+      - SESSION_SECRET=your-cryptographically-secure-session-key-here
+      - REDIS_URL=redis://redis:6379
+      - OLLAMA_BASE_URL=http://ollama:11434
     depends_on:
-      - sync-service
-      - db
+      - postgres
+      - redis
+    volumes:
+      - ./exports:/app/exports
+      - ./logs:/app/logs
+    networks:
+      - terrafusion-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/api/status"]
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
 
-  sync-service:
-    build:
-      context: .
-      dockerfile: Dockerfile.sync-service
+  syncservice:
+    build: .
+    command: python run_syncservice_workflow_8080.py
     ports:
       - "8080:8080"
     environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - SYNCSERVICE_DEV_MODE=1
-    volumes:
-      - ./:/app
+      - DATABASE_URL=postgresql://terrafusion:secure_password@postgres:5432/terrafusion_db
+      - REDIS_URL=redis://redis:6379
     depends_on:
-      - db
+      - postgres
+      - redis
+    networks:
+      - terrafusion-network
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
 
-  db:
-    image: postgres:14-alpine
-    volumes:
-      - postgres_data:/var/lib/postgresql/data/
+  postgres:
+    image: postgis/postgis:15-3.3
     environment:
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-terradata}
-      - POSTGRES_USER=${POSTGRES_USER:-terrafusion}
-      - POSTGRES_DB=${POSTGRES_DB:-terrafusion}
+      - POSTGRES_DB=terrafusion_db
+      - POSTGRES_USER=terrafusion
+      - POSTGRES_PASSWORD=secure_password
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
       - "5432:5432"
+    networks:
+      - terrafusion-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U terrafusion"]
+      test: ["CMD-SHELL", "pg_isready -U terrafusion -d terrafusion_db"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  prometheus:
-    image: prom/prometheus:v2.47.0
+  redis:
+    image: redis:7-alpine
     ports:
-      - "9090:9090"
+      - "6379:6379"
     volumes:
-      - ./infra/prometheus:/etc/prometheus
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
-      - '--web.console.templates=/usr/share/prometheus/consoles'
-      - '--web.enable-lifecycle'
+      - redis_data:/data
+    networks:
+      - terrafusion-network
     restart: unless-stopped
-    depends_on:
-      - api-gateway
-      - sync-service
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
-  grafana:
-    image: grafana/grafana-oss:10.1.1
+  ollama:
+    image: ollama/ollama:latest
     ports:
-      - "3000:3000"
+      - "11434:11434"
     volumes:
-      - grafana_data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning
-      - ./grafana/dashboards:/etc/grafana/dashboards
+      - ollama_data:/root/.ollama
+    networks:
+      - terrafusion-network
     restart: unless-stopped
-    depends_on:
-      - prometheus
     environment:
-      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
-      - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_INSTALL_PLUGINS=grafana-piechart-panel,grafana-clock-panel
+      - OLLAMA_HOST=0.0.0.0
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./static:/var/www/static:ro
+    depends_on:
+      - app
+      - syncservice
+    networks:
+      - terrafusion-network
+    restart: unless-stopped
 
 volumes:
   postgres_data:
-  prometheus_data:
-  grafana_data:
+    driver: local
+  redis_data:
+    driver: local
+  ollama_data:
+    driver: local
+
+networks:
+  terrafusion-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
