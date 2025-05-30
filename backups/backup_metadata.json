@@ -1166,5 +1166,13 @@
     "file_size": 4087,
     "path": "backups/config_backup_20250529_223821.tar.gz",
     "created_at": "2025-05-29T22:38:21.537799"
+  },
+  {
+    "timestamp": "2025-05-29T23:38:25.146204",
+    "type": "database",
+    "filename": "database_backup_20250529_233821.sql.gz",
+    "file_size": 60804,
+    "path": "backups/database_backup_20250529_233821.sql.gz",
+    "created_at": "2025-05-29T23:38:25.146219"
   }
 ]
