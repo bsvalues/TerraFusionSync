@@ -163,7 +163,7 @@ class PACSIntegrationService:
     
     def extract_exemption_data(self) -> Optional[List[Dict]]:
         """
-        Extract current exemption data from PACS.
+        Extract current exemption data from PACS with comprehensive edge case handling.
         
         Returns:
             List of exemption records or None if failed
@@ -179,10 +179,49 @@ class PACSIntegrationService:
             connection_string = self.get_connection_string()
             engine = create_engine(connection_string)
             
-            # Extract exemption data
+            # Extract exemption data with edge case handling
             df = pd.read_sql_query(self.pacs_queries["exemptions_current"], engine)
             
+            # Edge case handling
+            edge_case_stats = {
+                "total_extracted": len(df),
+                "null_parcel_ids": 0,
+                "invalid_amounts": 0,
+                "missing_dates": 0,
+                "duplicate_records": 0,
+                "records_cleaned": 0,
+                "records_skipped": 0
+            }
+            
+            # Handle NULL/empty ParcelIDs
+            null_parcels = df['ParcelID'].isnull() | (df['ParcelID'] == '')
+            edge_case_stats["null_parcel_ids"] = null_parcels.sum()
+            df = df[~null_parcels]  # Remove records with no parcel ID
+            
+            # Handle invalid exemption amounts
+            df['ExemptionAmount'] = pd.to_numeric(df['ExemptionAmount'], errors='coerce')
+            invalid_amounts = df['ExemptionAmount'].isnull()
+            edge_case_stats["invalid_amounts"] = invalid_amounts.sum()
+            df.loc[invalid_amounts, 'ExemptionAmount'] = 0  # Set to 0 instead of dropping
+            
+            # Handle missing/invalid dates
+            date_columns = ['ApplicationDate', 'ApprovalDate']
+            for col in date_columns:
+                if col in df.columns:
+                    df[col] = pd.to_datetime(df[col], errors='coerce')
+                    missing_dates = df[col].isnull()
+                    edge_case_stats["missing_dates"] += missing_dates.sum()
+            
+            # Handle duplicate records (same parcel + exemption type + year)
+            duplicate_mask = df.duplicated(subset=['ParcelID', 'ExemptionType', 'ExemptionYear'], keep='last')
+            edge_case_stats["duplicate_records"] = duplicate_mask.sum()
+            df = df[~duplicate_mask]  # Keep only the latest record
+            
+            # Final cleaning
+            edge_case_stats["records_cleaned"] = edge_case_stats["total_extracted"] - len(df)
+            
             logger.info(f"✅ Extracted {len(df)} exemption records from PACS")
+            logger.info(f"📊 Edge case statistics: {edge_case_stats}")
             
             # Convert to list of dictionaries
             exemptions = df.to_dict('records')
@@ -191,10 +230,16 @@ class PACSIntegrationService:
             exemptions_file = Path("data/pacs_exemptions.json")
             exemptions_file.parent.mkdir(parents=True, exist_ok=True)
             
+            # Save both clean data and edge case report
             with open(exemptions_file, 'w') as f:
                 json.dump(exemptions, f, indent=2, default=str)
             
+            edge_case_file = Path("data/pacs_edge_case_report.json")
+            with open(edge_case_file, 'w') as f:
+                json.dump(edge_case_stats, f, indent=2)
+            
             logger.info(f"📁 Exemption data saved to: {exemptions_file}")
+            logger.info(f"📊 Edge case report saved to: {edge_case_file}")
             
             return exemptions
             
